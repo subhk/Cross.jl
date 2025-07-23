@@ -1,2 +1,3 @@
 # Cross.jl
-Convection in (rapidly) rotating Spherical shell
+
+**C**onvection in (rapidly) **ro**tating **s**pherical **s**hell

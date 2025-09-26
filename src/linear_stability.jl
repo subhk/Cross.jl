@@ -9,6 +9,24 @@ import ..Cross: ChebyshevDiffn
 
 export ShellParams, build_generalized_problem, leading_modes, critical_Rayleigh_search
 
+"""
+    ShellParams(; m, E, Pr, Ra, ri, ro, lmax, Nr)
+
+Container for the dimensionless control parameters entering the linear
+stability problem described by Equations (10)–(19) of the Onset of
+Convection reference in `docs/Onset_convection.pdf`. The fields correspond to:
+
+  • `m`   – fixed azimuthal wavenumber of the perturbation (Equation 12)
+  • `E`   – Ekman number multiplying viscous terms in Equation (10)
+  • `Pr`  – Prandtl number coupling momentum and heat Equations (10)–(11)
+  • `Ra`  – Rayleigh number prefactor of the buoyancy term in Equation (10)
+  • `ri`, `ro` – nondimensional radii of the spherical shell boundaries
+  • `lmax` – spherical harmonic truncation in the expansion (Equations 13–15)
+  • `Nr`  – number of Chebyshev collocation points across the shell
+
+The constructor normalises all floating-point inputs to `Float64` so the
+downstream sparse assembly works with a consistent eltype.
+"""
 struct ShellParams{T<:Real}
     m::Int
     E::T
@@ -36,13 +54,32 @@ function _angular_eigenvalues(params::ShellParams)
         Alm[ℓ+1, params.m+1] = 1.0 + 0im
     end
     dist_apply_laplacian!(cfg, Alm)
-    λ = similar(ones_vec, params.lmax + 1)
+    λ = zeros(Float64, params.lmax + 1)
     @inbounds for ℓ in params.m:params.lmax
         λ[ℓ+1] = -real(Alm[ℓ+1, params.m+1])
     end
     return λ
 end
 
+"""
+    build_generalized_problem(params) -> (A, B, r, ℓvals)
+
+Assemble the sparse matrices `A` and `B` of the generalized eigenvalue
+problem `A x = λ B x` obtained by applying the poloidal–toroidal
+decomposition (Equation 13) to the linearised dynamics (Equations 10–11).
+
+Implementation details:
+  • Radial derivatives use Chebyshev collocation on `[ri, ro]` via
+    `ChebyshevDiffn` (Equation 15).
+  • Angular couplings are diagonal because the SHTnsKit helpers provide
+    the eigenvalues `ℓ(ℓ+1)` of the spherical Laplacian acting on
+    the Schmidt semi-normalised harmonics (Equations 14 & 19).
+  • No-slip, fixed-temperature boundary conditions (Equations 16–18) are
+    enforced by replacing boundary rows with tau constraints.
+
+Returns the assembled matrices together with the radial grid `r` and the
+list of active spherical degrees `ℓvals` for convenience.
+"""
 function build_generalized_problem(params::ShellParams)
     r, D1, D2 = _chebyshev_operators(params)
     inv_r2 = 1.0 ./ (r .^ 2)
@@ -136,13 +173,38 @@ function _impose_temperature_bc!(A::AbstractMatrix, B::AbstractMatrix, nr::Int)
     _apply_dirichlet!(A, B, rows[end])
 end
 
+"""
+    leading_modes(params; nev=6, which=:LR)
+
+Solve the assembled eigenvalue problem for the `nev` eigenvalues of largest
+real part (default) using ARPACK.  The eigenvalues correspond to the growth
+rates `λ = σ + iω` defined in Equation (12); neutral stability occurs when
+`σ = 0`.  Returns `(λ, v, ℓvals)` where `ℓvals` reuses the indices from
+`build_generalized_problem`.
+"""
 function leading_modes(params::ShellParams; nev::Int=6, which::Symbol=:LR)
     A, B, _, ℓvals = build_generalized_problem(params)
     vals, vecs = eigs(A, B; nev=nev, which=which)
     return vals, vecs, ℓvals
 end
 
-function critical_Rayleigh_search(params::ShellParams; guess::Real, bracket::Tuple{Real,Real}, tol::Real=1e-6, maxiter::Int=25)
+"""
+    critical_Rayleigh_search(params; bracket, tol=1e-6, maxiter=25)
+
+Locate the Rayleigh number at which the leading growth rate changes sign
+for the supplied azimuthal symmetry and Ekman/Prandtl numbers.  The
+function performs a safeguarded bisection on the real part of the dominant
+eigenvalue returned by `leading_modes`, following the procedure outlined
+in Section 3.1 of the reference.
+
+Arguments:
+  • `bracket = (Ra_lo, Ra_hi)` must straddle the critical Rayleigh number.
+  • `tol` and `maxiter` stop the bisection once `|σ| < tol` or the
+    iterations are exhausted.
+
+Returns the estimated `Rac` together with the final growth rate value.
+"""
+function critical_Rayleigh_search(params::ShellParams; bracket::Tuple{Real,Real}, tol::Real=1e-6, maxiter::Int=25)
     left, right = bracket
     f(ra) = begin
         p = ShellParams(; m=params.m, E=params.E, Pr=params.Pr, Ra=ra, ri=params.ri, ro=params.ro, lmax=params.lmax, Nr=params.Nr)

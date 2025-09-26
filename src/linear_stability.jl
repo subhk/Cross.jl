@@ -337,7 +337,7 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
 
     v0 = randn(ComplexF64, Ndof)
     # Use Arpack for generalized eigenvalue problem Ax = λBx
-    vals, vecs, nconv, niter, nmult, resid = eigs(actionA, actionB, nev=nev, which=which,
+    vals, vecs, nconv, niter, nmult, resid = eigs(actionA, B=actionB, nev=nev, which=which,
                                                   v0=v0, kwargs...)
 
     # Create info structure compatible with KrylovKit return format

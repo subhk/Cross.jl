@@ -19,31 +19,25 @@ end
 using Cross
 using Printf
 
-params = ShellParams(
-    m = 13,
-    E = 1e-5,
-    Pr = 1.0,
-    Ra = 2.1e7,
-    ri = 0.35,
-    ro = 1.0,
-    lmax = 64,
-    Nr = 80,
-)
+E = 1e-5
+Pr = 1.0
+Ra = 2.1e7
+ri = 0.35
+ro = 1.0
+Nr = 64
 
-vals, vecs, op, info = leading_modes(params; nθ = params.lmax + 1, nev = 4, tol = 1e-6)
+println("m    Re(λ₁)          Im(λ₁)          iterations")
+println("-----------------------------------------------")
 
-println("Leading eigenvalues for m=$(params.m):")
-for (k, val) in enumerate(vals)
-    @printf("  λ₍%d₎ = %12.5e + %12.5e im\n", k, real(val), imag(val))
+for m in 1:20
+    lmax = max(48, m + 6)
+    params = ShellParams(m=m, E=E, Pr=Pr, Ra=Ra, ri=ri, ro=ro, lmax=lmax, Nr=Nr)
+    try
+        vals, _, _, info = leading_modes(params; nθ=lmax + 1, nev=2, tol=1e-6, maxiter=80)
+        λ1 = vals[1]
+        @printf("%2d  %12.5e  %12.5e  %5d\n", m, real(λ1), imag(λ1), info.iterations)
+    catch err
+        @printf("%2d  %12s  %12s      --\n", m, "ERROR", "ERROR")
+        @warn "Failed to converge" m err
+    end
 end
-
-σ = real(vals[1])
-if σ > 0
-    println("The chosen Rayleigh number is supercritical (σ > 0).")
-elseif σ < 0
-    println("The chosen Rayleigh number is subcritical (σ < 0).")
-else
-    println("Neutral stability detected (σ ≈ 0).")
-end
-
-println("Krylov iterations: ", info.iterations)

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: '1.10'
+
+      - name: Instantiate and run smoke test
+        env:
+          JULIA_NUM_THREADS: 2
+        run: |
+          julia --color=yes --project=@stdlib -e '
+            using Pkg;
+            temp_env = mktempdir();
+            Pkg.activate(temp_env);
+            Pkg.add("SHTnsKit");
+            Pkg.add("KrylovKit");
+            Pkg.develop(path=pwd());
+            Pkg.instantiate();
+            using Cross;
+            params = ShellParams(m=3, E=1e-4, Pr=1.0, Ra=1e6, ri=0.35, ro=1.0, lmax=16, Nr=16);
+            vals, _, _, _ = leading_modes(params; nθ=18, nev=2, maxiter=20);
+            @info "Computed eigenvalues" vals;
+          '

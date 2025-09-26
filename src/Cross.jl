@@ -2,7 +2,6 @@ module Cross
 
     using LinearAlgebra
     using SparseArrays
-    using FFTW
     using JLD2
 
     using Parameters

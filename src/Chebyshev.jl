@@ -10,11 +10,11 @@ using LinearAlgebra
 Compute Chebyshev differentiation matrix of order `m` on `n` Chebyshev points.
 
 Uses the Chebyshev-Gauss-Lobatto grid on [-1,1]:
-    xₖ = cos(πk/(n-1)),  k = 0, 1, ..., n-1
+    x_k = cos(pi*k/(n-1)),  k = 0, 1, ..., n-1
 
 # Arguments
-- `n::Int`: Number of Chebyshev points (n ≥ 2)
-- `m::Int`: Order of differentiation (1 ≤ m < n)
+- `n::Int`: Number of Chebyshev points (n >= 2)
+- `m::Int`: Order of differentiation (1 <= m < n)
 
 # Returns
 - `x::Vector{Float64}`: Chebyshev grid points in descending order
@@ -28,56 +28,56 @@ df = D * f            # numerical derivative
 ```
 """
 function chebdif(n::Int, m::Int)
-    @assert n ≥ 2 "Need at least 2 points"
-    @assert 1 ≤ m < n "Derivative order must satisfy 1 ≤ m < n"
+    @assert n >= 2 "Need at least 2 points"
+    @assert 1 <= m < n "Derivative order must satisfy 1 <= m < n"
     
     # Identity matrix for diagonal operations
-    𝐈 = I(n)
+    I_mat = I(n)
     
     # Grid indices and symmetry points
     k = 0:(n-1)
-    n₁ = fld(n, 2)
-    n₂ = ceil(Int, n/2)
+    n1 = fld(n, 2)
+    n2 = ceil(Int, n/2)
     
     # Chebyshev-Gauss-Lobatto points and angles
-    x̂ = cos.(π * k / (n-1))
-    θ = π * k / (n-1)
+    x_hat = cos.(pi * k / (n-1))
+    theta = pi * k / (n-1)
     
     # Trigonometric matrix for efficient computation
-    Θ = repeat(θ/2, 1, n)
-    Δₓ = 2 * sin.(Θ' .+ Θ) .* sin.(Θ' .- Θ)
+    Theta = repeat(theta/2, 1, n)
+    Delta_x = 2 * sin.(Theta' .+ Theta) .* sin.(Theta' .- Theta)
     
     # Exploit symmetry to reduce computation
-    Δₓ[n₁+1:end, :] .= -reverse(reverse(Δₓ[1:n₂, :], dims=2), dims=1)
-    Δₓ[𝐈] .= 1.0  # diagonal entries
+    Delta_x[n1+1:end, :] .= -reverse(reverse(Delta_x[1:n2, :], dims=2), dims=1)
+    Delta_x[I_mat] .= 1.0  # diagonal entries
     
     # Chebyshev weight matrix
     v = (-1.0).^k
-    𝐂 = Matrix{Float64}(undef, n, n)
+    C_mat = Matrix{Float64}(undef, n, n)
     @inbounds for i in 1:n, j in 1:n
-        𝐂[i, j] = v[abs(i - j) + 1]
+        C_mat[i, j] = v[abs(i - j) + 1]
     end
-    𝐂[1, :] .*= 2
-    𝐂[end, :] .*= 2
-    𝐂[:, 1] .*= 0.5
-    𝐂[:, end] .*= 0.5
+    C_mat[1, :] .*= 2
+    C_mat[end, :] .*= 2
+    C_mat[:, 1] .*= 0.5
+    C_mat[:, end] .*= 0.5
     
     # Inverse of off-diagonal entries
-    𝐙 = 1.0 ./ Δₓ
-    𝐙[𝐈] .= 0.0
+    Z_mat = 1.0 ./ Delta_x
+    Z_mat[I_mat] .= 0.0
     
     # Build differentiation matrix recursively
-    𝐃 = Matrix{Float64}(I, n, n)
+    D_mat = Matrix{Float64}(I, n, n)
     
-    for ℓ in 1:m
-        𝐃 = ℓ .* 𝐙 .* (𝐂 .* repeat(diag(𝐃), 1, n) .- 𝐃)
-        𝐃[𝐈] .= -sum(𝐃, dims=2)
+    for ell in 1:m
+        D_mat = ell .* Z_mat .* (C_mat .* repeat(diag(D_mat), 1, n) .- D_mat)
+        D_mat[I_mat] .= -sum(D_mat, dims=2)
     end
     
     # Reverse for descending order
-    reverse!(𝐃);
+    reverse!(D_mat);
     
-    return reverse(x̂), 𝐃
+    return reverse(x_hat), D_mat
 end
 
 #══════════════════════════════════════════════════════════════════════════════#
@@ -97,24 +97,24 @@ repeated use. Automatically handles domain transformation from [-1,1] to [a,b].
 - `domain::Tuple{T,T}`: Domain interval (a, b)
 - `max_order::Int`: Maximum derivative order computed
 - `x::Vector{T}`: Grid points on [a,b]
-- `D₁, D₂, D₃, D₄::Matrix{T}`: Differentiation matrices (higher orders may be Nothing)
+- `D1, D2, D3, D4::Matrix{T}`: Differentiation matrices (higher orders may be Nothing)
 
 # Mathematical Foundation
-For domain transformation ζ ∈ [-1,1] → x ∈ [a,b]:
-    x = (b-a)/2 * (ζ + 1) + a
+For domain transformation zeta in [-1,1] -> x in [a,b]:
+    x = (b-a)/2 * (zeta + 1) + a
     
-Scaling factor α = 2/(b-a) ensures correct derivative computation:
-    dⁿf/dxⁿ = αⁿ * (dⁿf/dζⁿ)
+Scaling factor alpha = 2/(b-a) ensures correct derivative computation:
+    d^n f/dx^n = alpha^n * (d^n f/dzeta^n)
 """
 struct ChebyshevDiffn{T<:Real}
     n          :: Int
     domain     :: Tuple{T,T}
     max_order  :: Int
     x          :: Vector{T}
-    D₁         :: Matrix{T}
-    D₂         :: Matrix{T}
-    D₃         :: Union{Matrix{T}, Nothing}
-    D₄         :: Union{Matrix{T}, Nothing}
+    D1         :: Matrix{T}
+    D2         :: Matrix{T}
+    D3         :: Union{Matrix{T}, Nothing}
+    D4         :: Union{Matrix{T}, Nothing}
 end
 
 """
@@ -125,17 +125,17 @@ Construct a Chebyshev differentiation operator.
 # Arguments
 - `n::Int`: Number of grid points
 - `domain::AbstractVector{T}`: Domain interval [a, b] as a 2-element vector where T<:Real
-- `max_order::Int=1`: Maximum derivative order to compute (1 ≤ max_order ≤ 4)
+- `max_order::Int=1`: Maximum derivative order to compute (1 <= max_order <= 4)
 
 # Example
 ```julia
 # Create operator for 16 points on [0, 2π] with derivatives up to 2nd order
-cd = ChebyshevDiffn(16, [0.0, 2π], 2)
+cd = ChebyshevDiffn(16, [0.0, 2*pi], 2)
 
 # Use it to differentiate
 f = sin.(cd.x)
-df_dx = cd.D₁ * f      # first derivative
-d2f_dx2 = cd.D₂ * f    # second derivative
+df_dx = cd.D1 * f      # first derivative
+d2f_dx2 = cd.D2 * f    # second derivative
 ```
 """
 function ChebyshevDiffn(
@@ -147,34 +147,34 @@ function ChebyshevDiffn(
     @assert length(domain) == 2 "Domain must be a 2-element vector [a, b]"
     a, b = domain[1], domain[2]
     @assert a < b "Domain must satisfy a < b"
-    @assert 1 ≤ max_order ≤ 4 "Maximum order must be between 1 and 4"
+    @assert 1 <= max_order <= 4 "Maximum order must be between 1 and 4"
     
     # ──────────────────────────────────────────────────────────────────────────
     # Compute raw differentiation matrices on [-1,1]
     # ──────────────────────────────────────────────────────────────────────────
-    x̂, D₁̂ = chebdif(n, 1)
-    _, D₂̂  = chebdif(n, 2)
-    
-    D₃̂ = max_order ≥ 3 ? chebdif(n, 3)[2] : nothing
-    D₄̂ = max_order ≥ 4 ? chebdif(n, 4)[2] : nothing
+    x_hat, D1_hat = chebdif(n, 1)
+    _, D2_hat  = chebdif(n, 2)
+
+    D3_hat = max_order >= 3 ? chebdif(n, 3)[2] : nothing
+    D4_hat = max_order >= 4 ? chebdif(n, 4)[2] : nothing
     
     # ──────────────────────────────────────────────────────────────────────────
     # Transform domain and scale derivatives
     # ──────────────────────────────────────────────────────────────────────────
     
     # Map from [-1,1] to [a,b]
-    x = @. (b - a)/2 * (x̂ + 1) + a
-    
+    x = @. (b - a)/2 * (x_hat + 1) + a
+
     # Scaling factor for derivatives
-    α = 2 / (b - a)
-    
+    alpha = 2 / (b - a)
+
     # Apply appropriate scaling to each derivative order
-    D₁ = α * D₁̂
-    D₂ = α^2 * D₂̂
-    D₃ = D₃̂ === nothing ? nothing : α^3 * D₃̂
-    D₄ = D₄̂ === nothing ? nothing : α^4 * D₄̂
-    
-    return ChebyshevDiffn(n, (a, b), max_order, x, D₁, D₂, D₃, D₄)
+    D1 = alpha * D1_hat
+    D2 = alpha^2 * D2_hat
+    D3 = D3_hat === nothing ? nothing : alpha^3 * D3_hat
+    D4 = D4_hat === nothing ? nothing : alpha^4 * D4_hat
+
+    return ChebyshevDiffn(n, (a, b), max_order, x, D1, D2, D3, D4)
 end
 
 #══════════════════════════════════════════════════════════════════════════════#

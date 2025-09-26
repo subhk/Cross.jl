@@ -123,8 +123,8 @@ end
 function setup_operator(params::ShellParams; nθ::Int = params.lmax + 1)
     cd = ChebyshevDiffn(params.Nr, [params.ri, params.ro], 2)
     r = cd.x
-    Dr = cd.D₁
-    D2 = cd.D₂
+    Dr = cd.D1
+    D2 = cd.D2
 
     cfg = create_gauss_config(params.lmax, nθ; mmax=params.m, mres=1, nlon=max(2*params.m + 1, 4))
     enable_plm_tables!(cfg)

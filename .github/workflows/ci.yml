@@ -22,11 +22,12 @@ jobs:
       - name: Instantiate and run smoke test
         env:
           JULIA_NUM_THREADS: 2
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: |
           julia --color=yes -e '
             using Pkg;
             Pkg.activate(pwd());
-            Pkg.instantiate();
+            Pkg.instantiate(; allow_autoprecomp=false);
             using Cross;
             params = ShellParams(m=3, E=1e-4, Pr=1.0, Ra=1e6, ri=0.35, ro=1.0, lmax=16, Nr=16);
             vals, _, _, _ = leading_modes(params; nθ=18, nev=2, maxiter=20);

@@ -30,15 +30,14 @@ params = ShellParams(
     Nr = 80,
 )
 
-λ, _, ℓvals = leading_modes(params; nev = 4)
+vals, vecs, op, info = leading_modes(params; nθ = params.lmax + 1, nev = 4, tol = 1e-6)
 
 println("Leading eigenvalues for m=$(params.m):")
-for (k, val) in enumerate(λ)
-    @printf("  λ₍%d₎ = %12.5e + %12.5e im  (ℓ range %d:%d)\n",
-            k, real(val), imag(val), ℓvals[1], ℓvals[end])
+for (k, val) in enumerate(vals)
+    @printf("  λ₍%d₎ = %12.5e + %12.5e im\n", k, real(val), imag(val))
 end
 
-σ = real(λ[1])
+σ = real(vals[1])
 if σ > 0
     println("The chosen Rayleigh number is supercritical (σ > 0).")
 elseif σ < 0
@@ -46,3 +45,5 @@ elseif σ < 0
 else
     println("Neutral stability detected (σ ≈ 0).")
 end
+
+println("Krylov iterations: ", info.iterations)

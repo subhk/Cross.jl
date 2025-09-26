@@ -25,15 +25,22 @@ module Cross
         potentials_to_velocity,
 
         ShellParams,
-        build_generalized_problem,
+        MeridionalOperator,
+        setup_operator,
         leading_modes,
-        critical_Rayleigh_search
+        apply_operator,
+        apply_mass
 
 
     include("Chebyshev.jl")
     include("get_velocity.jl")
     include("linear_stability.jl")
 
-    using .LinearStability: ShellParams, build_generalized_problem, leading_modes, critical_Rayleigh_search
+    using .LinearStability: ShellParams,
+                            MeridionalOperator,
+                            setup_operator,
+                            leading_modes,
+                            apply_operator,
+                            apply_mass
 
 end

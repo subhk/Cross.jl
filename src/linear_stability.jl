@@ -336,7 +336,7 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
 
     v0 = randn(ComplexF64, Ndof)
     vals, vecs, info = eigsolve(actionA, actionB, Ndof, nev, which;
-                                v0=v0, kwargs...)
+                                v0=v0, kwargs..., backend=Arnoldi())
     return vals, vecs, op, info
 end
 

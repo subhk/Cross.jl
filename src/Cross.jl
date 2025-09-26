@@ -12,8 +12,6 @@ module Cross
     using Arpack
     using KrylovKit
 
-    using Statistics
-
     export
 
         ChebyshevDiffn,

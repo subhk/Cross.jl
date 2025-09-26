@@ -3,6 +3,7 @@ module LinearStability
 using LinearAlgebra
 using SparseArrays
 using SHTnsKit
+using Arpack: eigs
 
 import ..Cross: ChebyshevDiffn
 
@@ -31,7 +32,6 @@ end
 function _angular_eigenvalues(params::ShellParams)
     cfg = create_gauss_config(params.lmax, params.lmax + 1; mmax=params.m, mres=1, nlon=max(2*params.m + 1, 4))
     Alm = zeros(ComplexF64, params.lmax + 1, params.m + 1)
-    ones_vec = ones(ComplexF64, params.lmax + 1)
     @inbounds for ℓ in params.m:params.lmax
         Alm[ℓ+1, params.m+1] = 1.0 + 0im
     end
@@ -104,30 +104,36 @@ function build_generalized_problem(params::ShellParams)
     return A, B, r, ℓvals
 end
 
+function _apply_dirichlet!(A::AbstractMatrix, B::AbstractMatrix, idx::Int)
+    A[idx, :] .= 0
+    A[:, idx] .= 0
+    A[idx, idx] = 1
+    B[idx, :] .= 0
+    B[:, idx] .= 0
+end
+
 function _impose_velocity_bc!(A::AbstractMatrix, B::AbstractMatrix, D1::AbstractMatrix, nr::Int)
     # P(r=ri) = 0, ∂rP(r=ri)=0, ∂rP(r=ro)=0, P(r=ro)=0
-    A[1, :] .= 0; A[1, 1] = 1
-    B[1, :] .= 0
+    _apply_dirichlet!(A, B, 1)
     A[2, :] .= D1[1, :]
     B[2, :] .= 0
     A[nr-1, :] .= D1[end, :]
     B[nr-1, :] .= 0
-    A[nr, :] .= 0; A[nr, nr] = 1
-    B[nr, :] .= 0
+    _apply_dirichlet!(A, B, nr)
 end
 
 function _impose_toroidal_bc!(A::AbstractMatrix, B::AbstractMatrix, nr::Int)
     offset = nr
     rows = offset + (1:nr)
-    A[rows[1], :] .= 0; A[rows[1], rows[1]] = 1; B[rows[1], :] .= 0
-    A[rows[end], :] .= 0; A[rows[end], rows[end]] = 1; B[rows[end], :] .= 0
+    _apply_dirichlet!(A, B, rows[1])
+    _apply_dirichlet!(A, B, rows[end])
 end
 
 function _impose_temperature_bc!(A::AbstractMatrix, B::AbstractMatrix, nr::Int)
     offset = 2 * nr
     rows = offset + (1:nr)
-    A[rows[1], :] .= 0; A[rows[1], rows[1]] = 1; B[rows[1], :] .= 0
-    A[rows[end], :] .= 0; A[rows[end], rows[end]] = 1; B[rows[end], :] .= 0
+    _apply_dirichlet!(A, B, rows[1])
+    _apply_dirichlet!(A, B, rows[end])
 end
 
 function leading_modes(params::ShellParams; nev::Int=6, which::Symbol=:LR)

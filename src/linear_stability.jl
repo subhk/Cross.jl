@@ -2,8 +2,7 @@ module LinearStability
 
 using LinearAlgebra
 using SHTnsKit
-using KrylovKit
-using Arpack
+using ArnoldiMethod
 
 import ..Cross: ChebyshevDiffn
 
@@ -336,12 +335,14 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     actionB = x -> apply_mass(op, x)
 
     v0 = randn(ComplexF64, Ndof)
-    # Use Arpack for generalized eigenvalue problem Ax = λBx
-    vals, vecs, nconv, niter, nmult, resid = eigs(actionA, B=actionB, nev=nev, which=which,
-                                                  v0=v0, kwargs...)
 
-    # Create info structure compatible with KrylovKit return format
-    info = (converged=nconv, numiter=niter, numops=nmult, residual=resid)
+    # Use ArnoldiMethod for generalized eigenvalue problem Ax = λBx
+    decomp, history = partialschur(actionA, actionB, nev=nev, which=which,
+                                   v0=v0, kwargs...)
+
+    vals, vecs = partialeigen(decomp)
+    info = (converged=length(vals), numiter=history.niter,
+            numops=history.nmatops, residual=history.residuals)
     return vals, vecs, op, info
 end
 

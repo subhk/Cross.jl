@@ -52,7 +52,11 @@ function chebdif(n::Int, m::Int)
     Δₓ[𝐈] .= 1.0  # diagonal entries
     
     # Chebyshev weight matrix
-    𝐂 = Array(Toeplitz((-1.0).^k, (-1.0).^k))
+    v = (-1.0).^k
+    𝐂 = Matrix{Float64}(undef, n, n)
+    @inbounds for i in 1:n, j in 1:n
+        𝐂[i, j] = v[abs(i - j) + 1]
+    end
     𝐂[1, :] .*= 2
     𝐂[end, :] .*= 2
     𝐂[:, 1] .*= 0.5

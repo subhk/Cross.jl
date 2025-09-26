@@ -5,7 +5,6 @@ module Cross
     using JLD2
 
     using Parameters
-    using BenchmarkTools
 
     using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
 

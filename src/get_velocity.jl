@@ -1,11 +1,11 @@
 # =============================================================================
-#  Convert toroidal/poloidal potentials to velocity components (u_r,u_θ,u_φ)
+#  Convert toroidal/poloidal potentials to velocity components (u_r,u_theta,u_phi)
 # =============================================================================
 """
-    potentials_to_velocity(P, T; Dr, Dθ, Lθ, r, sinθ, m)
+    potentials_to_velocity(P, T; Dr, Dtheta, Ltheta, r, sintheta, m)
 
-Given poloidal `P` and toroidal `T` potentials on the (r,θ) grid
-(size N_r×N_θ) return three Complex arrays `(ur, uθ, uφ)` containing the
+Given poloidal `P` and toroidal `T` potentials on the (r,theta) grid
+(size N_r x N_theta) return three Complex arrays `(ur, utheta, uphi)` containing the
 velocity components for the Fourier mode `m` (fields vary like `exp(i m φ)`).
 
 Uses the same derivative matrices `Dr`, `Dθ` and angular operator `Lθ`

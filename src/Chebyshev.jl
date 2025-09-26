@@ -186,11 +186,11 @@ function Base.show(io::IO, cd::ChebyshevDiffn{T}) where T
     println(io, "  ├─ Grid points: $(cd.n)")
     println(io, "  ├─ Domain: [$(cd.domain[1]), $(cd.domain[2])]")
     println(io, "  ├─ Max order: $(cd.max_order)")
-    print(io,   "  └─ Available: D₁")
-    
-    cd.max_order ≥ 2 && print(io, ", D₂")
-    cd.max_order ≥ 3 && print(io, ", D₃")
-    cd.max_order ≥ 4 && print(io, ", D₄")
+    print(io,   "  └─ Available: D1")
+
+    cd.max_order >= 2 && print(io, ", D2")
+    cd.max_order >= 3 && print(io, ", D3")
+    cd.max_order >= 4 && print(io, ", D4")
     println(io)
 end
 
@@ -206,23 +206,23 @@ Compute the derivative of function values `f` at the Chebyshev grid points.
 # Arguments
 - `cd::ChebyshevDiffn`: The differentiation operator
 - `f::Vector`: Function values at grid points cd.x
-- `order::Int=1`: Derivative order (1 ≤ order ≤ cd.max_order)
+- `order::Int=1`: Derivative order (1 <= order <= cd.max_order)
 
 # Returns
 - `Vector`: Derivative values at grid points
 """
 function derivative(cd::ChebyshevDiffn, f::Vector, order::Int=1)
-    @assert 1 ≤ order ≤ cd.max_order "Derivative order $order not available"
+    @assert 1 <= order <= cd.max_order "Derivative order $order not available"
     @assert length(f) == cd.n "Function vector length must match grid size"
     
     if order == 1
-        return cd.D₁ * f
+        return cd.D1 * f
     elseif order == 2
-        return cd.D₂ * f
+        return cd.D2 * f
     elseif order == 3
-        return cd.D₃ * f
+        return cd.D3 * f
     elseif order == 4
-        return cd.D₄ * f
+        return cd.D4 * f
     end
 end
 
@@ -245,7 +245,7 @@ function demo_chebyshev_differentiation()
     
     # Create differentiation operator
     n = 16
-    domain = [0.0, 2π]
+    domain = [0.0, 2*pi]
     cd = ChebyshevDiffn(n, domain, 2)
     
     println("\n", cd)
@@ -255,10 +255,10 @@ function demo_chebyshev_differentiation()
     
     # Compute derivatives
     df_exact = cos.(cd.x)           # exact first derivative
-    df_numerical = cd.D₁ * f        # numerical first derivative
-    
-    d2f_exact = -sin.(cd.x)         # exact second derivative  
-    d2f_numerical = cd.D₂ * f       # numerical second derivative
+    df_numerical = cd.D1 * f        # numerical first derivative
+
+    d2f_exact = -sin.(cd.x)         # exact second derivative
+    d2f_numerical = cd.D2 * f       # numerical second derivative
     
     # Show errors
     error_1st = maximum(abs.(df_numerical - df_exact))
@@ -267,5 +267,5 @@ function demo_chebyshev_differentiation()
     println("\nAccuracy test with f(x) = sin(x):")
     println("  • 1st derivative max error: $(error_1st)")
     println("  • 2nd derivative max error: $(error_2nd)")
-    println("\nSpectral accuracy achieved! ✨")
+    println("\nSpectral accuracy achieved!")
 end

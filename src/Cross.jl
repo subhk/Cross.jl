@@ -4,18 +4,15 @@ module Cross
     using SparseArrays
     using FFTW
     using JLD2
-    
+
     using Parameters
     using BenchmarkTools
 
     using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
 
     using Arpack
-    using LinearMaps
-
     using KrylovKit
 
-    using LinearAlgebra
     using Statistics
 
     export

@@ -25,10 +25,7 @@ jobs:
         run: |
           julia --color=yes -e '
             using Pkg;
-            Pkg.activate();
-            Pkg.add("SHTnsKit");
-            Pkg.add("KrylovKit");
-            Pkg.develop(; path=pwd());
+            Pkg.activate(pwd());
             Pkg.instantiate();
             using Cross;
             params = ShellParams(m=3, E=1e-4, Pr=1.0, Ra=1e6, ri=0.35, ro=1.0, lmax=16, Nr=16);

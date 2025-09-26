@@ -2,7 +2,8 @@ module LinearStability
 
 using LinearAlgebra
 using SHTnsKit
-using ArnoldiMethod
+using LinearMaps
+using Arpack
 
 import ..Cross: ChebyshevDiffn
 
@@ -331,18 +332,17 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     op = setup_operator(params; nθ=nθ)
     Ndof = 5 * op.Nr * op.Nθ
 
-    actionA = x -> apply_operator(op, x)
-    actionB = x -> apply_mass(op, x)
+    # Create LinearMaps for the operators
+    A = LinearMap(x -> apply_operator(op, x), Ndof, Ndof;
+                  issymmetric=false, ishermitian=false, isposdef=false)
+    B = LinearMap(x -> apply_mass(op, x), Ndof, Ndof;
+                  issymmetric=true, ishermitian=true, isposdef=true)
 
-    v0 = randn(ComplexF64, Ndof)
+    # Use Arpack's eigs with LinearMaps for generalized eigenvalue problem
+    vals, vecs, nconv, niter, nmult, resid = eigs(A, B; nev=nev, which=which, kwargs...)
 
-    # Use ArnoldiMethod for generalized eigenvalue problem Ax = λBx
-    decomp, history = partialschur(actionA, actionB, nev=nev, which=which,
-                                   v0=v0, kwargs...)
-
-    vals, vecs = partialeigen(decomp)
-    info = (converged=length(vals), numiter=history.niter,
-            numops=history.nmatops, residual=history.residuals)
+    # Create info structure
+    info = (converged=nconv, numiter=niter, numops=nmult, residual=resid)
     return vals, vecs, op, info
 end
 

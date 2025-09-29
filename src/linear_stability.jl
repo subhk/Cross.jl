@@ -350,7 +350,6 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
         kwargs_dict[key] = value
     end
     v0 = haskey(kwargs_dict, :v0) ? pop!(kwargs_dict, :v0) : nothing
-    kwargs_pass = (; kwargs_dict...)
 
     if v0 === nothing
         v0_vec = randn(ComplexF64, Ndof)
@@ -367,7 +366,7 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     other_kwargs = Dict{Symbol, Any}()
 
     alg_params = [:maxiter, :tol, :krylovdim, :verbosity, :orth, :eager]
-    for (key, value) in kwargs_pass
+    for (key, value) in kwargs_dict
         if key in alg_params
             alg_kwargs[key] = value
         else
@@ -378,9 +377,17 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     # Solve with explicit algorithm if algorithm parameters are provided
     if !isempty(alg_kwargs)
         alg = Arnoldi(; alg_kwargs...)
-        vals, vecs_list, history = eigsolve(A, v0_vec, nev, which, alg; other_kwargs...)
+        if !isempty(other_kwargs)
+            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which, alg; other_kwargs...)
+        else
+            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which, alg)
+        end
     else
-        vals, vecs_list, history = eigsolve(A, v0_vec, nev, which; other_kwargs...)
+        if !isempty(other_kwargs)
+            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which; other_kwargs...)
+        else
+            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which)
+        end
     end
 
     vecs = isempty(vecs_list) ? Matrix{ComplexF64}(undef, Ndof, 0) : hcat(vecs_list...)

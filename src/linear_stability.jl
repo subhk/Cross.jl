@@ -4,6 +4,7 @@ using LinearAlgebra
 using SHTnsKit
 using LinearMaps
 using KrylovKit
+using KrylovKit: geneigsolve
 using Random
 
 import ..Cross: ChebyshevDiffn
@@ -358,8 +359,8 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
         length(v0_vec) == Ndof || throw(DimensionMismatch("length(v0) = $(length(v0_vec)) does not match Ndof = $Ndof"))
     end
 
-    # Solve generalized eigenvalue problem with KrylovKit
-    vals, vecs_list, history = eigsolve(A, B, v0_vec, nev, which; kwargs_pass...)
+    # Solve generalized eigenvalue problem A*v = λ*B*v using geneigsolve
+    vals, vecs_list, history = geneigsolve(A, B, v0_vec, nev, which; kwargs_pass...)
 
     vecs = isempty(vecs_list) ? Matrix{ComplexF64}(undef, Ndof, 0) : hcat(vecs_list...)
 

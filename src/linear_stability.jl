@@ -3,7 +3,8 @@ module LinearStability
 using LinearAlgebra
 using SHTnsKit
 using LinearMaps
-using Arpack
+using KrylovKit
+using Random
 
 import ..Cross: ChebyshevDiffn
 
@@ -325,6 +326,10 @@ end
 #  Eigenvalue interface (KrylovKit)
 # -----------------------------------------------------------------------------
 
+@inline function getfield_or(obj, name::Symbol, default)
+    hasfield(typeof(obj), name) ? getfield(obj, name) : default
+end
+
 function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
                                            nev::Int=6,
                                            which::Symbol=:LR,
@@ -336,13 +341,33 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     A = LinearMap(x -> apply_operator(op, x), Ndof, Ndof;
                   issymmetric=false, ishermitian=false, isposdef=false)
     B = LinearMap(x -> apply_mass(op, x), Ndof, Ndof;
-                  issymmetric=true, ishermitian=true, isposdef=true)
+                  issymmetric=true,  ishermitian=true,  isposdef=false)
 
-    # Use Arpack's eigs with LinearMaps for generalized eigenvalue problem
-    vals, vecs, nconv, niter, nmult, resid = eigs(A, B; nev=nev, which=which, kwargs...)
+    # Handle optional starting vector from kwargs
+    kwargs_dict = Dict{Symbol, Any}()
+    for (key, value) in kwargs
+        kwargs_dict[key] = value
+    end
+    v0 = haskey(kwargs_dict, :v0) ? pop!(kwargs_dict, :v0) : nothing
+    kwargs_pass = (; kwargs_dict...)
 
-    # Create info structure
-    info = (converged=nconv, numiter=niter, numops=nmult, residual=resid)
+    if v0 === nothing
+        v0_vec = randn(ComplexF64, Ndof)
+    else
+        v0_vec = ComplexF64.(v0)
+        length(v0_vec) == Ndof || throw(DimensionMismatch("length(v0) = $(length(v0_vec)) does not match Ndof = $Ndof"))
+    end
+
+    # Solve generalized eigenvalue problem with KrylovKit
+    vals, vecs_list, history = eigsolve(A, B, v0_vec, nev, which; kwargs_pass...)
+
+    vecs = isempty(vecs_list) ? Matrix{ComplexF64}(undef, Ndof, 0) : hcat(vecs_list...)
+
+    converged = getfield_or(history, :converged, length(vals))
+    iterations = getfield_or(history, :iterations, getfield_or(history, :numiter, 0))
+    numops = getfield_or(history, :numops, getfield_or(history, :numactions, 0))
+    residuals = getfield_or(history, :residual_norms, getfield_or(history, :residual, nothing))
+    info = (converged=converged, iterations=iterations, numops=numops, residual=residuals)
     return vals, vecs, op, info
 end
 

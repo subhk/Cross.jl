@@ -4,7 +4,7 @@ using LinearAlgebra
 using SHTnsKit
 using LinearMaps
 using KrylovKit
-using KrylovKit: geneigsolve
+using KrylovKit: Arnoldi
 using Random
 
 import ..Cross: ChebyshevDiffn
@@ -359,8 +359,29 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
         length(v0_vec) == Ndof || throw(DimensionMismatch("length(v0) = $(length(v0_vec)) does not match Ndof = $Ndof"))
     end
 
-    # Solve generalized eigenvalue problem A*v = λ*B*v using geneigsolve
-    vals, vecs_list, history = geneigsolve(A, B, v0_vec, nev, which; kwargs_pass...)
+    # Solve generalized eigenvalue problem A*v = λ*B*v with eigsolve
+    # Use standard eigenvalue approach with proper parameter handling
+
+    # Extract algorithm-specific parameters to pass to Arnoldi constructor
+    alg_kwargs = Dict{Symbol, Any}()
+    other_kwargs = Dict{Symbol, Any}()
+
+    alg_params = [:maxiter, :tol, :krylovdim, :verbosity, :orth, :eager]
+    for (key, value) in kwargs_pass
+        if key in alg_params
+            alg_kwargs[key] = value
+        else
+            other_kwargs[key] = value
+        end
+    end
+
+    # Solve with explicit algorithm if algorithm parameters are provided
+    if !isempty(alg_kwargs)
+        alg = Arnoldi(; alg_kwargs...)
+        vals, vecs_list, history = eigsolve(A, v0_vec, nev, which, alg; other_kwargs...)
+    else
+        vals, vecs_list, history = eigsolve(A, v0_vec, nev, which; other_kwargs...)
+    end
 
     vecs = isempty(vecs_list) ? Matrix{ComplexF64}(undef, Ndof, 0) : hcat(vecs_list...)
 

@@ -4,8 +4,9 @@ using LinearAlgebra
 using SHTnsKit
 using LinearMaps
 using KrylovKit
-using KrylovKit: Arnoldi
 using Random
+
+include("boundary_conditions.jl")
 
 import ..Cross: ChebyshevDiffn
 
@@ -14,7 +15,10 @@ export ShellParams,
        setup_operator,
        leading_modes,
        apply_operator,
-       apply_mass
+       apply_mass,
+       velocity_from_potentials,
+       apply_mechanical_bc_from_potentials!,
+       apply_thermal_bc_from_potentials!
 
 """
     ShellParams(; m, E, Pr, Ra, ri, ro, lmax, Nr)
@@ -358,37 +362,9 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
         length(v0_vec) == Ndof || throw(DimensionMismatch("length(v0) = $(length(v0_vec)) does not match Ndof = $Ndof"))
     end
 
-    # Solve generalized eigenvalue problem A*v = λ*B*v with eigsolve
-    # Use standard eigenvalue approach with proper parameter handling
+    kwargs_pass = (; kwargs_dict...)
 
-    # Extract algorithm-specific parameters to pass to Arnoldi constructor
-    alg_kwargs = Dict{Symbol, Any}()
-    other_kwargs = Dict{Symbol, Any}()
-
-    alg_params = [:maxiter, :tol, :krylovdim, :verbosity, :orth, :eager]
-    for (key, value) in kwargs_dict
-        if key in alg_params
-            alg_kwargs[key] = value
-        else
-            other_kwargs[key] = value
-        end
-    end
-
-    # Solve with explicit algorithm if algorithm parameters are provided
-    if !isempty(alg_kwargs)
-        alg = Arnoldi(; alg_kwargs...)
-        if !isempty(other_kwargs)
-            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which, alg; other_kwargs...)
-        else
-            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which, alg)
-        end
-    else
-        if !isempty(other_kwargs)
-            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which; other_kwargs...)
-        else
-            vals, vecs_list, history = eigsolve(A, v0_vec, nev, which)
-        end
-    end
+    vals, vecs_list, history = eigsolve(A, B, v0_vec, nev, which; kwargs_pass...)
 
     vecs = isempty(vecs_list) ? Matrix{ComplexF64}(undef, Ndof, 0) : hcat(vecs_list...)
 

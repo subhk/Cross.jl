@@ -247,49 +247,6 @@ Finally, applying the Chebyshev expansion \eqref{eq:theta_repeat} and evaluating
 \end{equation}
 where $\bm{S}_\ell$ represents $\mathcal{S}_\ell$ in the Chebyshev basis, $\bm{G}$ is the diagonal matrix containing the conduction gradient $d\bar{\theta}/dr$ at each collocation point, and $\bm{Q}_\ell$ multiplies by $\ell(\ell+1)/r^2$. These matrices already appear in the numerical implementation of \textsc{Cross.jl}, aligning the temperature subsystem with the toroidal--poloidal formulation derived above.
 
-\section{Generalised eigenvalue problem for the Rayleigh number}
-At the onset of convection the growth rate vanishes, so the exponential ansatz of Equation (12) gives $\partial/\partial t \to 0$ in the discrete system. Combining \eqref{eq:poloidal_equation}--\eqref{eq:temperature_discrete} with this marginal-stability condition produces
-\begin{align}
-  -E \bm{L}_\ell^2 \bm{P}_{\ell m} - 2 \bm{C}_{\ell m} \bm{T}_{\ell m}
-    &= \frac{\mathrm{Ra}}{\mathrm{Pr}} \bm{B}_\ell \bm{\Theta}_{\ell m}, \label{eq:p_marginal} \\
-  -E \bm{L}_\ell \bm{T}_{\ell m} + 2 \bm{D}_{\ell m} \bm{P}_{\ell m}
-    &= \bm{0}, \label{eq:t_marginal} \\
-  -\frac{E}{\mathrm{Pr}} \bm{S}_\ell \bm{\Theta}_{\ell m} + \bm{G} \bm{Q}_\ell \bm{P}_{\ell m}
-    &= \bm{0}. \label{eq:theta_marginal}
-\end{align}
-Introducing the block state vector
-\begin{equation}
-  \bm{x}_{\ell m} =
-  \begin{bmatrix}
-    \bm{P}_{\ell m} \\
-    \bm{T}_{\ell m} \\
-    \bm{\Theta}_{\ell m}
-  \end{bmatrix},
-\end{equation}
-Equations \eqref{eq:p_marginal}--\eqref{eq:theta_marginal} can be written compactly as the Rayleigh-number eigenproblem
-\begin{equation}
-  \bm{A}_{\ell m} \, \bm{x}_{\ell m} = \mathrm{Ra} \, \bm{B}_{\ell} \, \bm{x}_{\ell m},
-  \label{eq:gen_eig}
-\end{equation}
-with
-\begin{equation}
-  \bm{A}_{\ell m} =
-  \begin{bmatrix}
-    -E \bm{L}_\ell^2 & -2 \bm{C}_{\ell m} & 0 \\
-    2 \bm{D}_{\ell m} & -E \bm{L}_\ell    & 0 \\
-    \bm{G} \bm{Q}_\ell & 0 & -\frac{E}{\mathrm{Pr}} \bm{S}_\ell
-  \end{bmatrix},
-  \qquad
-  \bm{B}_{\ell} =
-  \begin{bmatrix}
-    \frac{1}{\mathrm{Pr}} \bm{B}_\ell & 0 & 0 \\
-    0 & 0 & 0 \\
-    0 & 0 & 0
-  \end{bmatrix}.
-  \label{eq:A_B_blocks}
-\end{equation}
-The matrix $\bm{B}_\ell$ is singular because the Rayleigh number enters only through the buoyancy forcing; this structure matches the generalised eigenvalue problems solved numerically in \textsc{Cross.jl}. One may optionally eliminate $\bm{\Theta}_{\ell m}$ using \eqref{eq:theta_marginal} to reduce \eqref{eq:gen_eig} to a smaller system involving only the poloidal and toroidal coefficients, but the block form \eqref{eq:A_B_blocks} makes the dependence on $\mathrm{Ra}$ explicit.
-
 \section{Boundary conditions}
 Boundary conditions appear as algebraic constraints on the Chebyshev coefficients at the inner ($r=r_i$) and outer ($r=r_o$) radii. They are imposed by replacing rows of the discrete operators with the appropriate evaluation or derivative stencils. The manuscript lists the no-slip, fixed-temperature conditions in Equations (16)--(18); here we summarise those and add their stress-free and fixed-flux counterparts.
 

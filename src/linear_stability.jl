@@ -21,16 +21,15 @@ export ShellParams,
        apply_thermal_bc_from_potentials!
 
 """
-    ShellParams(; m, E, Pr, Ra, ri, ro, lmax, Nr)
+    ShellParams(; m, E, Pr, ri, ro, lmax, Nr)
 
 Container for the dimensionless control parameters entering the linear
-stability problem described by Equations (10)–(19) of
+stability problem described by Equations (10)–(18) of
 `docs/Onset_convection.pdf`. The fields correspond to:
 
   • `m`   – fixed azimuthal wavenumber of the perturbation (Equation 12)
   • `E`   – Ekman number multiplying viscous terms in Equation (10)
   • `Pr`  – Prandtl number coupling momentum and heat Equations (10)–(11)
-  • `Ra`  – Rayleigh number prefactor of the buoyancy term in Equation (10)
   • `ri`, `ro` – nondimensional radii of the spherical shell boundaries
   • `lmax` – spherical harmonic truncation in latitude
   • `Nr`  – number of Chebyshev collocation points across the shell
@@ -42,7 +41,6 @@ struct ShellParams{T<:Real}
     m::Int
     E::T
     Pr::T
-    Ra::T
     ri::T
     ro::T
     lmax::Int
@@ -52,12 +50,11 @@ end
 function ShellParams(; m::Int,
                         E::Real,
                         Pr::Real,
-                        Ra::Real,
                         ri::Real,
                         ro::Real,
                         lmax::Int,
                         Nr::Int)
-    return ShellParams{Float64}(m, float(E), float(Pr), float(Ra), float(ri), float(ro), lmax, Nr)
+    return ShellParams{Float64}(m, float(E), float(Pr), float(ri), float(ro), lmax, Nr)
 end
 
 # -----------------------------------------------------------------------------
@@ -125,9 +122,25 @@ struct MeridionalOperator
     Lθ          :: Matrix{Float64}
     gauge_r     :: Int
     gauge_θ     :: Int
+    mech_inner  :: Symbol
+    mech_outer  :: Symbol
+    thermal_inner :: Symbol
+    thermal_outer :: Symbol
+    thermal_value_inner :: Float64
+    thermal_value_outer :: Float64
+    thermal_flux_inner :: Float64
+    thermal_flux_outer :: Float64
 end
 
-function setup_operator(params::ShellParams; nθ::Int = params.lmax + 1)
+function setup_operator(params::ShellParams; nθ::Int = params.lmax + 1,
+                                          mechanical_inner::Symbol = :no_slip,
+                                          mechanical_outer::Symbol = :no_slip,
+                                          thermal_inner::Symbol = :fixed_temperature,
+                                          thermal_outer::Symbol = :fixed_temperature,
+                                          thermal_value_inner::Real = 0.0,
+                                          thermal_value_outer::Real = 0.0,
+                                          thermal_flux_inner::Real = 0.0,
+                                          thermal_flux_outer::Real = 0.0)
     cd = ChebyshevDiffn(params.Nr, [params.ri, params.ro], 2)
     r = cd.x
     Dr = cd.D1
@@ -188,7 +201,15 @@ function setup_operator(params::ShellParams; nθ::Int = params.lmax + 1)
                               Dθ,
                               Lθ,
                               gauge_r,
-                              gauge_θ)
+                              gauge_θ,
+                              mechanical_inner,
+                              mechanical_outer,
+                              thermal_inner,
+                              thermal_outer,
+                              float(thermal_value_inner),
+                              float(thermal_value_outer),
+                              float(thermal_flux_inner),
+                              float(thermal_flux_outer))
 end
 
 # -----------------------------------------------------------------------------
@@ -267,8 +288,6 @@ function apply_operator(op::MeridionalOperator, x::AbstractVector{ComplexF64})
     zcross_φ =  op.cosθ_row .* uθ .+ op.sinθ_row .* ur
 
     # Buoyancy contribution
-    buoy_r = (op.params.Ra / op.params.Pr) .* op.r_over_ro .* Θ
-
     # Scalar Laplacian acting on Θ
     dΘ_dr  = op.Dr * Θ
     d2Θ_dr2 = op.D2 * Θ
@@ -278,9 +297,9 @@ function apply_operator(op::MeridionalOperator, x::AbstractVector{ComplexF64})
     lap_Θ = d2Θ_dr2 .+ 2 .* op.inv_r .* dΘ_dr .+ lat_term .+ phi_term
 
     # Momentum residuals (no-slip rows overwritten below)
-    res_r = -grad_p_r .- 2 .* zcross_r .+ buoy_r .+ op.params.E .* lap_u_r
-    res_θ = -grad_p_θ .- 2 .* zcross_θ .+ op.params.E .* lap_u_θ
-    res_φ = -grad_p_φ .- 2 .* zcross_φ .+ op.params.E .* lap_u_φ
+    res_r = grad_p_r .+ 2 .* zcross_r .- op.params.E .* lap_u_r
+    res_θ = grad_p_θ .+ 2 .* zcross_θ .- op.params.E .* lap_u_θ
+    res_φ = grad_p_φ .+ 2 .* zcross_φ .- op.params.E .* lap_u_φ
 
     # Temperature equation
     res_T = -(op.dT_dr .* ur) .+ (op.params.E / op.params.Pr) .* lap_Θ
@@ -292,15 +311,24 @@ function apply_operator(op::MeridionalOperator, x::AbstractVector{ComplexF64})
     res_div = term_r .+ term_θ .+ term_φ
     res_div[op.gauge_r, op.gauge_θ] = p[op.gauge_r, op.gauge_θ]
 
-    # Boundary conditions: no-slip and fixed temperature
-    res_r[1, :] .= ur[1, :]
-    res_r[end, :] .= ur[end, :]
-    res_θ[1, :] .= uθ[1, :]
-    res_θ[end, :] .= uθ[end, :]
-    res_φ[1, :] .= uφ[1, :]
-    res_φ[end, :] .= uφ[end, :]
-    res_T[1, :] .= Θ[1, :]
-    res_T[end, :] .= Θ[end, :]
+    enforce_mechanical_boundary!(res_r, res_θ, res_φ,
+                                 ur, uθ, uφ,
+                                 ∂r_uθ, ∂r_uφ,
+                                 op, 1, op.mech_inner)
+    enforce_mechanical_boundary!(res_r, res_θ, res_φ,
+                                 ur, uθ, uφ,
+                                 ∂r_uθ, ∂r_uφ,
+                                 op, op.Nr, op.mech_outer)
+
+    apply_thermal_boundary!(res_T, Θ, dΘ_dr,
+                            op, 1, op.thermal_inner,
+                            op.thermal_value_inner,
+                            op.thermal_flux_inner)
+    apply_thermal_boundary!(res_T, Θ, dΘ_dr,
+                            op, op.Nr, op.thermal_outer,
+                            op.thermal_value_outer,
+                            op.thermal_flux_outer)
+
     res_div[1, :] .= 0
     res_div[end, :] .= 0
 
@@ -309,22 +337,50 @@ end
 
 function apply_mass(op::MeridionalOperator, x::AbstractVector{ComplexF64})
     ur, uθ, uφ, Θ, _ = split_fields(op, x)
-    mass_r = copy(ur)
-    mass_θ = copy(uθ)
-    mass_φ = copy(uφ)
-    mass_T = copy(Θ)
+    mass_r = (op.r_over_ro .^ 2 ./ op.params.Pr) .* Θ
+    mass_θ = zeros(ComplexF64, op.Nr, op.Nθ)
+    mass_φ = zeros(ComplexF64, op.Nr, op.Nθ)
+    mass_T = zeros(ComplexF64, op.Nr, op.Nθ)
     mass_div = zeros(ComplexF64, op.Nr, op.Nθ)
 
     mass_r[1, :] .= 0
     mass_r[end, :] .= 0
-    mass_θ[1, :] .= 0
-    mass_θ[end, :] .= 0
-    mass_φ[1, :] .= 0
-    mass_φ[end, :] .= 0
-    mass_T[1, :] .= 0
-    mass_T[end, :] .= 0
 
     return pack_fields(mass_r, mass_θ, mass_φ, mass_T, mass_div)
+end
+
+function enforce_mechanical_boundary!(res_r, res_θ, res_φ,
+                                      ur, uθ, uφ,
+                                      ∂r_uθ, ∂r_uφ,
+                                      op::MeridionalOperator,
+                                      idx::Int,
+                                      bc::Symbol)
+    if bc === :no_slip
+        res_r[idx, :] .= ur[idx, :]
+        res_θ[idx, :] .= uθ[idx, :]
+        res_φ[idx, :] .= uφ[idx, :]
+    elseif bc === :stress_free
+        res_r[idx, :] .= ur[idx, :]
+        res_θ[idx, :] .= ∂r_uθ[idx, :] .- uθ[idx, :] .* op.inv_r[idx, :]
+        res_φ[idx, :] .= ∂r_uφ[idx, :] .- uφ[idx, :] .* op.inv_r[idx, :]
+    else
+        throw(ArgumentError("Unsupported mechanical boundary condition: $(bc)"))
+    end
+end
+
+function apply_thermal_boundary!(res_T, Θ, dΘ_dr,
+                                 op::MeridionalOperator,
+                                 idx::Int,
+                                 bc::Symbol,
+                                 value::Float64,
+                                 flux::Float64)
+    if bc === :fixed_temperature
+        res_T[idx, :] .= Θ[idx, :] .- value
+    elseif bc === :fixed_flux
+        res_T[idx, :] .= dΘ_dr[idx, :] .- flux
+    else
+        throw(ArgumentError("Unsupported thermal boundary condition: $(bc)"))
+    end
 end
 
 # -----------------------------------------------------------------------------
@@ -337,7 +393,7 @@ end
 
 function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
                                            nev::Int=6,
-                                           which::Symbol=:LR,
+                                           which::Symbol=:SR,
                                            kwargs...)
     op = setup_operator(params; nθ=nθ)
     Ndof = 5 * op.Nr * op.Nθ

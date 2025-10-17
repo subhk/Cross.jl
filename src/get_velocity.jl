@@ -120,12 +120,9 @@ function velocity_fields_from_poloidal_toroidal(cfg::SHTConfig,
     uθ = zeros(out_type, nr, nlat, nlon)
     uφ = zeros(out_type, nr, nlat, nlon)
 
-    tmp_phase = Vector{ComplexF64}(undef, nlon)  # reused buffer
-    tmp_vals  = Vector{ComplexF64}(undef, nlat)
     Sl = Vector{ComplexF64}(undef, cfg.lmax + 1)
     Tl = similar(Sl)
     Ql = similar(Sl)
-    buffer = Vector{ComplexF64}(undef, nlat)
 
     for m in 0:cfg.mmax
         phase = _phi_phases(cfg, m)
@@ -133,8 +130,6 @@ function velocity_fields_from_poloidal_toroidal(cfg::SHTConfig,
         resize!(Sl, len_mode)
         resize!(Tl, len_mode)
         resize!(Ql, len_mode)
-        resize!(tmp_vals, nlat)
-        resize!(buffer, nlat)
 
         for ir in 1:nr
             r_i = r[ir]
@@ -216,12 +211,9 @@ function temperature_field_from_coefficients(cfg::SHTConfig,
     nlat, nlon = cfg.nlat, cfg.nlon
     out = zeros(real_output ? Float64 : ComplexF64, nr, nlat, nlon)
 
-    buffer = Vector{ComplexF64}(undef, nlat)
-
     for m in 0:cfg.mmax
         phase = _phi_phases(cfg, m)
         len_mode = _mode_length(cfg.lmax, m)
-        resize!(buffer, nlat)
         coeff_mode = Vector{ComplexF64}(undef, len_mode)
 
         for ir in 1:nr

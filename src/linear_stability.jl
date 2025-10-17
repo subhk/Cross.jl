@@ -14,6 +14,7 @@ export ShellParams,
        MeridionalOperator,
        setup_operator,
        leading_modes,
+       critical_rayleigh,
        apply_operator,
        apply_mass,
        velocity_from_potentials,
@@ -21,7 +22,7 @@ export ShellParams,
        apply_thermal_bc_from_potentials!
 
 """
-    ShellParams(; m, E, Pr, ri, ro, lmax, Nr)
+    ShellParams(; m, E, Pr, Ra, ri, ro, lmax, Nr)
 
 Container for the dimensionless control parameters entering the linear
 stability problem described by Equations (10)–(18) of
@@ -30,6 +31,7 @@ stability problem described by Equations (10)–(18) of
   • `m`   – fixed azimuthal wavenumber of the perturbation (Equation 12)
   • `E`   – Ekman number multiplying viscous terms in Equation (10)
   • `Pr`  – Prandtl number coupling momentum and heat Equations (10)–(11)
+  • `Ra`  – Rayleigh number prefactor of the buoyancy term in Equation (10)
   • `ri`, `ro` – nondimensional radii of the spherical shell boundaries
   • `lmax` – spherical harmonic truncation in latitude
   • `Nr`  – number of Chebyshev collocation points across the shell
@@ -41,6 +43,7 @@ struct ShellParams{T<:Real}
     m::Int
     E::T
     Pr::T
+    Ra::T
     ri::T
     ro::T
     lmax::Int
@@ -50,11 +53,12 @@ end
 function ShellParams(; m::Int,
                         E::Real,
                         Pr::Real,
+                        Ra::Real,
                         ri::Real,
                         ro::Real,
                         lmax::Int,
                         Nr::Int)
-    return ShellParams{Float64}(m, float(E), float(Pr), float(ri), float(ro), lmax, Nr)
+    return ShellParams{Float64}(m, float(E), float(Pr), float(Ra), float(ri), float(ro), lmax, Nr)
 end
 
 # -----------------------------------------------------------------------------
@@ -296,10 +300,12 @@ function apply_operator(op::MeridionalOperator, x::AbstractVector{ComplexF64})
     phi_term = -op.m2 .* Θ .* op.inv_r2 .* op.inv_sinθ2_row
     lap_Θ = d2Θ_dr2 .+ 2 .* op.inv_r .* dΘ_dr .+ lat_term .+ phi_term
 
+    buoy_r = (op.params.Ra / op.params.Pr) .* op.r_over_ro .* Θ
+
     # Momentum residuals (no-slip rows overwritten below)
-    res_r = grad_p_r .+ 2 .* zcross_r .- op.params.E .* lap_u_r
-    res_θ = grad_p_θ .+ 2 .* zcross_θ .- op.params.E .* lap_u_θ
-    res_φ = grad_p_φ .+ 2 .* zcross_φ .- op.params.E .* lap_u_φ
+    res_r = -grad_p_r .- 2 .* zcross_r .+ buoy_r .+ op.params.E .* lap_u_r
+    res_θ = -grad_p_θ .- 2 .* zcross_θ .+ op.params.E .* lap_u_θ
+    res_φ = -grad_p_φ .- 2 .* zcross_φ .+ op.params.E .* lap_u_φ
 
     # Temperature equation
     res_T = -(op.dT_dr .* ur) .+ (op.params.E / op.params.Pr) .* lap_Θ
@@ -337,14 +343,20 @@ end
 
 function apply_mass(op::MeridionalOperator, x::AbstractVector{ComplexF64})
     ur, uθ, uφ, Θ, _ = split_fields(op, x)
-    mass_r = (op.r_over_ro .^ 2 ./ op.params.Pr) .* Θ
-    mass_θ = zeros(ComplexF64, op.Nr, op.Nθ)
-    mass_φ = zeros(ComplexF64, op.Nr, op.Nθ)
-    mass_T = zeros(ComplexF64, op.Nr, op.Nθ)
+    mass_r = copy(ur)
+    mass_θ = copy(uθ)
+    mass_φ = copy(uφ)
+    mass_T = copy(Θ)
     mass_div = zeros(ComplexF64, op.Nr, op.Nθ)
 
     mass_r[1, :] .= 0
     mass_r[end, :] .= 0
+    mass_θ[1, :] .= 0
+    mass_θ[end, :] .= 0
+    mass_φ[1, :] .= 0
+    mass_φ[end, :] .= 0
+    mass_T[1, :] .= 0
+    mass_T[end, :] .= 0
 
     return pack_fields(mass_r, mass_θ, mass_φ, mass_T, mass_div)
 end
@@ -430,6 +442,31 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     residuals = getfield_or(history, :residual_norms, getfield_or(history, :residual, nothing))
     info = (converged=converged, iterations=iterations, numops=numops, residual=residuals)
     return vals, vecs, op, info
+end
+
+"""
+    critical_rayleigh(params; nθ=params.lmax+1, nev=4, which=:SR, kwargs...)
+
+Convenience wrapper returning the smallest Rayleigh-number eigenvalue for a
+given azimuthal wavenumber `m`.  Internally calls [`leading_modes`](@ref) and
+selects the eigenvalue with minimum real part, returning a named tuple
+
+```
+(Ra = real(λmin), λ = λmin, vector = vmin, operator = op, info = history)
+```
+
+If no eigenvalues are returned the function throws an error.
+"""
+function critical_rayleigh(params::ShellParams; nθ::Int=params.lmax + 1,
+                                                     nev::Int=4,
+                                                     which::Symbol=:SR,
+                                                     kwargs...)
+    vals, vecs, op, info = leading_modes(params; nθ=nθ, nev=nev, which=which, kwargs...)
+    length(vals) == 0 && error("No eigenvalues returned by `leading_modes`.")
+
+    idx = argmin(real.(vals))
+    Ra = real(vals[idx])
+    return (Ra=Ra, λ=vals[idx], vector=vecs[:, idx], operator=op, info=info)
 end
 
 end

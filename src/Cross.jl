@@ -16,11 +16,15 @@ module Cross
         ChebyshevDiffn,
 
         potentials_to_velocity,
+        velocity_fields_from_poloidal_toroidal,
+        temperature_field_from_coefficients,
+        fields_from_coefficients,
 
         ShellParams,
         MeridionalOperator,
         setup_operator,
         leading_modes,
+        critical_rayleigh,
         apply_operator,
         apply_mass
 

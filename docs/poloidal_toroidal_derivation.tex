@@ -290,6 +290,44 @@ with
 \end{equation}
 The matrix $\bm{B}_\ell$ is singular because the Rayleigh number enters only through the buoyancy forcing; this structure matches the generalised eigenvalue problems solved numerically in \textsc{Cross.jl}. One may optionally eliminate $\bm{\Theta}_{\ell m}$ using \eqref{eq:theta_marginal} to reduce \eqref{eq:gen_eig} to a smaller system involving only the poloidal and toroidal coefficients, but the block form \eqref{eq:A_B_blocks} makes the dependence on $\mathrm{Ra}$ explicit.
 
+\section{Boundary conditions}
+Boundary conditions appear as algebraic constraints on the Chebyshev coefficients at the inner ($r=r_i$) and outer ($r=r_o$) radii. They are imposed by replacing rows of the discrete operators with the appropriate evaluation or derivative stencils. The manuscript lists the no-slip, fixed-temperature conditions in Equations (16)--(18); here we summarise those and add their stress-free and fixed-flux counterparts.
+
+\subsection{Velocity boundary conditions}
+Regardless of the mechanical condition, impermeability requires $u_r'=0$ at both boundaries, so from \eqref{eq:ur_repeat}
+\begin{equation}
+  P_{\ell m}(r_b, t) = 0, \qquad r_b \in \{r_i, r_o\}.
+  \label{eq:impermeable}
+\end{equation}
+\paragraph{No-slip.} Vanishing tangential velocities enforce
+\begin{equation}
+  \pdv{P_{\ell m}}{r}(r_b, t) = 0, \qquad T_{\ell m}(r_b, t) = 0,
+  \label{eq:noslip_bc}
+\end{equation}
+for every degree $\ell \ge m$. In the Chebyshev discretisation these are simply point evaluations of $\bm{P}_{\ell m}$, $\bm{D}_1 \bm{P}_{\ell m}$, and $\bm{T}_{\ell m}$ at $r=r_i,r_o$, reproducing Equations (16)--(17) of the paper.
+
+\paragraph{Stress-free.} Free-slip boundaries require the tangential shear stresses to vanish. Using the component forms \eqref{eq:poloidal_components}--\eqref{eq:toroidal_components}, the conditions $\partial_r(u_\theta/r)=\partial_r(u_\phi/r)=0$ translate into
+\begin{align}
+  r_b \pdv[2]{P_{\ell m}}{r}(r_b, t) - 2 \pdv{P_{\ell m}}{r}(r_b, t) &= 0,
+  \label{eq:stressfree_p} \\
+  r_b \pdv{T_{\ell m}}{r}(r_b, t) - 2 T_{\ell m}(r_b, t) &= 0.
+  \label{eq:stressfree_t}
+\end{align}
+Equations~\eqref{eq:impermeable}, \eqref{eq:stressfree_p}, and \eqref{eq:stressfree_t} therefore provide the two independent constraints per potential required for stress-free boundaries.
+
+\subsection{Thermal boundary conditions}
+Two standard thermal conditions are considered. For an isothermal boundary (fixed temperature) one imposes
+\begin{equation}
+  \theta_{\ell m}(r_b, t) = 0,
+  \label{eq:fixedT}
+\end{equation}
+as in Equation (18) of the paper. For a fixed heat flux boundary the radial gradient is specified, typically as zero for insulating walls:
+\begin{equation}
+  \pdv{\theta_{\ell m}}{r}(r_b, t) = 0.
+  \label{eq:fixedFlux}
+\end{equation}
+In the Chebyshev representation these reduce to evaluating $\bm{\Theta}_{\ell m}$ or $\bm{D}_1 \bm{\Theta}_{\ell m}$ at the boundary nodes. Mixed boundary conditions (e.g.\ fixed temperature at $r_i$ and fixed flux at $r_o$) are handled by applying \eqref{eq:fixedT} and \eqref{eq:fixedFlux} at the respective radii.
+
 \section{Summary}
 Starting from the non-dimensional momentum balance~\eqref{eq:momentum}, we introduced the toroidal and poloidal potentials of Equations (13)--(15), expanded them in spherical harmonics and radial Chebyshev polynomials, and projected each term onto the vector spherical harmonic basis. The resulting Equations~\eqref{eq:poloidal_equation} and~\eqref{eq:toroidal_equation} express the dynamics entirely in terms of the scalar potentials, providing the foundation of the matrix eigenvalue problem solved in the accompanying code base.
 

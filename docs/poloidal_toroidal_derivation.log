@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.31)  18 OCT 2025 00:33
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) (preloaded format=pdflatex 2023.12.31)  18 OCT 2025 00:40
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -224,18 +224,18 @@ r/bx/n/10.95 ^^B[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 t\OT1/cmr/m/n/10.95 )
  = [][]\OML/cmm/m/it/10.95 :
  []
 
-[3] [4]
-Overfull \hbox (0.9131pt too wide) in paragraph at lines 294--295
+[3] [4] [5]
+Overfull \hbox (0.9131pt too wide) in paragraph at lines 332--333
 \OT1/cmr/m/n/10.95 Starting from the non-dimensional mo-men-tum bal-ance [], we
  in-tro-duced the toroidal and poloidal
  []
 
-[5] (./poloidal_toroidal_derivation.aux) ) 
+[6] (./poloidal_toroidal_derivation.aux) ) 
 Here is how much of TeX's memory you used:
- 3121 strings out of 476025
- 44375 string characters out of 5790016
+ 3127 strings out of 476025
+ 44464 string characters out of 5790016
  1868388 words of memory out of 5000000
- 23570 multiletter control sequences out of 15000+600000
+ 23576 multiletter control sequences out of 15000+600000
  523721 words of font info for 73 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  72i,12n,77p,589b,270s stack positions out of 10000i,1000n,20000p,200000b,200000s
@@ -256,10 +256,10 @@ c/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public
 /amsfonts/cm/cmsy6.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/a
 msfonts/cm/cmsy8.pfb></usr/local/texlive/2023/texmf-dist/fonts/type1/public/ams
 fonts/cm/cmti10.pfb>
-Output written on poloidal_toroidal_derivation.pdf (5 pages, 195257 bytes).
+Output written on poloidal_toroidal_derivation.pdf (6 pages, 204834 bytes).
 PDF statistics:
- 100 PDF objects out of 1000 (max. 8388607)
- 60 compressed objects within 1 object stream
+ 103 PDF objects out of 1000 (max. 8388607)
+ 62 compressed objects within 1 object stream
  0 named destinations out of 1000 (max. 500000)
  1 words of extra memory for PDF output out of 10000 (max. 10000000)
 

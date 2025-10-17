@@ -328,24 +328,42 @@ as in Equation (18) of the paper. For a fixed heat flux boundary the radial grad
 \end{equation}
 In the Chebyshev representation these reduce to evaluating $\bm{\Theta}_{\ell m}$ or $\bm{D}_1 \bm{\Theta}_{\ell m}$ at the boundary nodes. Mixed boundary conditions (e.g.\ fixed temperature at $r_i$ and fixed flux at $r_o$) are handled by applying \eqref{eq:fixedT} and \eqref{eq:fixedFlux} at the respective radii.
 
+\section{Growth-rate eigenproblem}
+Substituting the normal-mode ansatz $e^{\lambda t}$ into Equations~\eqref{eq:poloidal_equation}--\eqref{eq:temperature_modal} yields a generalized eigenvalue problem for the complex growth rate $\lambda = \sigma + i \omega$:
+\begin{align}
+  \bigl(\lambda \mathcal{L}_\ell - E \mathcal{L}_\ell^2\bigr) P_{\ell m}
+    - 2\,\mathcal{C}_{\ell m}[T]
+    &= \frac{\mathrm{Ra}}{\mathrm{Pr}} \frac{\ell(\ell+1)}{r^2} \qty(\frac{r}{r_o})^2 \theta_{\ell m}, \label{eq:p_growth}\\
+  \bigl(\lambda - E \mathcal{L}_\ell\bigr) T_{\ell m}
+    + 2\,\mathcal{D}_{\ell m}[P]
+    &= 0, \label{eq:t_growth}\\
+  \bigl(\lambda - \tfrac{E}{\mathrm{Pr}}\mathcal{S}_\ell\bigr) \theta_{\ell m}
+    &= -\frac{\ell(\ell+1)}{r^2} \dv{\bar{\theta}}{r} P_{\ell m}. \label{eq:theta_growth}
+\end{align}
+After discretising in radius with the Chebyshev basis, these relations can be written compactly as
+\begin{equation}
+  \bm{A}_{\ell m} \bm{x}_{\ell m} = \lambda \bm{B} \bm{x}_{\ell m},
+\end{equation}
+where $\bm{x}_{\ell m} = (\bm{P}_{\ell m}, \bm{T}_{\ell m}, \bm{\Theta}_{\ell m})^\top$, the matrix $\bm{A}_{\ell m}$ contains diffusion, Coriolis, and buoyancy operators (with the prescribed Rayleigh number appearing explicitly in~\eqref{eq:p_growth}), and $\bm{B}$ is block-diagonal with identity submatrices on the velocity and temperature blocks and zeros elsewhere. Solving this eigenproblem at fixed $\mathrm{Ra}$ yields the growth rate $\sigma$ and drift frequency $\omega$ for each azimuthal order~$m$.
+
 \section{Implementation in \textsc{Cross.jl}}
-The Julia package \textsc{Cross.jl} evaluates the radial--meridional operator using SHTnsKit for the angular transforms together with Chebyshev collocation in radius. Equations~\eqref{eq:momentum}--\eqref{eq:temperature_discrete} are encoded in two linear maps:
+The Julia package \textsc{Cross.jl} evaluates the radial--meridional operator using SHTnsKit for the angular transforms together with Chebyshev collocation in radius. The normal-mode system~\eqref{eq:p_growth}--\eqref{eq:theta_growth} is encoded in two linear maps:
 \begin{itemize}
-  \item \texttt{apply\_operator} (file \texttt{src/linear\_stability.jl:244}) computes the left-hand side of the momentum and temperature balances after projecting onto the meridional grid. The buoyancy contribution is omitted here, so the routine returns
+  \item \texttt{apply\_operator} (file \texttt{src/linear\_stability.jl:244}) evaluates the right-hand sides of \eqref{eq:p_growth}--\eqref{eq:theta_growth}, including the buoyancy term proportional to the specified Rayleigh number:
   \[
-    \qty(\nabla p + 2 \hat{\bm{z}}\times \bm{u} - E \nabla^2 \bm{u},\;
+    \qty(-\nabla p - 2 \hat{\bm{z}}\times \bm{u} + \frac{\mathrm{Ra}}{\mathrm{Pr}}\qty(\frac{r}{r_o})^2 \theta \hat{\bm{r}} + E \nabla^2 \bm{u},\;
           -u_r \dv{\bar{\theta}}{r} + \frac{E}{\mathrm{Pr}} \nabla^2 \theta,\;
           \nabla \cdot \bm{u})
   \]
   with the requested mechanical and thermal boundary conditions enforced by \texttt{enforce\_mechanical\_boundary!} and \texttt{apply\_thermal\_boundary!}.
-  \item \texttt{apply\_mass} (file \texttt{src/linear\_stability.jl:321}) evaluates the right-hand side vector proportional to the Rayleigh number, i.e.\ $(\mathrm{Pr}^{-1}(r/r_o)^2 \theta\,\hat{\bm{r}},\,\bm{0})$.
+  \item \texttt{apply\_mass} (file \texttt{src/linear\_stability.jl:321}) forms the inertial block $\bm{B}\bm{x}$ by returning the velocity and temperature fields (with zeros in the constraint rows), so that the generalized eigenproblem solved by \texttt{eigsolve} yields the complex growth rate~$\lambda$ directly.
 \end{itemize}
-The generalized eigenproblem constructed from these maps therefore matches \eqref{eq:gen_eig}, recovering the Rayleigh number as the eigenvalue. Users can call \texttt{leading\_modes} to obtain the smallest Rayleigh numbers for a prescribed azimuthal wavenumber while choosing between no-slip or stress-free velocity boundaries and fixed-temperature or fixed-flux thermal boundaries via the keyword arguments of \texttt{setup\_operator}.
+The eigenproblem constructed from these maps therefore reproduces \eqref{eq:p_growth}--\eqref{eq:theta_growth}, delivering the growth rate $\lambda$ for the chosen Rayleigh number. Users can call \texttt{leading\_modes} to obtain the most unstable eigenvalues for a prescribed azimuthal wavenumber while choosing between no-slip or stress-free velocity boundaries and fixed-temperature or fixed-flux thermal boundaries via the keyword arguments of \texttt{setup\_operator}.
 
 \section{Summary}
 Starting from the non-dimensional momentum balance~\eqref{eq:momentum}, we introduced the toroidal and poloidal potentials of Equations (13)--(15), expanded them in spherical harmonics and radial Chebyshev polynomials, and projected each term onto the vector spherical harmonic basis. The resulting Equations~\eqref{eq:poloidal_equation} and~\eqref{eq:toroidal_equation} express the dynamics entirely in terms of the scalar potentials, providing the foundation of the matrix eigenvalue problem solved in the accompanying code base.
 
 \bigskip
-In parallel, Equation~\eqref{eq:temperature_modal} (and its discrete counterpart~\eqref{eq:temperature_discrete}) expresses the temperature perturbation equation in the same spectral framework, while the marginal-stability system \eqref{eq:gen_eig}--\eqref{eq:A_B_blocks} casts the full problem as a generalised eigenvalue problem with the Rayleigh number as eigenvalue, completing the derivation requested.
+In parallel, Equation~\eqref{eq:temperature_modal} (and its discrete counterpart~\eqref{eq:temperature_discrete}) expresses the temperature perturbation equation in the same spectral framework, while the growth-rate system~\eqref{eq:p_growth}--\eqref{eq:theta_growth} casts the full problem as a generalized eigenvalue problem with the complex growth rate as eigenvalue, completing the derivation requested.
 
 \end{document}

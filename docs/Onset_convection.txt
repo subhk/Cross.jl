@@ -1,0 +1,1621 @@
+RESEARCH ARTICLE
+10.1029/2022EA002606
+Key Points:
+
+• Critical parameters for onset of
+convection in rotating spherical shells
+are computed over a large range of
+radius ratios and rotation rates
+• We obtain scaling laws for critical
+Rayleigh number, wavenumber,
+angular drift frequency, boundary
+layers, and spatial extent of modes
+• Our data set and Jupyter Notebook
+(Supporting Information S1) can be
+used to obtain accurate estimates of
+critical quantities
+Supporting Information:
+
+Supporting Information may be found in
+the online version of this article.
+Correspondence to:
+A. Barik,
+abarik@jhu.edu
+Citation:
+
+Barik, A., Triana, S. A., Calkins, M.,
+Stanley, S., & Aurnou, J. (2023). Onset
+of convection in rotating spherical shells:
+Variations with radius ratio. Earth and
+Space Science, 10, e2022EA002606.
+https://doi.org/10.1029/2022EA002606
+Received 8 SEP 2022
+Accepted 28 NOV 2022
+Author Contributions:
+
+Conceptualization: J. Aurnou
+Data curation: A. Barik
+Formal analysis: A. Barik, S. A. Triana
+Investigation: A. Barik
+Software: A. Barik, S. A. Triana
+Supervision: M. Calkins, S. Stanley, J.
+Aurnou
+Validation: A. Barik
+Visualization: A. Barik
+Writing – original draft: A. Barik
+Writing – review & editing: S. A.
+Triana, M. Calkins, S. Stanley, J. Aurnou
+
+© 2022 The Authors.
+This is an open access article under
+the terms of the Creative Commons
+Attribution-NonCommercial License,
+which permits use, distribution and
+reproduction in any medium, provided the
+original work is properly cited and is not
+used for commercial purposes.
+
+BARIK ET AL.
+
+Onset of Convection in Rotating Spherical Shells: Variations
+With Radius Ratio
+A. Barik1
+
+, S. A. Triana2
+
+, M. Calkins3
+
+, S. Stanley1,4
+
+, and J. Aurnou5
+
+1
+Department of Earth and Planetary Sciences, Johns Hopkins University, Baltimore, MD, USA, 2Reference Systems and
+Planetology, Royal Observatory of Belgium, Brussels, Belgium, 3Department of Physics, University of Colorado Boulder,
+Boulder, CO, USA, 4Johns Hopkins University Applied Physics Laboratory, Laurel, MD, USA, 5Department of Earth,
+Planetary, and Space Sciences, University of California, Los Angeles, Los Angeles, CA, USA
+
+Abstract Convection in rotating spherical layers of fluid is ubiquitous in spherical astrophysical objects like
+planets and stars. A complete understanding of the magnetohydrodynamics requires understanding of the linear
+problem—when convection onsets in these systems. This is a fluid dynamics problem that has been studied
+since the early 1900s. Theoretical scaling laws exist for the variation of critical quantities—the Rayleigh number
+Rac, the azimuthal wavenumber mc, and the angular drift frequency ωc—with respect to the Ekman number
+E. However, their variation with the radius ratio χ of the spherical shell is still poorly studied. To address this,
+we use an open source eigenvalue code Kore to compute these critical quantities over an extensive range of
+parameters spanning four decades in Ekman number and a dense grid of radius ratio from very thick to very
+thin shells, focusing on no-slip and fixed temperature boundary conditions. We find that these variations are
+explained well by the theoretical scaling laws, especially at low E, but variations in radius ratio also exist. We
+obtain scaling laws of boundary layer thicknesses and spatial extent of onset modes with respect to the Ekman
+number which differ only slightly from theoretical scalings. We show that our data set can be used to obtain
+good estimates of critical quantities in the moderate E range, where the vast majority of current geophysical
+and astrophysical fluid dynamics simulations are performed, yet where asymptotic theory is only moderately
+accurate. We further verify asymptotic predictions and determine best-fit asymptotic model coefficients.
+Plain Language Summary Thermal buoyancy drives motions in the fluid layers of rotating planets
+and stars throughout the universe. In this study, we use a large ensemble of numerical solutions to determine
+the minimal strength of the thermal forcing needed to start such fluid motions, called convection. Further,
+we predict the spatial structure of these rotating convective flows and their rate of azimuthal drift, all as a
+function of spherical shell geometry and compare our results to previous studies. Our database of solutions
+is made easily accessible to the broader scientific community via an online repository as well as Supporting
+Information S1 Python notebook and data set.
+1. Introduction
+Convection in astrophysical objects such as planets and stars occurs in spherically symmetric rotating fluid layers.
+Convection occurring under the influence of rotation determines heat transport and dynamics in these layers and
+can drive jets, large-scale vortices, and dynamo action when the fluid is an electrical conductor. The specifics of the
+magnetohydrodynamics in such a system are often determined by how far away the parameters of convection are
+from those required for the onset of thermal convection (Aubert et al., 2017; Busse & Or, 1986; Calkins et al., 2016;
+Christensen & Aubert, 2006; Gastine et al., 2016; Gillet & Jones, 2006; Julien, Knobloch, et al., 2012; Julien, Rubio,
+et al., 2012). These convective fluid layers can span a range of geometries, from thin spherical shells such as atmospheres
+and interiors of planets and moons (Amit et al., 2020; Aurnou et al., 2007, 2008; Heimpel & Aurnou, 2007; Heimpel
+et al., 2022; Kaspi et al., 2020; Soderlund, 2019; Soderlund & Stanley, 2020), magma oceans (Labrosse et al., 2007;
+Stixrude et al., 2020), and the solar convection zone (Christensen-Dalsgaard et al., 1991) to thick, such as the outer core
+of the Earth (Olson, 2015). Thus, modeling fluid dynamics and dynamo processes in these objects requires knowledge
+of the critical parameters of onset of rotating convection across a range of spherical shell geometries.
+The classical setup for this problem is a fluid contained within a spherical shell having boundaries with inner and
+outer radii ri and ro, respectively, and thickness L = ro − ri. The shell rotates at a rate Ω, as shown in Figure 1.
+The fluid is either heated volumetrically using uniformly distributed heat sources or differentially by fixing the
+
+1 of 19
+
+10.1029/2022EA002606
+
+­temperatures at both boundaries (Dormy et al., 2004). We focus on the latter
+scenario in our present study. The temperatures at the inner and outer spherical
+boundaries are held fixed at Ti and To, respectively, and we denote ΔT = Ti − To.
+The parameters governing the dynamics of the system are the Rayleigh number,
+Ra = αgoΔTL3/νκ, which quantifies the strength of thermal driving; the Ekman
+number, E = ν/ΩL2 which is the ratio of the viscous drag to the Coriolis force;
+the Prandtl number, Pr = ν/κ which is the ratio of viscosity to thermal diffusivity; and the spherical shell radius ratio χ = ri/ro. Here, α is the coefficient of
+thermal expansion and go is the acceleration due to gravity at the outer boundary. ν and κ describe the viscosity and thermal diffusivity of the fluid, respectively. The most common variation of gravity g(r) that is used is linear, g(r) ∝ r,
+emulating a terrestrial planet, though some studies have also used g(r) ∝ 1/r2,
+emulating the gravity environment of a star or gas giant (Gastine et al., 2016).
+Convection in rotating spheres and spherical shells is a classical fluid dynamics problem (Jeffreys & Bland, 1951; Oberbeck, 1879; Pekeris, 1935). Early
+comprehensive work on the topic was by Chandrasekhar (1961) who focused on
+only axisymmetric modes, but considered both a fluid sphere as well as several
+different shell radius ratios and a few different gravity profiles. Roberts (1968)
+Figure 1. The geometry for studying onset of convection in rotating spherical
+showed that for E → 0 the first unstable convective mode is nonaxisymmetric in
+(
+)
+shells. Subscripts “I” and “o,” respectively, denote quantities related to inner
+an internally heated sphere and that the unstable modes have a width
+𝐴𝐴 of  𝐸𝐸 1∕3
+and outer boundaries.
+while the critical Rayleigh number required for the onset of convection scales
+as Rac ∼ E−4/3, the same scalings as those obtained by Chandrasekhar (1961)
+for convection in a rotating plane layer. Busse (1970) considered a reduced annulus model, considering equatorially
+symmetric solutions and provided a scaling for the drift frequency of the columnar thermal Rossby wave modes
+ωc ∼ E−1/3, when time is scaled by the rotation rate of the annulus. This last scaling corresponds to ωc ∼ E2/3 when time is
+scaled by the viscous diffusion time (Dormy et al., 2004). At the onset of convection, these modes are quasi-geostrophic
+with their motions being close to independent along the rotation axis (Busse, 1970, 1975, 1986, 1994, 2002). They
+are essentially the thermal counterpart to Rossby modes in a spherical container and have a prograde drift (Busse &
+Or, 1986). The numerical study of Zhang (1992) showed that the local analyses by Roberts and Busse could not explain
+the numerical results. Following Soward (1977) and Yano (1992), Jones et al. (2000) performed a global stability analysis and obtained solutions that agreed with numerical results of Zhang (1992). It is worth noting that Busse's reduced
+annulus model, despite its geometrical differences, has been instrumental in obtaining a fundamental understanding of
+the onset of convection in rotating spherical shells (Calkins et al., 2013; Pino et al., 2000, 2001).
+Beyond Chandrasekhar (1961), the study of onset of convection in spherical shells advanced with linear simulations of Gilman (1975) who focused on a differentially heated spherical shell filled with a fluid with Prandtl
+number of unity and a shell radius ratio χ = ri/ro = 0.2, and confirmed that the variation of Rac, mc, and ωc tend
+toward the scaling laws predicted by Roberts (1968) and Busse (1970) for a fluid sphere as the Ekman number
+E is lowered. The study also carried out simulations with χ = 0.1 and 0.4 and reported that having a thinner
+and thicker shell produces similar trends in the critical quantities with respect to E, with mc being larger for
+thinner shells and smaller for thicker shells. The study used an inverse-squared gravity profile, showing that the
+linear scaling laws of Busse (1970) are possibly independent of the gravity profile used. There have been several
+numerical studies on the topic since then all of which focus on a uniformly heated spherical shell and a linear
+gravity profile (Ardes et al., 1997; Zhang, 1991, 1992; Zhang & Busse, 1987; Zhang & Jones, 1993). The most
+complete spherical shell study was done by Dormy et al. (2004) following the footsteps of the global stability
+analysis of Jones et al. (2000). They analyzed both volumetrically and differentially heated spherical shells with
+a linear gravity profile with the fluid having Pr = 1. They performed a WKB-approximation followed by an Airy
+equation type analysis to obtain semianalytical solutions to the problem, which matched well with the numerical
+solutions. However, all of the studies listed above focus on a few different values of the shell radius ratio. This
+led Al-Shamali et al. (2004) to perform 3D simulations using the MagIC code (Wicht, 2002) for three different
+E ≤ 10 −4 and several different radius ratios ranging from χ = 0.1 to χ = 0.92. They performed least-squares fit to
+their data and obtained simple empirical rules of thumb for Rac and mc as a function of E and χ.
+Our present study builds on the studies of Dormy et al. (2004) and Al-Shamali et al. (2004). We study the onset
+of convection in differentially heated spherical shells with Pr = 1. We use the open source eigenvalue code Kore
+BARIK ET AL.
+
+2 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+(https://bitbucket.org/repepo/Kore/) to determine the critical parameters for convection (Rac, mc, ωc) for five
+different E ranging from 10 −3 to 10 −7 and 31 different values of χ ranging from 0.05 to 0.95. To date, this is the
+largest parameter space covered for this problem. Our aim is to determine these critical quantities as a function of
+E and χ and to make the database of critical quantities openly available to the user community.
+The paper is organized as follows. Section 2 sets up the governing equations. Section 3 provides the details of
+the numerical method used to solve the eigenvalue problem and to determine the critical quantities for onset of
+convection. Section 4 then discusses the results, considering the trends in mc, followed by the trends in Rac and
+ωc. Thereafter, we analyze the thickness of the viscous boundary layers, the radial extent of the convective modes,
+and the spiral nature of these modes. Section 5 compares our numerical solutions to the asymptotic theory of
+Dormy et al. (2004). Section 6 discusses how our data set can be used to estimate critical quantities through interpolation. The main text of the paper ends with a summary and discussion in Section 7. Appendix A provides the
+spectral formulation of viscous dissipation. The data set of critical quantities, data for profiles of viscous dissipation and kinetic energy, along with a Jupyter Notebook and other scripts to analyze them are provided as Supporting Information S1 and are available at https://github.com/AnkitBarik/convection_onset_radratio (Barik, 2022).
+These will help generate the figures and tables provided in the paper.
+
+2. Governing Equations
+The setup consists of a viscous incompressible fluid inside a spherical shell with thickness L = ro − ri, rotating
+at a rate Ω, as shown in Figure 1. The temperature difference between the two spherical boundaries is held
+fixed at ΔT = Ti − To, where subscripts i and o denote quantities at inner and outer boundaries, respectively. We
+restrict ourselves to fixed temperature boundary conditions at both boundaries for this study. The fundamental
+equations governing the fluid dynamics of the system are the Navier-Stokes and heat equations combined with
+mass continuity
+)
+(
+𝜕𝜕𝐮𝐮
+𝜌𝜌
++ 𝐮𝐮 ⋅ ∇𝐮𝐮 = −∇𝑝𝑝 − 2𝜌𝜌Ω̂𝐳𝐳 × 𝐮𝐮 − 𝜌𝜌𝜌𝜌 𝐫𝐫̂ + 𝜌𝜌𝜌𝜌∇2 𝐮𝐮
+(1)
+𝜕𝜕𝜕𝜕
+𝜕𝜕𝜕𝜕
+= −𝐮𝐮 ⋅ ∇𝜗𝜗 + 𝜅𝜅∇2 𝜗𝜗
+(2)
+𝜕𝜕𝜕𝜕
+∇ ⋅ 𝐮𝐮 = 0
+(3)
+
+where u, p, ρ, and ϑ denote fluid velocity, pressure, density, and temperature, respectively. We separate out these
+variables into a spherically symmetric part at equilibrium, denoted by overbars and a perturbation, denoted by primes
+𝐮𝐮 = 𝐮𝐮̄ + 𝐮𝐮′ , 𝑝𝑝 = 𝑝𝑝̄ + 𝑝𝑝′ , 𝜌𝜌 = 𝜌𝜌̄ + 𝜌𝜌′ , 𝜗𝜗 = 𝜗𝜗̄ + 𝜗𝜗′
+(4)
+
+The equilibrium state consists of the hydrostatic equilibrium
+𝐴𝐴
+(̄𝐮𝐮 = 𝟎𝟎) and the conductive temperature profile
+(Dormy et al., 2004)
+∇𝑝𝑝̄ = −𝜌𝜌𝜌𝜌(𝑟𝑟)̂
+̄
+𝐫𝐫
+(5)
+𝑟𝑟 1
+𝑑 𝜗̄
+∇2 𝜗̄ = 0 ⇒
+= 𝑖 𝑜 2 Δ𝑇
+(6)
+𝑑𝑟
+𝑟𝑜 − 𝑟𝑖 𝑟
+
+Subtracting 5 from 1, we obtain the perturbation equation
+𝜕𝜕𝐮𝐮′
+𝜌𝜌̄
+= −∇𝑝𝑝′ − 2𝜌𝜌Ω̂
+̄ 𝐳𝐳 × 𝐮𝐮′ − 𝜌𝜌′ 𝑔𝑔 𝐫𝐫̂ + 𝜌𝜌𝜌𝜌∇
+̄ 2 𝐮𝐮′
+(7)
+𝜕𝜕𝜕𝜕
+
+where we have dropped the nonlinear term u ⋅ ∇u by considering the perturbations to be small and used the
+Boussinesq approximation in which the perturbation in density only occurs in the buoyancy term. Finally, using
+the equation of𝐴𝐴state 𝐴𝐴′ = −𝛼𝛼 𝛼𝛼𝛼𝛼′, we obtain
+( )
+𝜕𝜕𝐮𝐮′
+1 ′
+𝑟𝑟
+′
+′
+= − ∇𝑝𝑝 − 2Ω̂𝐳𝐳 × 𝐮𝐮 + 𝛼𝛼𝛼𝛼 𝑔𝑔𝑜𝑜
+𝐫𝐫̂ + 𝜈𝜈∇2 𝐮𝐮′
+(8)
+𝜕𝜕𝜕𝜕
+𝜌𝜌̄
+𝑟𝑟𝑜𝑜
+Here, we have assumed a linear gravity profile g = go(r/ro), applicable to the terrestrial planets with their approximately constant density fluid cores. Following a similar procedure with Equations 2 and 6 we obtain
+BARIK ET AL.
+
+3 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+𝜕𝜕𝜕𝜕′
+𝑑𝑑 𝜗𝜗̄
+(9)
+= −𝑢𝑢𝑟𝑟
++ 𝜅𝜅∇2 𝜗𝜗′
+𝜕𝜕𝜕𝜕
+𝑑𝑑𝑑𝑑
+
+In nondimensionalizing the perturbation equations, shell thickness L is chosen as the length scale, the rotational
+time 1/Ω as the time scale and temperature contrast ΔT as the temperature scale. This gives us the following
+nondimensional equations:
+( )
+𝜕𝜕𝐮𝐮′
+𝑅𝑅𝑅𝑅𝑅𝑅 2 𝑟𝑟
+′
+′
+=
+−∇𝑝𝑝
+−
+2̂
+𝐳𝐳
+×
+𝐮𝐮
++
+𝜗𝜗′ 𝐫𝐫̂ + 𝐸𝐸∇2 𝐮𝐮′
+(10)
+𝜕𝜕𝜕𝜕
+Pr
+𝑟𝑟𝑜𝑜
+𝐸𝐸 2 ′
+𝜕𝜕𝜕𝜕′
+𝑑𝑑 𝜗𝜗̄
+(11)
+= −𝑢𝑢𝑟𝑟
++
+∇ 𝜗𝜗
+𝜕𝜕𝜕𝜕
+𝑑𝑑𝑑𝑑 Pr
+The perturbation equations decouple in azimuthal symmetry m and thus we look for separable solutions in the
+form of Fourier modes
+( ′ ′ ′ ) ( ′ ′ ′ ) i𝑚𝑚𝑚𝑚+𝜆𝜆𝜆𝜆
+𝐮𝐮 , 𝑝𝑝 , 𝜗𝜗 ≡ 𝐮𝐮 , 𝑝𝑝 , 𝜗𝜗 𝑒𝑒
+(12)
+where λ = σ + iω. The real part σ gives the nondimensional growth rate of a mode while the imaginary part ω
+provides the nondimensional frequency at which the mode drifts along the azimuth, the rate of drift being ω/m.
+The objective is to determine Ra at convective onset for a given set of E, Pr, χ, m where the growth rate σ = 0.
+
+3. Numerical Method
+We take the curl of the Navier-Stokes equation to eliminate pressure and decompose the velocity field into poloi𝐴𝐴 dal () and toroidal
+𝐴𝐴
+( ) potentials
+(13)
+𝐮𝐮′ = ∇ × ∇ × 𝐫𝐫 + ∇ ×  𝐫𝐫
+Considering a single azimuthal symmetry (m) at a time, we expand the three unknown scalars
+𝐴𝐴
+(,  , 𝜗𝜗′ ) into
+spherical harmonics Ylm(θ, ϕ) in the angular direction, e.g.
+𝑙𝑙max
+∑
+(𝑟𝑟𝑟 𝑟𝑟𝑟 𝑟𝑟) =
+𝑙𝑙𝑙𝑙 (𝑟𝑟)𝑌𝑌𝑙𝑙𝑙𝑙 (𝜃𝜃𝜃𝜃𝜃)
+(14)
+𝑙𝑙=𝑚𝑚
+
+where Ylm(θ, ϕ) denotes a Schmidt seminormalized spherical harmonic. Order l ranges from m to our truncation
+lmax since we only consider one azimuthal symmetry or degree m at a time. In the radial direction, a memory efficient sparse spectral method from Olver and Townsend (2013) is used. This method uses Chebyshev polynomials
+to expand
+𝐴𝐴
+𝑛𝑛𝑛𝑛𝑛𝑛 (𝑟𝑟)
+𝐴𝐴 and 𝑛𝑛𝑛𝑛𝑛𝑛 (𝑟𝑟), and Gegenbauer polynomials for their derivatives. Continuing the previous example
+𝑁𝑁
+∑
+𝑙𝑙𝑙𝑙 (𝑟𝑟) =
+𝑛𝑛𝑛𝑛𝑛𝑛 𝐶𝐶𝑛𝑛 (𝑟𝑟)
+(15)
+𝑛𝑛=0
+
+where Cn(r) is a Chebyshev polynomial of the first kind and N denotes the maximum truncation level used.
+No-slip and fixed temperature boundary conditions are imposed at both boundaries using
+𝑑𝑑𝑙𝑙𝑙𝑙 ||
+𝑙𝑙𝑙𝑙 (𝑟𝑟𝑏𝑏 ) =
+=0
+(16)
+𝑑𝑑𝑑𝑑 ||𝑟𝑟=𝑟𝑟𝑏𝑏
+𝑙𝑙𝑙𝑙 (𝑟𝑟 = 𝑟𝑟𝑏𝑏 ) = 0
+(17)
+𝜗𝜗′𝑙𝑙𝑙𝑙 (𝑟𝑟 = 𝑟𝑟𝑏𝑏 ) = 0
+(18)
+
+where rb = ri, ro denotes a radial boundary. The equations for the poloidal and toroidal potentials are obtained by
+taking the double-curl and curl of the Navier-Stokes Equation 10, respectively. Substituting the above expansions
+and rearranging the resulting spectral equations in a matrix form yields the generalized eigenvalue problem
+(19)
+𝐀𝐀 = 𝜆𝜆𝐁𝐁𝐁𝐁
+where x is the eigenvector of unknown coefficients
+(𝑛𝑛𝑛𝑛𝑛𝑛𝐴𝐴, 𝑛𝑛𝑛𝑛𝑛𝑛, 𝐴𝐴′𝑛𝑛𝑛𝑛𝑛𝑛). The truncation levels N and lmax are linked
+𝐴𝐴
+together so that lmax ∼ 2N. For instance, the calculations at E = 10 −7 used N = 480 and lmax = 1,026, which guarantees excellent convergence. We also check the energy balance of each solution. For that purpose, we define a
+residual
+𝐴𝐴
+ as
+BARIK ET AL.
+
+4 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+|𝜀𝜀 + 𝜈𝜈 |
+=
+(20)
+max{|𝜀𝜀 |, |𝜈𝜈 |}
+
+where 𝜈 = 𝐸∫ 𝐮 ⋅ ∇2 𝐮 d𝑉 is the total viscous dissipation over the whole
+̂ ∶ ∇𝐮𝐮
+̂ d𝑉𝑉 is the rate of change of the internal
+fluid volume
+𝐴𝐴 and 𝜀𝜀 = 2𝐸𝐸 ∫ ∇𝐮𝐮
+̂ being the rate-of-strain tensor. Ideally, with no-slip boundary
+energy,
+𝐴𝐴 with ∇𝐮𝐮
+conditions, it should be verified
+𝐴𝐴 that 𝜀𝜀 = −𝜈𝜈 and𝐴𝐴thus  = 0. We adjust
+the truncation levels N for each combination of χ and E so that the solutions are properly converged and𝐴𝐴with  ≤ 10−3. This is ensured for all cases
+−9
+except
+and 𝐴𝐴 = 0.35 for 𝐴𝐴
+which  ≈ 4 × 10−2.
+𝐴𝐴 for 𝐴𝐴 = 10𝐴𝐴
+
+Equation 19 is solved using a shift-and-invert spectral transformation with
+the packages PETSc (Balay et al., 1997, 2019, 2021) and SLEPc (Hernandez
+et al., 2005; Roman et al., 2019), which in turn use the parallel MUMPS solver
+(Amestoy et al., 2001, 2006). The eigenvalue code to assemble and solve the
+problem is called Kore. It is open source and has been used for computing rotational eigenmodes of planets in
+Rekier et al. (2019) and Triana et al. (2021) where further details of the numerical method can also be found.
+Kore can compute eigenmodes of any combination of rotating Navier-Stokes, magnetic induction, thermal,
+and chemical transport equations and can work with extreme, near-realistic planetary parameters such as those
+in Triana et al. (2021). All commonly employed boundary conditions are available to use such as no-slip/freeslip for mechanical, fixed temperature/heat-flux for thermal and conducting/insulating boundaries for magnetic
+boundary conditions. The heating mode can be chosen to be differential (as in this study) or using internal heat
+sources. Kore can also optionally be run without an inner core. From our own tests, the optimum number of
+cpu's for a single eigenvalue calculation is between 14 and 24, regardless of the size of the matrices. Large size
+computations are in fact memory bound, and adding more cpu's might even be detrimental. Ultimately, roundoff errors are the limiting factor to large problems (i.e., small Ekman numbers). Additionally, we use the SHTns
+library (Ishioka, 2018; Schaeffer, 2013) for spherical harmonic transforms during postprocessing.
+
+Figure 2. Example of determining Rac for E = 10 −5 and χ = 0.35 at Pr = 1.
+The black cross marks the critical values.
+
+3.1. Example Case
+For a fixed E and χ, we survey different azimuthal symmetries m and determine the corresponding critical
+Rayleigh numbers Rac for convection, when the real part of the eigenvalue becomes positive. For each m value,
+we provide an initial guess Ra1. A function takes the growth rate σ1 for Ra1 and searches around that value for an
+Ra2 such that the corresponding growth rate σ2 has the opposite sign, σ1σ2 < 0. Once the two bounds are found,
+we perform a root-finding search using Brent's method to determine the critical value Rac at which σc = 0 up to a
+tolerance of 10 −6 in log10(Rac). We repeat the previous two steps for several m and find a trend in Rac (Figure 2).
+The minimum of the curve gives the value of the critical Rayleigh number Rac for this set of E and χ values, as
+well as the corresponding azimuthal wavenumber mc and the critical drift frequency ωc of the thermal Rossby
+mode at the onset of convection. The example shown is at E = 10 −5 and χ = 0.35 for which Rac = 1.05567 × 10 7,
+mc = 15 in good agreement with values listed in Table 1 of Christensen and Aubert (2006). We benchmarked our
+code against some of the cases from Table 5 of Dormy et al. (2004) for χ = 0.35. The values we obtain differ by
+<0.1% in Rac and less than half a percent in ωc, as listed in Table 1.
+Table 1
+Benchmarking Our Method Against Dormy et al. (2004)
+E
+
+𝐴𝐴
+
+Rac
+
+𝐴𝐴𝐴𝐴𝐷𝐷
+𝑐𝑐
+
+𝐴𝐴
+
+𝐴𝐴𝐷𝐷
+𝑐𝑐
+
+mc 𝐴𝐴
+
+𝐴𝐴𝐷𝐷
+𝑐𝑐
+
+ωc
+
+%ΔRac
+
+%Δωc
+
+4.734 × 10
+
+−5
+
+1.6525 × 10
+
+6
+
+1.654042 × 10
+
+6
+
+9
+
+9
+
+−0.011003
+
+−0.011016
+
+0.09
+
+0.11
+
+4.734 × 10
+
+−6
+
+2.6279 × 10
+
+7
+
+2.627005 × 10
+
+7
+
+19
+
+19
+
+−0.005691
+
+−0.005706
+
+0.03
+
+0.26
+
+4.734 × 10 −7
+
+4.6180 × 10 8
+
+4.616863 × 10 8
+
+40
+
+40
+
+−0.002804
+
+−0.002806
+
+0.02
+
+0.07
+
+Note. The aspect ratio and Prandtl number are fixed at χ = 0.35, Pr = 1, respectively. The values with a superscript D are from
+Dormy et al. (2004) with suitable conversions to the definitions used here, while the columns without a D are our results. The
+percentage differences in the critical Rayleigh number and frequency are denoted by %Δ.
+
+BARIK ET AL.
+
+5 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+4. Results
+Using the above method, we computed the critical values of the set (mc, Rac, ωc) for the onset of convection for the
+following control parameters: E = (10 −3, 10 −4, 10 −5, 10 −6, 10 −7), and χ = 0.05 to 0.95 in steps of 0.03. The results
+are summarized in Figure 3. We recall the leading order asymptotic scalings of these quantities with respect to
+the Ekman number, obtained by linear stability analyses (Busse, 1970; Dormy et al., 2004; Gilman, 1975; Jones
+et al., 2000; Roberts, 1968).
+(21)
+𝑚𝑚𝑐𝑐 ∼ 𝐸𝐸 −1∕3
+(22)
+𝑅𝑅𝑅𝑅𝑐𝑐 ∼ 𝐸𝐸 −4∕3
+(23)
+𝜔𝜔𝑐𝑐 ∼ 𝐸𝐸 1∕3
+Equation 21 indicates that the critical wavenumber at onset will increase with decreasing Ekman number, leading
+to progressively thinner columnar convective modes. Equation 22 describes the fact that rotation inhibits convec-
+
+Figure 3. Summary of results. The horizontal axis for each plot denotes radius ratio χ while darker lines show a lower
+Ekman number E. The vertical axes show (a) the critical azimuthal wavenumber mc, (c) the critical Rayleigh number Rac,
+and (e) the critical drift frequency ωc, while (b), (d), and (f) show the vertical axes compensated by the respective scalings in
+Equations 21–23. The Prandtl number is held fixed at unity in this study.
+
+BARIK ET AL.
+
+6 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+tion and thus, a spherical shell needs a higher thermal driving or Rayleigh number for the onset of convection at
+lower Ekman numbers. Equation 23 tells us that as the Ekman number is reduced, the convective thermal Rossby
+modes drift with a progressively lower angular frequency.
+4.1. Variation in mc
+The variation of the critical azimuthal wavenumber mc with E and χ is shown in Figure 3a. The critical wavenumber mc increases at lower E and higher χ (equivalent to thinner shells). We compensate mc with an E 1/3 scaling
+(Equation 21) in Figure 3b demonstrating how the curves for different Ekman numbers collapse onto a single
+curve. The onset of convection for the differential heating setup always takes place at the cylinder tangent to the
+inner sphere at the equator, also known as the tangent cylinder (TC; Dormy et al., 2004). Thus, the number of
+convective cells or columns is restricted by the circumference of the TC with respect to the shell thickness, i.e.,
+mc ∝ 2πri/L = 2πχ/(1 − χ). This explains the increase of mc with χ. Mathematically
+)
+)
+(
+(
+𝑟𝑟𝑖𝑖
+2𝜋𝜋
+−1∕3
+𝐸𝐸 −1∕3
+𝐸𝐸
+= 𝑓𝑓 (𝐸𝐸𝐸 𝐸𝐸)
+𝑚𝑚𝑐𝑐 = 𝑓𝑓 (𝐸𝐸𝐸 𝐸𝐸)2𝜋𝜋
+(24)
+𝑟𝑟𝑜𝑜 − 𝑟𝑟𝑖𝑖
+𝜒𝜒 −1 − 1
+where f is an unknown function to be determined. The dependence on χ is similar to that considered in Al-Shamali
+(
+)
+2𝜋𝜋
+et al. (2004). We take the ratio of mc and the expression
+𝐸𝐸 −1∕3 to determine the nature of f as shown in
+𝐴𝐴
+−1
+𝜒𝜒 − 1
+Figure 4b. This shows that f has little variation with E and χ, especially for E ≤ 10 −5. To determine f, we took
+the mean of mcE 1/3 for only the asymptotic Ekman numbers 10 −6 and 10 −7 at each value of χ and performed a
+(
+)
+𝐴𝐴
+𝐴𝐴 𝜒𝜒 −12𝜋𝜋− 1 with f being the only fit parameter. This gives a value of
+least-squares fit of this mean value against
+f = 0.09169. The curves for mcE 1/3 along with the fit is shown in Figure 4a. Thus, we find
+)
+(
+2𝜋𝜋
+𝐸𝐸 −1∕3
+𝑚𝑚𝑐𝑐 = 0.09169
+(25)
+𝜒𝜒 −1 − 1
+In order to verify the accuracy of Equation 25, we compare our prediction against actual values for different
+parameters in Table 2. The predicted values are close to the actual values with a mean error of about 15%.
+4.2. Variation of Rac
+Rac values increase with decreasing Ekman number as expected from linear theory of rotating convection and
+decrease with increasing radius ratio, qualitatively similar to that observed by Al-Shamali et al. (2004). As shown
+in Figure 3c, the trend of Rac with respect to χ are curves which are flat near the middle with horizontal “S”-shaped
+variations near the ends. The curves look similar for all E. We compensate the
+values by the asymptotic scaling and plot RacE 4/3 with respect to χ, providing Figure 3d. The asymptotic scaling leads to a relatively good collapse of
+the curves for all χ, with the variation in RacE 4/3 being less than 2 orders of
+magnitude compared to the variation in Rac values which are close to 6 orders
+of magnitude. However, the range by which the data collapses with this scaling is much better for higher values of χ. An attempt to improve the collapse
+by using outer boundary radius as the length scale did not work. Switching
+to ro as length scale implies a multiplication of RacE 4/3 by (1 − χ) 1/3, which is
+close to order unity for the full range in χ (ranges from ∼0.4 to ∼1).
+
+1/3
+Figure 4.
+( Variation
+) of mc with χ. The vertical axis shows the ratio of mcE
+𝐴𝐴 and 2𝜋𝜋∕ 𝜒𝜒 −1 − 1 , with the horizontal cyan line showing the value of f
+obtained from a least-squares fit.
+
+BARIK ET AL.
+
+Figure 5 plots RacE 4/3 with respect to E for different values of χ. This visualization makes clear that the Rac values asymptotically approach the linear
+scaling for all radius ratios. However, the asymptotic scaling is first reached
+at higher Ekman numbers in the thinner shells (higher χ). The approach to
+asymptoticity is best seen for χ = 0.35 where we perform additional computations and extend the range of E to 10 −9.
+
+7 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+4.3. Variation of ωc
+
+Table 2
+Comparison of Prediction From Equation 25 Against Actual Values
+Computed mc
+
+Predicted mc (rounded)
+
+10.1029/2022EA002606
+
+χ
+
+E
+
+% error
+
+0.11
+
+10 –5
+
+3
+
+3
+
+0.0
+
+0.11
+
+10 –6
+
+6
+
+7
+
+14.3
+
+0.11
+
+10 –7
+
+13
+
+15
+
+13.3
+
+0.35
+
+10 –5
+
+15
+
+14
+
+7.1
+
+0.35
+
+10
+
+–6
+
+32
+
+31
+
+3.2
+
+0.35
+
+10 –7
+
+67
+
+67
+
+0.0
+
+0.35
+
+10
+
+–9
+
+305
+
+310
+
+1.7
+
+0.92
+
+10 –5
+
+316
+
+308
+
+2.6
+
+0.92
+
+10 –6
+
+668
+
+663
+
+0.8
+
+0.92
+
+10 –7
+
+1,427
+
+1,427
+
+0.0
+
+Since the wavenumber, m is always positive in the convention followed in
+this study, negative frequencies (ω < 0) indicate modes that drift in the same
+direction as the rotation of the shell (prograde). Since thermal Rossby waves
+in spherical shells outside the TC at the onset of convection, are prograde in
+nature (Busse & Or, 1986), all our mode frequencies are thus negative and
+we focus on their magnitudes. As seen in Figure 3e, the magnitudes of ωc
+decrease with E in general, as expected from linear theory. For each E, |ωc|
+increases with χ, reaches a flat middle and then decreases again. The curve
+for E = 10 −3 is the only one that crosses other curves for E = 10 −4 and 10 −5.
+Figure 3f shows that the asymptotic scaling ωc ∼ E 1/3 collapses the curves well
+for different E, especially those at low E. Similar to Figure 5 for Rac, we plot
+ωcE −1/3 with respect to E for different values of χ in Figure 6. This shows that
+the ωc values approach an asymptotic scaling as E is lowered, for all radius
+ratios. This is especially evident from the low E, χ = 0.35 curve. However, it
+can be seen that the asymptotic regime is reached at higher Ekman numbers
+for low and moderate radius ratios but requires lower E for thinner shells.
+
+4.4. Mode Morphology
+The morphology of the convective modes is a function of E and χ. All the Pr = 1 onset modes are quasi-geostrophic,
+are attached to the TC, and satisfy the Taylor-Proudman constraint to leading order. Figure 7 shows equatorial
+slices of radial velocity at two different Ekman numbers and three different radius ratios and is illustrative of the
+effect of both parameters on onset mode morphology. In particular, we can see that a lower Ekman number leads
+to thinner columns concentrated closer to the TC. Thicker shells have modes spiraling outward from the TC while
+modes in thinner shells get progressively more oriented along the cylindrical radial direction. This is similar to
+findings in the case of a cylindrical annulus by Pino et al. (2000, 2001). Furthermore, it is known that the thickness of the boundary layers and the extent of the modes in cylindrical radius (perpendicular to the rotation axis)
+depend on the Ekman number under consideration (Dormy et al., 2004).
+4.4.1. Boundary Layers
+To determine the thickness of the viscous boundary layers, we use radial profiles of viscous dissipation
+𝐴𝐴
+𝜈𝜈 (𝑟𝑟),
+which can be computed in spectral space (expression provided in Appendix A). We use a slope intersection
+method similar to Gastine et al. (2015). Two examples are shown in Figure 8 for E = 10 −6 and χ = 0.5. The boundary layer thickness is determined by the intersection of a linear fit to the dissipation profile near the boundary with
+a linear fit to the bulk profile near the boundary, beyond the “elbow” of the curve. These are marked by black
+dashed lines in Figure 8. For the outer boundary, we consider (ro − r)/E 1/2 ≤ 20 while for the inner boundary, we
+consider (r − ri)/E 1/3 ≤ 5. These choices are made to restrict ourselves to regions near the boundaries and avoid
+regions in the bulk where these profiles become unfavorable to linear fit,
+especially for thin shells. E 1/2 and E 1/3 factors are motivated by theoretical
+boundary layer thickness scalings (Dormy et al., 2004; Proudman, 1956).
+
+Figure 5. Plot of Rac versus E, with the compensated scaling Equation 22 for
+different values of χ. The case of χ = 0.35, shown in black, has been computed
+over the range 10 −9 ≤ E ≤ 10 −3.
+
+BARIK ET AL.
+
+Figure 9a shows the variation of spherically averaged boundary layer thickness
+at the outer boundary, δo, as a function of E and χ. As expected, δo decreases
+with Ekman number and there is very little variation with χ. For each value
+of χ, we fit an exponential law δo = a(χ)E b(χ) to the data for 10 −4 ≤ E ≤ 10 −7.
+This yields Figure 9b. We see that the exponent b shows very little variation
+and is constant around 0.5 with a mean of 0.506 ± 0.005. Thus, the thickness
+of the outer boundary scales the same as a classic Ekman layer in a rotating spherical shell, δo ∝ E 1/2 (Proudman, 1956). The prefactor a shows an
+increase with χ but is always
+𝐴𝐴 of (1). Figures 9d and 9e show the same analysis repeated for the inner boundary layer where Dormy et al. (2004) predict a
+scaling of E 1/3 for the boundary layer thickness at the inner boundary. We find
+8 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Figure 6. Plot of variation of |ωc| with E, with the compensated scaling (Equation 23) for different values of χ. The case of
+χ = 0.35, shown in black, has been computed over the range 10 −9 ≤ E ≤ 10 −3.
+
+that the scaling exponent is roughly constant with χ with a mean value of 0.385 ± 0.013, slightly deviating from
+Dormy et al. (2004). The prefactor again shows an increase with radius ratio and is always
+𝐴𝐴
+(1). This scaling is
+( 2∕5 )
+(Marcotte et al., 2016; Stewartson, 1966).
+reminiscent of the equatorial Ekman layer thickness
+𝐴𝐴 of  𝐸𝐸
+
+𝐴𝐴
+
+The thickness of the boundary layers can also be determined using the horizontal velocity magnitude
+(
+)
+𝐴𝐴ℎ = 𝑢𝑢2𝜃𝜃 + 𝑢𝑢2𝜙𝜙 . Figure 10a shows radial profiles of azimuthally averaged horizontal velocity magnitude at different colatitudes. The black line shows the profile obtained by averaging over all colatitudes. The profiles and
+hence the boundary layer thickness near the inner boundary are dependent on latitude. However, taking a mean
+over all colatitudes leads to a boundary layer thickness that coincides with that at the equator (Figure 10b). This
+is the reason why the boundary layer thickness near the inner boundary is dominated by the equatorial Ekman
+layer scaling as noted above. For the boundary layer near the outer boundary, however, the profiles are quite
+similar to each other and lead to similar boundary layer thickness (Figure 10c). Estimating the boundary layer
+thickness using horizontal velocity leads to similar scalings as those obtained from dissipation profiles as shown
+in Figures 9c and 9f. The scaling laws are summarized in Table 3.
+4.4.2. Radial Extent of Modes
+To quantify the cylindrical radial extent of the quasi-geostrophic convective modes, we use profiles of their
+kinetic energy
+)
+1( 2
+𝑢𝑢𝑟𝑟 + 𝑢𝑢2𝜃𝜃 + 𝑢𝑢2𝜙𝜙
+𝑘𝑘𝑘𝑘𝑘𝑘 =
+(26)
+2
+
+Figure 7. Onset mode structure shown as sectors of equatorial slices. The upper three sectors represent solutions at E = 10 −5
+at three different radius ratios, while the lower three sectors show the same for E = 10 −7. Colors represent radial velocity ur
+with red (blue) being positive/outward flow (negative/inward flow). In this study, Pr = 1 in all cases.
+
+BARIK ET AL.
+
+9 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Figure 8. Boundary layer thickness estimation using the slope intersection method for (E = 10 −6, χ = 0.5) at (a) r = ri and
+(b) r = ro. The horizontal axis shows distance from the boundary while the vertical axis shows dissipation integrated in the
+angular directions. The dissipation is normalized to the respective boundary value. The gray zone shows the boundary layer.
+
+𝐴𝐴
+
+along the cylindrical radial direction. We use the mean of the kinetic energy in the zonal and vertical directions
+𝑘𝑘𝑘𝑘𝑘𝑘 (𝑠𝑠) = ⟨𝑘𝑘𝑘𝑘𝑘𝑘 ⟩𝜙𝜙𝜙𝜙𝜙 and normalize it to its maximum. The z-averaging is performed using a fourth-order interpolation (available in the MagIC repository: https://github.com/magic-sph/magic). Scaling the cylindrical distance
+from the TC by E 2/9 provides an excellent collapse of the kinetic energy profiles for all Ekman numbers. This
+is shown for three different values of χ in Figure 11. This is consistent with the E 2/9 scaling provided by Dormy
+et al. (2004), with very little variation with radius ratio. We find that the kinetic energy of the modes in all cases
+is limited to an extent around (s − ri)/E 2/9 ≈ 5 which gives us the scaling law
+(27)
+𝑠𝑠max − 𝑟𝑟𝑖𝑖 ≈ 5𝐸𝐸 2∕9
+where smax is the maximum extent of the mode in the cylindrical radial direction. The modes at E = 10 −3 span
+almost the full extent of the shell and hence, have been omitted in this analysis.
+4.4.3. Spiral Nature of Modes
+The convective modes at onset are often “spiral” in nature in the direction perpendicular to the rotation axis
+(Dormy et al., 2004; Takehiro, 2008; Zhang, 1992), as seen in 3D in Figure 12a. However, this spiral nature
+
+Figure 9. Top panels: (a) shows the boundary layer thickness at the outer boundary (δo) as a function of Ekman number and
+radius ratio. (b) shows the variation of prefactor, a and exponent b in the expression δo = aE b, as a function of radius ratio. (c)
+shows the same as (b) but when horizontal velocity profiles are used instead of dissipation profiles. Bottom panels: (d), (e),
+and (f) show the same as (a), (b), and (c) respectively, but for the inner boundary.
+
+BARIK ET AL.
+
+10 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Figure 10. Radial profiles of azimuthally averaged horizontal velocity magnitude uh at E = 10 −5, χ = 0.35, Pr = 1 at different
+colatitudes θ. The black line shows the profile averaged over all colatitudes. (a) shows all the profiles while (b) and (c) zoom
+in near the inner and outer boundaries, respectively. Gray shaded regions show boundary layer thicknesses computed using
+the mean (black) profile.
+
+depends on the thickness of the shell. For thick shells, the modes tend to spiral out in a more curvilinear fashion
+as compared to thin shells where the modes extend almost linearly outwards. In order to quantify the curvilinear
+nature of the modes, we use a comparison to the Archimedean spiral: s = bϕ, whose curvature is proportional to
+1/b = dϕ/ds. For each mode, we use an equatorial slice and track the phase difference in subsequent radial levels
+using cross correlation of normalized radial velocity at that radial level against the normalized radial velocity at
+smax, till the cylindrical radial extent smax of the mode is reached (Figure 12b). Thereafter, we quantify the curvature of the mode using ratio of the maximum extent of the mode in azimuth (Δϕ) to that in cylindrical radius
+(Δs) (Figure 12c). We see that the curvature goes down with shell thickness, agreeing with our conclusions using
+a visual inspection of Figure 7. Interestingly the spiralization does not seem to strongly depend on the Ekman
+number.
+
+5. Comparison With Asymptotic Theory
+The asymptotic theory of Dormy et al. (2004) provided a method to reduce the complex problem of onset of
+convection to a combination of a one-dimensional ordinary differential equation and successive corrections in E
+to the leading order scaling laws
+(
+)
+̃
+𝑅𝑅𝑅𝑅𝑐𝑐 = 𝐸𝐸 −4∕3 𝑐𝑐 + 𝐸𝐸 2∕9 1 + 𝐸𝐸 1∕6 
+(28)
+(
+)
+2∕9 𝑔𝑔𝑔𝑔
+𝜔𝜔𝑔𝑔𝑔𝑔 = 𝐸𝐸 1∕3 𝜔𝜔𝑔𝑔𝑔𝑔
+𝜔𝜔1 + 𝐸𝐸 1∕6 𝜔𝜔̃ 𝑔𝑔𝑔𝑔
+(29)
+𝑐𝑐 + 𝐸𝐸
+
+where subscripts c and 1 on the RHS denote zeroth-order and first-order corrections in E 2/9 while ˜ is the E 1/6
+correction added for no-slip boundaries. gv denotes the “group velocity” reference frame. The transformation to
+frame rotating with the spheres is done using
+( )
+𝜕𝜕𝜕𝜕
+𝑚𝑚𝑐𝑐
+𝜔𝜔𝑐𝑐 = 𝜔𝜔𝑔𝑔𝑔𝑔 + 𝐸𝐸 −1∕3
+(30)
+𝜕𝜕𝜕𝜕 𝑐𝑐
+
+Since a correction to both the critical wavenumber and drift frequency is not possible using the asymptotic theory,
+we follow the same strategy as Dormy et al. (2004) and use the numerical values of mc (appropriately interpolated to obtain smooth curves). Dormy et al. (2004) provides values for these corrections for differential heating
+only for χ = 0.35. We use them and compare our numerical solutions, shown
+in blue in Figures 13 and 14. In case of Rac, the two agree very well, especially
+for E ≤ 10 −5. For ωc, the agreement becomes progressively better for
+Table 3
+Scaling Laws for Boundary Layer Thicknesses Obtained Using Profiles of
+E ≤ 10 −7. We also obtain and compare the corresponding corrective paramDissipation and Nonradial Velocity
+eters using a least-squares fit. For χ = 0.5, 0.74, we have obtained additional
+Profile
+Outer boundary
+Inner boundary
+critical parameters for E = 10 −5.5, 10 −6.5. We use these values to compute the
+corrective parameters using least-squares fit for E ≤ 10 −5, shown by solid
+Dissipation
+δo ∼ E 0.506±0.005
+δi ∼ E 0.385±0.013
+lines for these radius ratios. The curves are extended to E > 10 −5 to show how
+Velocity
+δo ∼ E 0.493±0.013
+δi ∼ E 0.401±0.004
+they deviate. The values of corrections are provided in Table 4.
+
+BARIK ET AL.
+
+11 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Figure 11. Radial extent of modes with Pr = 1. The vertical axis shows the normalized flow kinetic energy averaged in
+azimuth and z, while the horizontal axis shows the cylindrical radial distance from the tangent cylinder (TC), scaled by
+E 2/9. This is shown for Ekman numbers 10 −4 ≤ E ≤ 10 −7 and three different radius ratios, (a) χ = 0.11, (b) χ = 0.50, and (c)
+χ = 0.92.
+
+Dormy et al. (2004) also provide the asymptotic solution in the form of an Airy function. Considering the cylindrical radial component
+𝑢𝑢𝑠𝑠 ∼ 𝐴𝐴𝐴𝐴(−𝜆𝜆𝜆𝜆 + 𝜌𝜌0 )
+(31)
+
+where ρ0 ≈ −2.338 is the smallest zero of the Airy function, x = (s − ri)/E 2/9 and λ = −1.02657 − 0.82534i for
+χ = 0.35. We use this to compare our solutions at χ = 0.35 to that of Dormy et al. (2004) in Figure 15, which
+demonstrate that our eigenfunction solutions obtained from Kore closely resemble the Airy function structure.
+
+Figure 12. The spiral nature of convective modes. (a) shows a convective mode in 3D at E = 10 −5, χ = 0.35 with isosurfaces
+and an equatorial slice of radial velocity. (b) shows an example of the correlation tracking using normalized radial velocity,
+at E = 10 −5, χ = 0.11. Connected black dots track the phase which maximizes the correlation at each radial level, providing a
+measure of the spiral nature of the mode. (c) shows how our quantitative measure of the spiral nature of modes varies across
+Ekman numbers and radius ratios.
+
+BARIK ET AL.
+
+12 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Figure 13. Comparison with asymptotic theory of Dormy et al. (2004) for Rac. Symbols show numerical results. Solid line
+for χ = 0.35 shows the curve obtained when using values for corrections provided in Dormy et al. (2004), while dashed blue
+line shows the same obtained using a least-squares fit for E ≤ 10 −5. Solid lines for other χ values show a least-squares fit for
+E ≤ 10 −5, extended to nonasymptotic values (dotted lines).
+
+6. Using This Data Set
+Due to the broad parameter space covered, the data set of critical quantities generated from this study can be
+used to estimate critical quantities anywhere in the range covered through interpolation. With our dense coverage in χ, we find that none of the critical quantities have a very large variation from one χ value to the next.
+Thus, to estimate mc and Rac at a certain E and χ value, one can consider the data at the nearest χ that we have
+computed. Thereafter, fitting a scaling law against E and interpolating to the desired E will yield the desired
+critical quantities. Figure 16 illustrates a case for E = 3 × 10 −6 and χ = 0.81. Radius ratio χ = 0.81 does not
+exist in our database; hence, we consider the data at the nearest radius ratio in our data set, χ = 0.80. Thereafter, we perform a linear fit in E. The cyan triangles mark the values computed using Kore which lie pretty
+well on the straight line fit. Table 5 lists critical values computed with Kore at three randomly chosen E and
+χ not present in the data set and compares them with values obtained by interpolation as well as Equation 25
+for mc. The errors in estimation are at most 13% for Rac and 5% for mc, illustrating the usefulness of the data
+set. Further, one may use our data set to obtain least-squares fit values for higher order correction terms in
+the asymptotic theory of Dormy et al. (2004), providing critical quantity estimates beyond the ranges of our
+current computational capabilities.
+
+7. Summary and Discussion
+In this study, the heat equation has been added to sparse spectral eigenvalue code Kore, enabling the investigation of the onset of convection in rotating spherical shells. We have built upon previous studies and performed an
+extensive exploration of the parameter space in Ekman number 10 −3 ≤ E ≤ 10 −7 and radius ratio 0.05 ≤ χ = ri/
+ro ≤ 0.95 and computed the critical wavenumber mc, the critical Rayleigh number Rac and the critical drift
+frequency ωc at the onset of convection. As predicted by asymptotic scaling laws (Busse, 1970; Dormy et al., 2004;
+Roberts, 1968), mc obeys mc ∼ E −1/3 across all radius ratio values; however, there is a strong increase with χ. This
+can be explained considering that mc is proportional to the circumference of the TC, giving us a rule of thumb that
+predicts mc to within a mean error of about 15%. In case of Rac, the asymptotic scaling law Rac ∼ E −4/3 explains
+the trend in Rac, especially at low E, while Rac monotonically decreases with radius ratio. Thinner shells (high χ)
+
+Figure 14. Same as Figure 13 but for ωc.
+
+BARIK ET AL.
+
+13 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Table 4
+Values of Parameters Used in Higher Order Asymptotic Corrections of Dormy et al. (2004), Obtained Using Least-Squares
+Fit to Numerical Solutions
+χ
+
+𝐴𝐴
+
+𝑐𝑐
+
+𝐴𝐴
+
+1
+
+𝐴𝐴
+
+̃
+
+
+𝐴𝐴
+
+𝐴𝐴𝑔𝑔𝑔𝑔
+𝑐𝑐
+
+𝐴𝐴
+
+𝐴𝐴𝑔𝑔𝑔𝑔
+1
+
+𝐴𝐴
+
+𝐴𝐴𝐴 𝑔𝑔𝑔𝑔 𝐴𝐴
+
+(𝜕𝜕𝜕𝜕∕𝜕𝜕𝜕𝜕)𝑐𝑐
+
+0.50
+
+0.646
+
+13.429
+
+−2.740
+
+0.629
+
+−0.379
+
+−0.409
+
+−0.648
+
+0.74
+
+2.054
+
+35.894
+
+−6.185
+
+1.267
+
+−0.114
+
+−1.394
+
+−1.088
+
+0.35
+
+0.298
+
+6.899
+
+−1.023
+
+0.361
+
+−0.773
+
+−0.042
+
+0.190
+
+0.35
+
+0.285933
+
+4.16053
+
+0.27902
+
+0.743835
+
+0.56878
+
+−0.72723
+
+−2.2637
+
+Note. The last row lists the values provided in Dormy et al. (2004) for χ = 0.35 for differential heating.
+
+first approach the asymptotic scaling law at higher E compared to thicker shells. ωc has a nonmonotonic behavior
+with χ—its magnitude increases with χ, reaches a plateau and then decreases again for thin shells.
+The boundary layer thicknesses at inner and outer boundaries are determined independently using horizontally
+averaged profiles of dissipation as well as horizontal (or nonradial) velocity. These yield scaling laws similar to a
+classical Ekman layer at the outer boundary, δo ∼ E 1/2 and that of an equatorial Ekman layer at the inner boundary, δi ∼ E 2/5 (Marcotte et al., 2016; Stewartson, 1966). An analysis of azimuthally averaged horizontal velocity
+profiles at different latitudes further confirms that the inner boundary layer thickness scaling comes from the
+(
+)
+equatorial Ekman layer singularity
+𝐴𝐴 of  𝐸𝐸 2∕5 . The convective modes are quasi-geostrophic, attached to the TC
+and extend to a distance from the inner boundary given approximately by 5E 2/9. These modes are spiral in nature,
+as have been noted in past studies (Dormy et al., 2004; Takehiro, 2008; Zhang, 1992). We quantify their spiral
+nature using an approximation of an Archimedean spiral and show that the modes become less curvilinear as the
+radius ratio increases. A comparison of our numerical solutions to the asymptotic theory of Dormy et al. (2004)
+shows that the theory works really well across a wide range of Ekman numbers as well as radius ratios.
+Our expansive data set of critical quantities spanning several decades in Ekman number and extending from
+thinnest to thickest shell thicknesses allows interpolation of our results to most commonly used simulation parameters. It also enables extrapolation to planetary regimes. For χ = 0.35, we can use our extreme computations till
+E = 10 −9 to obtain critical parameters at an Earth-like E ∼ 10 −15. Extrapolating using data-points at E ≤ 10 −7, we
+obtain
+𝐴𝐴
+𝐴𝐴𝐴𝐴𝐸𝐸𝑐𝑐 ≈ 8 × 1019, making Ra/Rac ∼ 10 3 for the Earth (Christensen & Aubert, 2006; Jones, 2007). Further,
+we obtain,
+𝐴𝐴
+𝐴𝐴𝐸𝐸𝑐𝑐 ≈ 28770, consistent with previous estimates (Jones et al., 2000), implying convective columns
+only about 260-m wide. Lastly,
+𝐴𝐴
+𝐴𝐴𝐸𝐸𝑐𝑐 ≈ 4 × 10−6 which corresponds to a drift periodicity of about 700 years.
+
+Figure 15. Comparison of the Airy function solution of Dormy et al. (2004) to the numerical solutions obtained in this study
+for χ = 0.35, Pr = 1. The horizontal axis shows the variable x = (s − ri)/E 2/9 from Equation 31 and the vertical axis shows the
+magnitude of normalized cylindrical radial velocity |us|, averaged in azimuth, at the equator. Darker colors show lower Ekman
+numbers.
+
+BARIK ET AL.
+
+14 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Figure 16. Interpolation from our data set to estimate critical values at E = 3 × 10 −6 and χ = 0.81. The horizontal axes show
+E and the vertical axes show (a) Rac and (b) mc. Dashed orange lines show a straight line fit to the data (blue dots) at the
+nearest χ = 0.80 on a log scale. Cyan triangles mark the values computed from Kore.
+
+Inhomogenous thermal boundary conditions can have an effect on rotating convection in thin shells (Hori
+et al., 2010; Terra-Nova et al., 2023; Yan & Stanley, 2021). This effect, near onset, depends on the relative scales
+of the free convection and the thermal boundary anomaly. Novel phenomena such as resonance and locking
+can occur when these two scales are comparable (Davies et al., 2009; Zhang & Gubbins, 1993). Due to a steep
+increase in mc with radius ratio, convective scales become very small in thin shells. Thus, a clear scale separation
+occurs between the convective length scales and the thermal boundary anomalies, which are usually large scale,
+implying locking and resonance might be unlikely to occur in thin shell geometries.
+The present study has focused on one set of mechanical and thermal boundary conditions: no-slip and fixed
+temperatures as well as on a single Prandtl number of unity. Prandtl number dependence of convection is an
+interesting problem in its own right (Zhang, 1992) and is beyond the scope of the current study. Given the broad
+capabilities of the eigenvalue code Kore, this study leaves open room for future explorations of the influence of
+Pr, different boundary conditions, heating modes, compositional convection, the influence of magnetic fields, all
+of which can help us understand flows in planetary cores and atmospheres, subsurface oceans, and even stellar
+convection zones.
+Table 5
+Comparison of Predictions Against Computed Values
+E
+
+χ
+
+mc 𝐴𝐴
+
+𝐴𝐴∗𝑐𝑐 𝐴𝐴
+
+𝐴𝐴∗∗
+𝑐𝑐
+
+Rac
+
+3 × 10 −5
+
+0.50
+
+20
+
+20
+
+18
+
+2.46 × 10 6
+
+3 × 10
+
+−6
+
+0.81
+
+182
+
+173
+
+170
+
+3.07 × 10
+
+7
+
+3 × 10 −7
+
+0.25
+
+28
+
+28
+
+28
+
+8.47 × 10 8
+
+𝐴𝐴
+
+% error mc
+
+% error Rac
+
+2.76 × 10 6
+
+0.00
+
+12.29
+
+3.33 × 10
+
+7
+
+4.95
+
+8.50
+
+8.14 × 10 8
+
+0.00
+
+3.91
+
+𝐴𝐴𝐴𝐴∗𝑐𝑐
+
+Note. Interpolated values are denoted
+𝐴𝐴 by while quantities without
+𝐴𝐴 a
+predicted values through interpolation in E for the nearest
+𝐴𝐴 χ. 𝐴𝐴∗∗
+𝑐𝑐 denotes mc values obtained from Equation 25. The last two
+columns show percentage errors in mc and Rac values obtained through interpolation.
+∗
+
+BARIK ET AL.
+
+∗
+
+denote values computed with Kore.
+𝐴𝐴
+𝐴𝐴∗𝑐𝑐 shows
+
+15 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Appendix A: Spectral Expression for Viscous Dissipation
+We would need the radial and consoidal functions to define the expressions for kinetic energy and viscous
+dissipation
+
+𝑙𝑚 (𝑟) = 𝑙(𝑙 + 1)𝑙𝑚 (𝑟),
+(A1)
+1
+′
+𝑙𝑚 (𝑟) = 𝑙𝑚
++ 𝑙𝑚
+𝑟
+
+Using the above and the toroidal potential coefficients
+𝐴𝐴
+(𝑙𝑙𝑙𝑙 ), the viscous dissipation can be written as
+
+̂′ ∶ ∇𝐮
+̂′ 𝑑𝑆
+𝜈 (𝑟) = 𝐸 ∫ ∇𝐮
+𝑙max
+]
+∑ 4𝜋 [
+′
+− 𝑙𝑚 |2
+3|𝑟′𝑙𝑚 |2 + 𝑙(𝑙 + 1)|𝑟𝑙𝑚′ − 𝑇𝑙𝑚 |2 + |𝑙𝑚 + 𝑟𝑙𝑚
+=𝐸
+(A2)
+𝑙=𝑚 2𝑙 + 1
+[
+]
++𝑙(𝑙 − 1)(𝑙 + 1)(𝑙 + 2) |𝑙𝑚 |2 + |𝑙𝑚 |2
+
+Here, : denotes the tensor double dot product and
+[
+(
+) ]
+̂′ ∶ ∇𝐮𝐮
+̂′ = 1 ∇𝐮𝐮′ + ∇𝐮𝐮′ 𝑇𝑇
+∇𝐮𝐮
+(A3)
+2
+
+Data Availability Statement
+The eigenvalue code Kore is open source and available at https://bitbucket.org/repepo/kore/. Postprocessing was
+done using the spherical harmonic transform library SHTns (Ishioka, 2018; Schaeffer, 2013). The database and
+scripts accompanying this paper are located in the repository: https://github.com/AnkitBarik/convection_onset_
+radratio (Barik, 2022). The repository contains the following:
+•
+•
+
+•
+
+A README.md providing further details on the data and scripts below.
+A data_final folder contains:
+-	Two data set files in .mat format:
+*	data set_Jun28_2022.mat containing critical parameters for 10 −3 ≤ E ≤ 10 −7 for all radius ratios. The
+date was a way to keep track of version number.
+*	chi0.35_downto_E1e-9.mat containing critical parameters for χ = 0.35 for E values down to 10 −9 used
+to make Figures 5 and 6.
+*	data set_chi0.5.mat containing critical parameters for χ = 0.5 for E values including E = 10 −5.5 and
+E = 10 −6.5.
+*	data set_chi0.74.mat containing critical parameters for χ = 0.74 for E values including E = 10 −5.5 and
+E = 10 −6.5.
+-	Five folders for each Ekman number studied. Within each of these there are 31 subfolders for each radius
+ratio from 0.05 to 0.95 in steps of 0.03 χ increments.
+-	Within each subfolder there are files containing radial profiles of kinetic energy, viscous dissipation,
+RMS temperature as well as z-averaged kinetic energy with cylindrical radius.
+-	Python scripts to analyze these profiles and produce Figures 8,9,11, and 12 and obtain scaling laws 27
+and those in Table 3.
+A Jupyter Notebook that reads in data from the .mat files and produces Figures 3–6,13,14, and 16 as well as
+Tables 2 and 5. In doing so, the Notebook also provides a function that takes in desired values of E and χ and
+uses the present database to compute interpolated values of mc and Rac at those E and χ values. The repository
+also contains a binder link to directly launch the Jupyter Notebook.
+
+All data analyses have been carried out using open source libraries NumPy (Harris et al., 2020) and SciPy
+(Virtanen et al., 2020). 2D plots have been generated using matplotlib (Caswell et al., 2022; Hunter, 2007). 3D
+plot has been generated using Paraview (https://www.paraview.org/; Ahrens et al., 2005; Ayachit et al., 2012).
+
+BARIK ET AL.
+
+16 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+Acknowledgments
+We thank the anonymous reviewers for
+their helpful comments, which greatly
+improved the quality of the manuscript.
+This research project was conducted
+using computational resources from the
+Maryland Advanced Research Computing
+Center (MARCC) and the Hopkins
+High Performance Computing Center
+(HHPCC) using their computing clusters
+BlueCrab and Rockfish, respectively. ST
+would like to thank Veronique Dehant for
+her encouragement and support, as well
+as the European Research Council (ERC)
+for financial support under the European
+Union's Horizon 2020 research and innovation program (Synergy Grant agreement
+855677 GRACEFUL). MAC gratefully
+acknowledges funding from the National
+Science Foundation (NSF) through Grants
+EAR-1945270 and SPG-1743852. JMA
+thanks the NSF Geophysics program for
+support via EAR award #2143939.
+
+BARIK ET AL.
+
+10.1029/2022EA002606
+
+References
+Ahrens, J., Geveci, B., & Law, C. (2005). ParaView: An end-user tool for large-data visualization. In C. D. Hansen, & C. R. Johnson (Eds.),
+Visualization handbook (pp. 717–731). Burlington: Butterworth-Heinemann. https://doi.org/10.1016/b978-012387582-2/50038-1
+Al-Shamali, F. M., Heimpel, M. H., & Aurnou, J. M. (2004). Varying the spherical shell geometry in rotating thermal convection. Geophysical &
+Astrophysical Fluid Dynamics, 98(2), 153–169. https://doi.org/10.1080/03091920410001659281
+Amestoy, P. R., Duff, I. S., L’Excellent, J.-Y., & Koster, J. (2001). A fully asynchronous multifrontal solver using distributed dynamic scheduling.
+SIAM Journal on Matrix Analysis and Applications, 23(1), 15–41. https://doi.org/10.1137/s0895479899358194
+Amestoy, P. R., Guermouche, A., L’Excellent, J.-Y., & Pralet, S. (2006). Hybrid scheduling for the parallel solution of linear systems. Parallel
+Computing, 32(2), 136–156. https://doi.org/10.1016/j.parco.2005.07.004
+Amit, H., Choblet, G., Tobie, G., Terra-Nova, F., Čadek, O., & Bouffard, M. (2020). Cooling patterns in rotating thin spherical shells—Application
+to Titan’s subsurface ocean. Icarus, 338, 113509. https://doi.org/10.1016/j.icarus.2019.113509
+Ardes, M., Busse, F. H., & Wicht, J. (1997). Thermal convection in rotating spherical shells. Physics of the Earth and Planetary Interiors, 99(1),
+55–67. https://doi.org/10.1016/S0031-9201(96)03200-1
+Aubert, J., Gastine, T., & Fournier, A. (2017). Spherical convective dynamos in the rapidly rotating asymptotic regime. Journal of Fluid Mechanics, 813, 558–593. https://doi.org/10.1017/jfm.2016.789
+Aurnou, J., Heimpel, M., Allen, L., King, E., & Wicht, J. (2008). Convective heat transfer and the pattern of thermal emission on the gas giants.
+Geophysical Journal International, 173(3), 793–801. https://doi.org/10.1111/j.1365-246X.2008.03764.x
+Aurnou, J., Heimpel, M., & Wicht, J. (2007). The effects of vigorous mixing in a convective model of zonal flow on the ice giants. Icarus, 190(1),
+110–126. https://doi.org/10.1016/j.icarus.2007.02.024
+Ayachit, U., Geveci, B., Moreland, K., Patchett, J., & Ahrens, J. (2012). The ParaView visualization application. In E. W. Bethel, H. Childs, & C.
+D. Hansen (Eds.), High performance visualization—Enabling extreme-scale scientific insight. CRC Press. https://doi.org/10.1201/b12985-23
+Balay, S., Abhyankar, S., Adams, M. F., Benson, S., Brown, J., Brune, P., et al. (2021). PETSc web page. Retrieved from https://petsc.org/
+Balay, S., Abhyankar, S., Adams, M. F., Brown, J., Brune, P., Buschelman, K., et al. (2019). PETSc users manual (Tech. Rep. No. ANL-95/11—
+Revision 3.11). Argonne National Laboratory.
+Balay, S., Gropp, W. D., McInnes, L. C., & Smith, B. F. (1997). Efficient management of parallelism in object oriented numerical software libraries. In E. Arge, A. M. Bruaset, & H. P. Langtangen (Eds.), Modern software tools in scientific computing (pp. 163–202). Birkhäuser Press.
+https://doi.org/10.1007/978-1-4612-1986-6_8
+Barik, A. (2022). AnkitBarik/convection_onset_radratio: Convection_onset_data_v1.0.1 [Dataset]. Zenodo. https://doi.org/10.5281/
+zenodo.7359204
+Busse, F. H. (1970). Thermal instabilities in rapidly rotating systems. Journal of Fluid Mechanics, 44(3), 441–460. https://doi.org/10.1017/
+S0022112070001921
+Busse, F. H. (1975). A model of the geodynamo. Geophysical Journal International, 42(2), 437–459. https://doi.org/10.1111/j.1365-246X.1975.
+tb05871.x
+Busse, F. H. (1986). Asymptotic theory of convection in a rotating, cylindrical annulus. Journal of Fluid Mechanics, 173, 545–556. https://doi.
+org/10.1017/S002211208600126X
+Busse, F. H. (1994). Convection driven zonal flows and vortices in the major planets. Chaos, 4(2), 123–134. https://doi.org/10.1063/1.165999
+Busse, F. H. (2002). Convective flows in rapidly rotating spheres and their dynamo action. Physics of Fluids, 14(4), 1301–1314. https://doi.
+org/10.1063/1.1455626
+Busse, F. H., & Or, A. C. (1986). Convection in a rotating cylindrical annulus—Thermal Rossby waves. Journal of Fluid Mechanics, 166,
+173–187. https://doi.org/10.1017/S0022112086000095
+Calkins, M. A., Julien, K., & Marti, P. (2013). Three-dimensional quasi-geostrophic convection in the rotating cylindrical annulus with steeply
+sloping endwalls. Journal of Fluid Mechanics, 732, 214–244. https://doi.org/10.1017/jfm.2013.309
+Calkins, M. A., Long, L., Nieves, D., Julien, K., & Tobias, S. M. (2016). Convection-driven kinematic dynamos at low Rossby and magnetic
+Prandtl numbers. Physical Review Fluids, 1(8), 083701. https://doi.org/10.1103/PhysRevFluids.1.083701
+Caswell, T. A., Lee, A., Droettboom, M., de Andrade, E. S., Hoffmann, T., Klymak, J., et al. (2022). matplotlib/matplotlib: Rel: V3.6.2 [software].
+Zenodo. https://doi.org/10.5281/zenodo.7275322
+Chandrasekhar, S. (1961). Hydrodynamic and hydromagnetic stability. Dover Publications.
+Christensen, U. R., & Aubert, J. (2006). Scaling properties of convection-driven dynamos in rotating spherical shells and application to planetary
+magnetic fields. Geophysical Journal International, 166(1), 97–114. https://doi.org/10.1111/j.1365-246X.2006.03009.x
+Christensen-Dalsgaard, J., Gough, D. O., & Thompson, M. J. (1991). The depth of the solar convection zone. The Astrophysical Journal, 378,
+413. https://doi.org/10.1086/170441
+Davies, C. J., Gubbins, D., & Jimack, P. K. (2009). Convection in a rapidly rotating spherical shell with an imposed laterally varying thermal
+boundary condition. Journal of Fluid Mechanics, 641, 335–358. https://doi.org/10.1017/S0022112009991583
+Dormy, E., Soward, A. M., Jones, C. A., Jault, D., & Cardin, P. (2004). The onset of thermal convection in rotating spherical shells. Journal of
+Fluid Mechanics, 501, 43–70. https://doi.org/10.1017/S0022112003007316
+Gastine, T., Wicht, J., & Aubert, J. (2016). Scaling regimes in spherical shell rotating convection. Journal of Fluid Mechanics, 808, 690–732.
+https://doi.org/10.1017/jfm.2016.659
+Gastine, T., Wicht, J., & Aurnou, J. M. (2015). Turbulent Rayleigh-Bénard convection in spherical shells. Journal of Fluid Mechanics, 778,
+721–764. https://doi.org/10.1017/jfm.2015.401
+Gillet, N., & Jones, C. A. (2006). The quasi-geostrophic model for rapidly rotating spherical convection outside the tangent cylinder. Journal of
+Fluid Mechanics, 554, 343–369. https://doi.org/10.1017/S0022112006009219
+Gilman, P. A. (1975). Linear simulations of Boussinesq convection in a deep rotating spherical shell. Journal of the Atmospheric Sciences, 32(7),
+1331–1352. https://doi.org/10.1175/1520-0469(1975)032<1331:lsobci>2.0.co;2
+Harris, C. R., Millman, K. J., van der Walt, S. J., Gommers, R., Virtanen, P., Cournapeau, D., et al. (2020). Array programming with NumPy.
+Nature, 585(7825), 357–362. https://doi.org/10.1038/s41586-020-2649-2
+Heimpel, M., & Aurnou, J. (2007). Turbulent convection in rapidly rotating spherical shells: A model for equatorial and high latitude jets on
+Jupiter and Saturn. Icarus, 187(2), 540–557. https://doi.org/10.1016/j.icarus.2006.10.023
+Heimpel, M., Yadav, R. K., Featherstone, N. A., & Aurnou, J. M. (2022). Polar and mid-latitude vortices and zonal flows on Jupiter and Saturn.
+Icarus, 379, 114942. https://doi.org/10.1016/j.icarus.2022.114942
+Hernandez, V., Roman, J. E., & Vidal, V. (2005). SLEPc: A scalable and flexible toolkit for the solution of eigenvalue problems. ACM Transactions on Mathematical Software, 31(3), 351–362. https://doi.org/10.1145/1089014.1089019
+
+17 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Hori, K., Wicht, J., & Christensen, U. R. (2010). The effect of thermal boundary conditions on dynamos driven by internal heating. Physics of the
+Earth and Planetary Interiors, 182(1–2), 85–97. https://doi.org/10.1016/j.pepi.2010.06.011
+Hunter, J. D. (2007). Matplotlib: A 2D graphics environment. Computing in Science & Engineering, 9(3), 90–95. https://doi.org/10.1109/
+MCSE.2007.55
+Ishioka, K. (2018). A new recurrence formula for efficient computation of spherical harmonic transform. Journal of the Meteorological Society
+of Japan, 96(2), 241–249. https://doi.org/10.2151/jmsj.2018-019
+Jeffreys, H., & Bland, M. E. M. (1951). The instability of a fluid sphere heated within. Geophysical Supplements to the Monthly Notices of the
+Royal Astronomical Society, 6(3), 148–158. https://doi.org/10.1111/j.1365-246X.1951.tb06273.x
+Jones, C. (2007). Thermal and compositional convection in the outer core. In G. Schubert (Ed.), Treatise on geophysics (pp. 131–185). Amsterdam: Elsevier. https://doi.org/10.1016/b978-044452748-6.00130-9
+Jones, C. A., Soward, A. M., & Mussa, A. I. (2000). The onset of thermal convection in a rapidly rotating sphere. Journal of Fluid Mechanics,
+405(1), 157–179. https://doi.org/10.1017/S0022112099007235
+Julien, K., Knobloch, E., Rubio, A. M., & Vasil, G. M. (2012). Heat transport in low-Rossby-number Rayleigh-Bénard convection. Physical
+Review Letters, 109(25), 254503. https://doi.org/10.1103/PhysRevLett.109.254503
+Julien, K., Rubio, A. M., Grooms, I., & Knobloch, E. (2012). Statistical and physical balances in low Rossby number Rayleigh-Bénard convection.
+Geophysical & Astrophysical Fluid Dynamics, 106(4–5), 392–428. https://doi.org/10.1080/03091929.2012.696109
+Kaspi, Y., Galanti, E., Showman, A. P., Stevenson, D. J., Guillot, T., Iess, L., & Bolton, S. J. (2020). Comparison of the deep atmospheric dynamics of Jupiter and Saturn in light of the Juno and Cassini gravity measurements. Space Science Reviews, 216(5), 84. https://doi.org/10.1007/
+s11214-020-00705-7
+Labrosse, S., Hernlund, J. W., & Coltice, N. (2007). A crystallizing dense magma ocean at the base of the Earth’s mantle. Nature, 450(7171),
+866–869. https://doi.org/10.1038/nature06355
+Marcotte, F., Dormy, E., & Soward, A. (2016). On the equatorial Ekman layer. Journal of Fluid Mechanics, 803, 395–435. https://doi.org/10.1017/
+jfm.2016.493
+Oberbeck, A. (1879). Ueber die Wärmeleitung der Flüssigkeiten bei Berücksichtigung der Strömungen infolge von Temperaturdifferenzen.
+Annalen der Physik, 243(6), 271–292. https://doi.org/10.1002/andp.18792430606
+Olson, P. (2015). Core dynamics: An introduction and overview. In G. Schubert (Ed.), Treatise on geophysics (2nd ed., pp. 1–25). Oxford: Elsevier. https://doi.org/10.1016/b978-0-444-53802-4.00137-8
+Olver, S., & Townsend, A. (2013). A fast and well-conditioned spectral method. SIAM Review, 55(3), 462–489. https://doi.org/10.1137/120865458
+Pekeris, C. L. (1935). Thermal convection in the interior of the Earth. Geophysical Supplements to the Monthly Notices of the Royal Astronomical
+Society, 3(8), 343–367. https://doi.org/10.1111/j.1365-246X.1935.tb01742.x
+Pino, D., Mercader, I., & Net, M. (2000). Thermal and inertial modes of convection in a rapidly rotating annulus. Physical Review E, 61(2),
+1507–1517. https://doi.org/10.1103/PhysRevE.61.1507
+Pino, D., Net, M., Sánchez, J., & Mercader, I. (2001). Thermal Rossby waves in a rotating annulus. Their stability. Physical Review E, 63(5),
+056312. https://doi.org/10.1103/PhysRevE.63.056312
+Proudman, I. (1956). The almost-rigid rotation of viscous fluid between concentric spheres. Journal of Fluid Mechanics, 1(5), 505–516. https://
+doi.org/10.1017/S0022112056000329
+Rekier, J., Trinh, A., Triana, S. A., & Dehant, V. (2019). Internal energy dissipation in Enceladus’s subsurface ocean from tides and libration and
+the role of inertial waves. Journal of Geophysical Research: Planets, 124, 2198–2212. https://doi.org/10.1029/2019JE005988
+Roberts, P. H. (1968). On the thermal instability of a rotating-fluid sphere containing heat sources. Philosophical Transactions of the Royal Society of London, Series A, 263(1136), 93–117. https://doi.org/10.1098/rsta.1968.0007
+Roman, J. E., Campos, C., Romero, E., & Tomas, A. (2019). SLEPc users manual (Tech. Rep. No. DSIC-II/24/02-Revision 3.12). In D. Sistemes
+(Ed.), Informàtics I Computació. Universitat Politècnica de València.
+Schaeffer, N. (2013). Efficient spherical harmonic transforms aimed at pseudospectral numerical simulations. Geochemistry, Geophysics,
+Geosystems, 14, 751–758. https://doi.org/10.1002/ggge.20071
+Soderlund, K. M. (2019). Ocean dynamics of outer solar system satellites. Geophysical Research Letters, 46, 8700–8710. https://doi.
+org/10.1029/2018GL081880
+Soderlund, K. M., & Stanley, S. (2020). The underexplored Frontier of ice giant dynamos. Philosophical Transactions of the Royal Society of
+London, Series A, 378(2187), 20190479. https://doi.org/10.1098/rsta.2019.0479
+Soward, A. M. (1977). On the finite amplitude thermal instability of a rapidly rotating fluid sphere. Geophysical & Astrophysical Fluid Dynamics,
+9(1), 19–74. https://doi.org/10.1080/03091927708242315
+Stewartson, K. (1966). On almost rigid rotations. Part 2. Journal of Fluid Mechanics, 26(1), 131–144. https://doi.org/10.1017/S0022112066001137
+Stixrude, L., Scipioni, R., & Desjarlais, M. P. (2020). A silicate dynamo in the early Earth. Nature Communications, 11(1), 935. https://doi.
+org/10.1038/s41467-020-14773-4
+Takehiro, S.-I. (2008). Physical interpretation of spiralling-columnar convection in a rapidly rotating annulus with radial propagation properties
+of Rossby waves. Journal of Fluid Mechanics, 614, 67–86. https://doi.org/10.1017/S0022112008003194
+Terra-Nova, F., Amit, H., Choblet, G., Tobie, G., Bouffard, M., & Čadek, O. (2023). The influence of heterogeneous seafloor heat flux on the
+cooling patterns of Ganymede’s and Titan’s subsurface oceans. Icarus, 389, 115232. https://doi.org/10.1016/j.icarus.2022.115232
+Triana, S. A., Trinh, A., Rekier, J., Zhu, P., & Dehant, V. (2021). The viscous and ohmic damping of the Earth’s free core nutation. Journal of
+Geophysical Research: Solid Earth, 126, e21042. https://doi.org/10.1029/2020JB021042
+Virtanen, P., Gommers, R., Oliphant, T. E., Haberland, M., Reddy, T., Cournapeau, D., et al. (2020). SciPy 1.0: Fundamental algorithms for
+scientific computing in Python. Nature Methods, 17(3), 261–272. https://doi.org/10.1038/s41592-019-0686-2
+Wicht, J. (2002). Inner-core conductivity in numerical dynamo simulations. Physics of the Earth and Planetary Interiors, 132(4), 281–302.
+https://doi.org/10.1016/s0031-9201(02)00078-x
+Yan, C., & Stanley, S. (2021). Recipe for a Saturn-like dynamo. AGU Advances, 2, e00318. https://doi.org/10.1029/2020AV000318
+Yano, J.-I. (1992). Asymptotic theory of thermal convection in rapidly rotating systems. Journal of Fluid Mechanics, 243, 103–131. https://doi.
+org/10.1017/S0022112092002659
+Zhang, K. (1991). Convection in a rapidly rotating spherical shell at infinite Prandtl number: Steadily drifting rolls. Physics of the Earth and
+Planetary Interiors, 68(1–2), 156–169. https://doi.org/10.1016/0031-9201(91)90015-A
+Zhang, K. (1992). Spiralling columnar convection in rapidly rotating spherical fluid shells. Journal of Fluid Mechanics, 236, 535–556. https://
+doi.org/10.1017/S0022112092001526
+
+BARIK ET AL.
+
+18 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+10.1029/2022EA002606
+
+Zhang, K., & Gubbins, D. (1993). Convection in a rotating spherical fluid shell with an inhomogeneous temperature boundary condition at
+infinite Prandtl number. Journal of Fluid Mechanics, 250, 209–232. https://doi.org/10.1017/S0022112093001430
+Zhang, K., & Jones, C. A. (1993). The influence of Ekman boundary layers on rotating convection. Geophysical & Astrophysical Fluid Dynamics,
+71(1–4), 145–162. https://doi.org/10.1080/03091929308203600
+Zhang, K. K., & Busse, F. H. (1987). On the onset of convection in rotating spherical shells. Geophysical & Astrophysical Fluid Dynamics, 39(3),
+119–147. https://doi.org/10.1080/03091928708208809
+
+BARIK ET AL.
+
+19 of 19
+
+23335084, 2023, 1, Downloaded from https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2022EA002606, Wiley Online Library on [26/09/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+
+Earth and Space Science
+
+

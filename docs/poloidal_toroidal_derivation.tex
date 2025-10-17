@@ -1,0 +1,299 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{bm}
+\usepackage{physics}
+\numberwithin{equation}{section}
+
+\title{Deriving Equation (10) in Toroidal--Poloidal Form}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Governing momentum equation}
+Equation (10) of \emph{Onset of Convection in Rotating Spherical Shells} gives the non-dimensional perturbation momentum balance
+\begin{equation}
+  \pdv{\bm{u}'}{t} = - \grad p' - 2 \hat{\bm{z}} \times \bm{u}'
+  + \frac{\mathrm{Ra}}{\mathrm{Pr}} \qty(\frac{r}{r_o})^2 \theta' \hat{\bm{r}}
+  + E \grad^2 \bm{u}' .
+  \label{eq:momentum}
+\end{equation}
+Here $\bm{u}'$ is solenoidal, $\hat{\bm{r}}$ denotes the radial unit vector, and $\hat{\bm{z}}$ is the axis of rotation. Our goal is to rewrite~\eqref{eq:momentum} in terms of the toroidal and poloidal potentials introduced in Equations (13)--(15) of the paper.
+
+\section{Toroidal--poloidal decomposition}
+Following Equation (13), the divergence-free velocity field is decomposed into scalar potentials $P$ (poloidal) and $T$ (toroidal),
+\begin{equation}
+  \bm{u}' = \curl \curl \qty(P \hat{\bm{r}}) + \curl \qty(T \hat{\bm{r}}).
+  \label{eq:pt_decomposition}
+\end{equation}
+For compactness we define the surface gradient $\grad_{\!\perp} = \grad - \hat{\bm{r}} \,\partial_r$ and recall the vector spherical harmonics
+\begin{equation}
+  \bm{Y}_{\ell m}^{(r)} = Y_{\ell m} \hat{\bm{r}}, \qquad
+  \bm{Y}_{\ell m}^{(p)} = \grad_{\!\perp} Y_{\ell m}, \qquad
+  \bm{Y}_{\ell m}^{(t)} = \hat{\bm{r}} \times \grad_{\!\perp} Y_{\ell m},
+\end{equation}
+with $Y_{\ell m}$ the Schmidt semi-normalised spherical harmonics. Direct evaluation of~\eqref{eq:pt_decomposition} leads to the standard component form
+\begin{align}
+  \bm{u}_P' &= \sum_{\ell=m}^{\infty} \qty[
+     \frac{\ell (\ell+1)}{r^2} P_{\ell m} \, \bm{Y}_{\ell m}^{(r)}
+     + \frac{1}{r} \pdv{P_{\ell m}}{r} \, \bm{Y}_{\ell m}^{(p)}
+  ], \label{eq:poloidal_components} \\
+  \bm{u}_T' &= \sum_{\ell=m}^{\infty} \qty[
+     \frac{1}{r} T_{\ell m} \, \bm{Y}_{\ell m}^{(t)}
+  ], \label{eq:toroidal_components}
+\end{align}
+where the sums run over a fixed azimuthal order $m$ and $P_{\ell m}(r,t)$, $T_{\ell m}(r,t)$ are the radial amplitudes of each degree $\ell$.
+
+Equation (14) expresses the angular dependence of the scalar potentials as
+\begin{equation}
+  P(r,\theta,\phi,t) = \sum_{\ell=m}^{\infty} P_{\ell m}(r,t) Y_{\ell m}(\theta,\phi), \qquad
+  T(r,\theta,\phi,t) = \sum_{\ell=m}^{\infty} T_{\ell m}(r,t) Y_{\ell m}(\theta,\phi),
+  \label{eq:sph_expansion}
+\end{equation}
+while the radial profiles are expanded spectrally using Chebyshev polynomials as in Equation (15),
+\begin{equation}
+  P_{\ell m}(r,t) = \sum_{n=0}^{N} P_{\ell m n}(t) \, C_n(r), \qquad
+  T_{\ell m}(r,t) = \sum_{n=0}^{N} T_{\ell m n}(t) \, C_n(r).
+  \label{eq:chebyshev_expansion}
+\end{equation}
+The temperature perturbation is treated identically:
+\begin{equation}
+  \theta'(r,\theta,\phi,t) = \sum_{\ell=m}^{\infty} \theta_{\ell m}(r,t) Y_{\ell m}(\theta,\phi)
+  = \sum_{\ell=m}^{\infty} \sum_{n=0}^{N} \Theta_{\ell m n}(t) \, C_n(r) Y_{\ell m}(\theta,\phi).
+  \label{eq:theta_expansion}
+\end{equation}
+
+\section{Operators acting on the toroidal--poloidal fields}
+To project~\eqref{eq:momentum} onto the basis~\eqref{eq:poloidal_components}--\eqref{eq:toroidal_components} we evaluate each term separately.
+
+\subsection{Time derivative}
+Because the vector spherical harmonics are time-independent,
+\begin{equation}
+  \pdv{\bm{u}'}{t}
+  = \sum_{\ell=m}^{\infty} \qty[
+       \frac{\ell (\ell+1)}{r^2} \pdv{P_{\ell m}}{t} \, \bm{Y}_{\ell m}^{(r)}
+       + \frac{1}{r} \pdv{}{r} \qty(\pdv{P_{\ell m}}{t}) \bm{Y}_{\ell m}^{(p)}
+       + \frac{1}{r} \pdv{T_{\ell m}}{t} \, \bm{Y}_{\ell m}^{(t)}
+  ].
+  \label{eq:time_term}
+\end{equation}
+
+\subsection{Pressure gradient}
+The pressure can be expanded as $p'(r,\theta,\phi,t) = \sum_{\ell m} p_{\ell m}(r,t) Y_{\ell m}(\theta,\phi)$. Its gradient decomposes into the same vector spherical harmonics,
+\begin{equation}
+  \grad p' = \sum_{\ell=m}^{\infty} \qty[
+      \pdv{p_{\ell m}}{r} \bm{Y}_{\ell m}^{(r)}
+      + \frac{1}{r} p_{\ell m} \, \bm{Y}_{\ell m}^{(p)}
+  ].
+  \label{eq:pressure_term}
+\end{equation}
+When the curl or double curl of~\eqref{eq:momentum} is taken (as in the numerical formulation) the pressure term drops out; it is retained here only for completeness.
+
+\subsection{Viscous term}
+Using the identity $\grad^2 \curl \bm{A} = \curl \grad^2 \bm{A}$ and the fact that $\grad^2 (f \hat{\bm{r}}) = \qty( \partial_r^2 f + \frac{2}{r} \partial_r f - \frac{\ell(\ell+1)}{r^2} f ) \hat{\bm{r}}$ for each spherical harmonic degree, the Laplacian acts diagonally on the potentials:
+\begin{align}
+  \grad^2 \bm{u}_P' &= \sum_{\ell=m}^{\infty}
+     \qty[ \frac{\ell (\ell+1)}{r^2} \mathcal{L}_\ell P_{\ell m} \, \bm{Y}_{\ell m}^{(r)}
+          + \frac{1}{r} \pdv{}{r} \qty( \mathcal{L}_\ell P_{\ell m} ) \bm{Y}_{\ell m}^{(p)} ],
+  \label{eq:laplacian_poloidal} \\
+  \grad^2 \bm{u}_T' &= \sum_{\ell=m}^{\infty}
+     \qty[ \frac{1}{r} \mathcal{L}_\ell T_{\ell m} \, \bm{Y}_{\ell m}^{(t)} ],
+  \label{eq:laplacian_toroidal}
+\end{align}
+where the scalar radial operator $\mathcal{L}_\ell$ is
+\begin{equation}
+  \mathcal{L}_\ell f \equiv \pdv[2]{f}{r} + \frac{2}{r} \pdv{f}{r} - \frac{\ell (\ell+1)}{r^2} f .
+  \label{eq:radial_operator}
+\end{equation}
+
+\subsection{Buoyancy term}
+Because the buoyancy force is purely radial, only the $\bm{Y}_{\ell m}^{(r)}$ basis is involved:
+\begin{equation}
+  \frac{\mathrm{Ra}}{\mathrm{Pr}} \qty(\frac{r}{r_o})^2 \theta' \hat{\bm{r}}
+  = \sum_{\ell=m}^{\infty} \frac{\mathrm{Ra}}{\mathrm{Pr}} \qty(\frac{r}{r_o})^2 \theta_{\ell m}(r,t)
+    \bm{Y}_{\ell m}^{(r)}.
+  \label{eq:buoyancy_term}
+\end{equation}
+
+\subsection{Coriolis term}
+The Coriolis acceleration mixes neighbouring spherical-harmonic degrees. Writing $\hat{\bm{z}} = \cos\theta\, \hat{\bm{r}} - \sin\theta\, \hat{\bm{\theta}}$ and using the angular momentum ladder relations
+\begin{align}
+  \cos\theta\, Y_{\ell m} &= a_{\ell m}^{+} Y_{\ell+1, m} + a_{\ell m}^{-} Y_{\ell-1, m},
+  \label{eq:cos_relation} \\
+  \sin\theta\, \pdv{Y_{\ell m}}{\theta} &= \ell\, a_{\ell m}^{-} Y_{\ell-1, m}
+                                        - (\ell+1) a_{\ell m}^{+} Y_{\ell+1, m},
+  \label{eq:theta_relation}
+\end{align}
+with coefficients
+\begin{equation}
+  a_{\ell m}^{+} = \sqrt{\frac{(\ell+1)^2 - m^2}{(2\ell+1)(2\ell+3)}}, \qquad
+  a_{\ell m}^{-} = \sqrt{\frac{\ell^2 - m^2}{(2\ell-1)(2\ell+1)}},
+  \label{eq:a_coeffs}
+\end{equation}
+one obtains
+\begin{align}
+  \hat{\bm{z}} \times \bm{u}_T'
+  &= \sum_{\ell=m}^{\infty} \frac{1}{r}
+     \qty[ (\ell-1)(\ell+1) a_{\ell m}^{-}\, T_{\ell-1,m}
+           + \ell(\ell+2) a_{\ell m}^{+}\, T_{\ell+1,m} ] \bm{Y}_{\ell m}^{(p)}
+    \nonumber \\
+  &\quad
+     - \sum_{\ell=m}^{\infty} \frac{\mathrm{i} m}{r}
+       \qty[ a_{\ell m}^{-}\, T_{\ell-1,m} + a_{\ell m}^{+}\, T_{\ell+1,m} ]
+       \bm{Y}_{\ell m}^{(r)},
+  \label{eq:coriolis_toroidal}
+  \\
+  \hat{\bm{z}} \times \bm{u}_P'
+  &= \sum_{\ell=m}^{\infty} \frac{1}{r}
+     \qty[ (\ell-1)(\ell+1) a_{\ell m}^{-}\, \pdv{P_{\ell-1,m}}{r}
+           + \ell(\ell+2) a_{\ell m}^{+}\, \pdv{P_{\ell+1,m}}{r} ] \bm{Y}_{\ell m}^{(t)}
+    \nonumber \\
+  &\quad
+     + \sum_{\ell=m}^{\infty} \frac{\mathrm{i} m}{r^2}
+       \qty[ \ell(\ell-1) a_{\ell m}^{-}\, P_{\ell-1,m}
+             + (\ell+1)(\ell+2) a_{\ell m}^{+}\, P_{\ell+1,m} ]
+       \bm{Y}_{\ell m}^{(p)}.
+  \label{eq:coriolis_poloidal}
+\end{align}
+Equations~\eqref{eq:coriolis_toroidal}--\eqref{eq:coriolis_poloidal} summarise the toroidal--poloidal coupling produced by rotation; only $\ell \pm 1$ degrees interact at fixed $m$.
+
+\section{Projected evolution equations}
+Projecting Equation~\eqref{eq:momentum} onto the vector spherical harmonics and using the orthogonality relations
+$\int \bm{Y}_{\ell m}^{(r)} \cdot \bm{Y}_{\ell' m'}^{(r)} \, \mathrm{d}\Omega = \ell(\ell+1) \delta_{\ell\ell'} \delta_{mm'}$,
+$\int \bm{Y}_{\ell m}^{(p)} \cdot \bm{Y}_{\ell' m'}^{(p)} \, \mathrm{d}\Omega = \ell(\ell+1) \delta_{\ell\ell'} \delta_{mm'}$, and similarly for the toroidal branch, yields a coupled set of radial equations for each $(\ell,m)$:
+\begin{align}
+  \qty(\pdv{}{t} - E \mathcal{L}_\ell) \mathcal{L}_\ell P_{\ell m}
+  - 2\, \mathcal{C}_{\ell m}[T]
+  &= \frac{\mathrm{Ra}}{\mathrm{Pr}} \frac{\ell(\ell+1)}{r^2} \qty(\frac{r}{r_o})^2 \theta_{\ell m},
+  \label{eq:poloidal_equation} \\
+  \qty(\pdv{}{t} - E \mathcal{L}_\ell) T_{\ell m}
+  + 2\, \mathcal{D}_{\ell m}[P]
+  &= 0,
+  \label{eq:toroidal_equation}
+\end{align}
+with coupling operators
+\begin{align}
+  \mathcal{C}_{\ell m}[T] &=
+    \frac{\mathrm{i} m}{r^2} \qty[
+       \ell(\ell-1) a_{\ell m}^{-}\, T_{\ell-1,m}
+       + (\ell+1)(\ell+2) a_{\ell m}^{+}\, T_{\ell+1,m}
+    ],
+  \label{eq:C_operator} \\
+  \mathcal{D}_{\ell m}[P] &=
+    \frac{1}{r}
+    \qty[
+       (\ell-1)(\ell+1) a_{\ell m}^{-}\, \pdv{P_{\ell-1,m}}{r}
+       + \ell(\ell+2) a_{\ell m}^{+}\, \pdv{P_{\ell+1,m}}{r}
+    ].
+  \label{eq:D_operator}
+\end{align}
+Equations~\eqref{eq:poloidal_equation}--\eqref{eq:D_operator} show Equation (10) rewritten entirely in the toroidal--poloidal basis, together with the buoyancy forcing and viscous diffusion acting through $\mathcal{L}_\ell$.
+
+\section{Chebyshev representation}
+Substituting the radial expansions~\eqref{eq:chebyshev_expansion} into \eqref{eq:poloidal_equation}--\eqref{eq:toroidal_equation} produces a linear system for the time-dependent Chebyshev coefficients. Define the modal vectors
+\begin{equation}
+  \bm{P}_{\ell m}(t) = \qty(P_{\ell m 0}(t), \ldots, P_{\ell m N}(t))^\top, \quad
+  \bm{T}_{\ell m}(t) = \qty(T_{\ell m 0}(t), \ldots, T_{\ell m N}(t))^\top,
+  \quad
+  \bm{\Theta}_{\ell m}(t) = \qty(\Theta_{\ell m 0}(t), \ldots, \Theta_{\ell m N}(t))^\top.
+\end{equation}
+Let $\bm{D}_1$ and $\bm{D}_2$ denote the first and second radial differentiation matrices associated with the Chebyshev basis. Evaluating $\mathcal{L}_\ell$ at the collocation points and projecting with the appropriate quadrature weights yields the discrete operator matrices used in the numerical code. Symbolically,
+\begin{align}
+  \qty(\pdv{}{t} \bm{L}_\ell - E \bm{L}_\ell^2) \bm{P}_{\ell m} - 2 \bm{C}_{\ell m} \bm{T}_{\ell m}
+  &= \frac{\mathrm{Ra}}{\mathrm{Pr}} \bm{B}_\ell \bm{\Theta}_{\ell m}, \\
+  \qty(\pdv{}{t} - E \bm{L}_\ell) \bm{T}_{\ell m}
+  + 2 \bm{D}_{\ell m} \bm{P}_{\ell m}
+  &= \bm{0},
+\end{align}
+where $\bm{L}_\ell$, $\bm{C}_{\ell m}$, $\bm{D}_{\ell m}$, and $\bm{B}_\ell$ follow directly from the continuous operators~\eqref{eq:radial_operator}, \eqref{eq:C_operator}, and \eqref{eq:D_operator}. This is precisely the algebraic form discretised in the software package \textsc{Cross.jl}.
+
+\section{Temperature equation in spectral form}
+Equation (11) of the manuscript---referred to hereafter for consistency, even though the user prompt mentions Equation (12)---gives the non-dimensional temperature perturbation dynamics,
+\begin{equation}
+  \pdv{\theta'}{t} = - u_r' \dv{\bar{\theta}}{r} + \frac{E}{\mathrm{Pr}} \grad^2 \theta'.
+  \label{eq:temperature}
+\end{equation}
+The modal ansatz of Equation (12) and the angular/radial expansions of Equations (14)--(15) lead to
+\begin{equation}
+  \theta'(r,\theta,\phi,t) = \sum_{\ell=m}^{\infty} \theta_{\ell m}(r,t) Y_{\ell m}(\theta,\phi)
+  = \sum_{\ell=m}^{\infty} \sum_{n=0}^{N} \Theta_{\ell m n}(t) C_n(r) Y_{\ell m}(\theta,\phi),
+  \label{eq:theta_repeat}
+\end{equation}
+with the radial velocity supplied by the poloidal potential,
+\begin{equation}
+  u_r'(r,\theta,\phi,t) = \sum_{\ell=m}^{\infty} \frac{\ell(\ell+1)}{r^2} P_{\ell m}(r,t) Y_{\ell m}(\theta,\phi).
+  \label{eq:ur_repeat}
+\end{equation}
+The spherical Laplacian acting on $\theta'$ is diagonal in $\ell$ and $m$:
+\begin{equation}
+  \grad^2 \theta' = \sum_{\ell=m}^{\infty} \mathcal{S}_\ell[\theta_{\ell m}] \, Y_{\ell m}(\theta,\phi),
+  \qquad
+  \mathcal{S}_\ell[f] \equiv \frac{1}{r^2} \pdv{}{r} \qty( r^2 \pdv{f}{r} ) - \frac{\ell(\ell+1)}{r^2} f.
+  \label{eq:scalar_laplacian}
+\end{equation}
+Substituting \eqref{eq:theta_repeat}--\eqref{eq:scalar_laplacian} into \eqref{eq:temperature} and projecting onto $Y_{\ell m}$ delivers the scalar evolution equation for each $(\ell,m)$:
+\begin{equation}
+  \qty( \pdv{}{t} - \frac{E}{\mathrm{Pr}} \mathcal{S}_\ell ) \theta_{\ell m}(r,t)
+  = - \frac{\ell(\ell+1)}{r^2} \dv{\bar{\theta}}{r} \, P_{\ell m}(r,t).
+  \label{eq:temperature_modal}
+\end{equation}
+Finally, applying the Chebyshev expansion \eqref{eq:theta_repeat} and evaluating at the radial collocation nodes provides the discrete system for the coefficient vectors $\bm{\Theta}_{\ell m}(t)$,
+\begin{equation}
+  \qty( \pdv{}{t} \bm{I} - \frac{E}{\mathrm{Pr}} \bm{S}_\ell ) \bm{\Theta}_{\ell m}
+  = - \bm{G} \bm{Q}_\ell \bm{P}_{\ell m},
+  \label{eq:temperature_discrete}
+\end{equation}
+where $\bm{S}_\ell$ represents $\mathcal{S}_\ell$ in the Chebyshev basis, $\bm{G}$ is the diagonal matrix containing the conduction gradient $d\bar{\theta}/dr$ at each collocation point, and $\bm{Q}_\ell$ multiplies by $\ell(\ell+1)/r^2$. These matrices already appear in the numerical implementation of \textsc{Cross.jl}, aligning the temperature subsystem with the toroidal--poloidal formulation derived above.
+
+\section{Generalised eigenvalue problem for the Rayleigh number}
+At the onset of convection the growth rate vanishes, so the exponential ansatz of Equation (12) gives $\partial/\partial t \to 0$ in the discrete system. Combining \eqref{eq:poloidal_equation}--\eqref{eq:temperature_discrete} with this marginal-stability condition produces
+\begin{align}
+  -E \bm{L}_\ell^2 \bm{P}_{\ell m} - 2 \bm{C}_{\ell m} \bm{T}_{\ell m}
+    &= \frac{\mathrm{Ra}}{\mathrm{Pr}} \bm{B}_\ell \bm{\Theta}_{\ell m}, \label{eq:p_marginal} \\
+  -E \bm{L}_\ell \bm{T}_{\ell m} + 2 \bm{D}_{\ell m} \bm{P}_{\ell m}
+    &= \bm{0}, \label{eq:t_marginal} \\
+  -\frac{E}{\mathrm{Pr}} \bm{S}_\ell \bm{\Theta}_{\ell m} + \bm{G} \bm{Q}_\ell \bm{P}_{\ell m}
+    &= \bm{0}. \label{eq:theta_marginal}
+\end{align}
+Introducing the block state vector
+\begin{equation}
+  \bm{x}_{\ell m} =
+  \begin{bmatrix}
+    \bm{P}_{\ell m} \\
+    \bm{T}_{\ell m} \\
+    \bm{\Theta}_{\ell m}
+  \end{bmatrix},
+\end{equation}
+Equations \eqref{eq:p_marginal}--\eqref{eq:theta_marginal} can be written compactly as the Rayleigh-number eigenproblem
+\begin{equation}
+  \bm{A}_{\ell m} \, \bm{x}_{\ell m} = \mathrm{Ra} \, \bm{B}_{\ell} \, \bm{x}_{\ell m},
+  \label{eq:gen_eig}
+\end{equation}
+with
+\begin{equation}
+  \bm{A}_{\ell m} =
+  \begin{bmatrix}
+    -E \bm{L}_\ell^2 & -2 \bm{C}_{\ell m} & 0 \\
+    2 \bm{D}_{\ell m} & -E \bm{L}_\ell    & 0 \\
+    \bm{G} \bm{Q}_\ell & 0 & -\frac{E}{\mathrm{Pr}} \bm{S}_\ell
+  \end{bmatrix},
+  \qquad
+  \bm{B}_{\ell} =
+  \begin{bmatrix}
+    \frac{1}{\mathrm{Pr}} \bm{B}_\ell & 0 & 0 \\
+    0 & 0 & 0 \\
+    0 & 0 & 0
+  \end{bmatrix}.
+  \label{eq:A_B_blocks}
+\end{equation}
+The matrix $\bm{B}_\ell$ is singular because the Rayleigh number enters only through the buoyancy forcing; this structure matches the generalised eigenvalue problems solved numerically in \textsc{Cross.jl}. One may optionally eliminate $\bm{\Theta}_{\ell m}$ using \eqref{eq:theta_marginal} to reduce \eqref{eq:gen_eig} to a smaller system involving only the poloidal and toroidal coefficients, but the block form \eqref{eq:A_B_blocks} makes the dependence on $\mathrm{Ra}$ explicit.
+
+\section{Summary}
+Starting from the non-dimensional momentum balance~\eqref{eq:momentum}, we introduced the toroidal and poloidal potentials of Equations (13)--(15), expanded them in spherical harmonics and radial Chebyshev polynomials, and projected each term onto the vector spherical harmonic basis. The resulting Equations~\eqref{eq:poloidal_equation} and~\eqref{eq:toroidal_equation} express the dynamics entirely in terms of the scalar potentials, providing the foundation of the matrix eigenvalue problem solved in the accompanying code base.
+
+\bigskip
+In parallel, Equation~\eqref{eq:temperature_modal} (and its discrete counterpart~\eqref{eq:temperature_discrete}) expresses the temperature perturbation equation in the same spectral framework, while the marginal-stability system \eqref{eq:gen_eig}--\eqref{eq:A_B_blocks} casts the full problem as a generalised eigenvalue problem with the Rayleigh number as eigenvalue, completing the derivation requested.
+
+\end{document}

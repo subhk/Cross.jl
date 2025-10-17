@@ -24,7 +24,6 @@ module Cross
         MeridionalOperator,
         setup_operator,
         leading_modes,
-        critical_rayleigh,
         apply_operator,
         apply_mass
 

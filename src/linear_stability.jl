@@ -14,7 +14,6 @@ export ShellParams,
        MeridionalOperator,
        setup_operator,
        leading_modes,
-       critical_rayleigh,
        apply_operator,
        apply_mass,
        velocity_from_potentials,
@@ -442,31 +441,6 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     residuals = getfield_or(history, :residual_norms, getfield_or(history, :residual, nothing))
     info = (converged=converged, iterations=iterations, numops=numops, residual=residuals)
     return vals, vecs, op, info
-end
-
-"""
-    critical_rayleigh(params; nθ=params.lmax+1, nev=4, which=:SR, kwargs...)
-
-Convenience wrapper returning the smallest Rayleigh-number eigenvalue for a
-given azimuthal wavenumber `m`.  Internally calls [`leading_modes`](@ref) and
-selects the eigenvalue with minimum real part, returning a named tuple
-
-```
-(Ra = real(λmin), λ = λmin, vector = vmin, operator = op, info = history)
-```
-
-If no eigenvalues are returned the function throws an error.
-"""
-function critical_rayleigh(params::ShellParams; nθ::Int=params.lmax + 1,
-                                                     nev::Int=4,
-                                                     which::Symbol=:SR,
-                                                     kwargs...)
-    vals, vecs, op, info = leading_modes(params; nθ=nθ, nev=nev, which=which, kwargs...)
-    length(vals) == 0 && error("No eigenvalues returned by `leading_modes`.")
-
-    idx = argmin(real.(vals))
-    Ra = real(vals[idx])
-    return (Ra=Ra, λ=vals[idx], vector=vecs[:, idx], operator=op, info=info)
 end
 
 end

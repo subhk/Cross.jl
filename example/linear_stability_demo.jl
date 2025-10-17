@@ -1,9 +1,9 @@
 #!/usr/bin/env julia
 #
 # Demonstration of the linear stability solver derived from Equations (10)–(19)
-# in docs/Onset_convection.pdf.  The script computes the leading Rayleigh
-# number eigenvalue for a rotating spherical shell with the same parameters used
-# in Figure 2 of the reference.
+# in docs/Onset_convection.pdf.  The script fixes the Rayleigh number and
+# computes the leading complex growth rate (σ + iω) for a rotating spherical
+# shell using the parameters from Figure 2 of the reference.
 
 repo_root = normpath(joinpath(@__DIR__, ".."))
 push!(LOAD_PATH, repo_root)
@@ -21,22 +21,23 @@ using Printf
 
 E = 1e-5
 Pr = 1.0
+Ra = 2.1e7
 ri = 0.35
 ro = 1.0
 Nr = 64
 
 meridional_points = 96  # choose independent meridional resolution (θ collocation)
 
-println("m    Ra₁            Im(Ra₁)        iterations")
+println("m    Re(λ₁)          Im(λ₁)          iterations")
 println("------------------------------------------------")
 
 for m in 1:20
     lmax = max(48, m + 6)
-    params = ShellParams(m=m, E=E, Pr=Pr, ri=ri, ro=ro, lmax=lmax, Nr=Nr)
+    params = ShellParams(m=m, E=E, Pr=Pr, Ra=Ra, ri=ri, ro=ro, lmax=lmax, Nr=Nr)
     try
-        onset = critical_rayleigh(params; nθ=meridional_points, nev=6, tol=1e-6, maxiter=120)
-        info = onset.info
-        @printf("%2d  %12.5e  %12.5e  %5d\n", m, onset.Ra, imag(onset.λ), info.iterations)
+        vals, _, _, info = leading_modes(params; nθ=meridional_points, nev=2, which=:LR, tol=1e-6, maxiter=120)
+        λ1 = vals[1]
+        @printf("%2d  %12.5e  %12.5e  %5d\n", m, real(λ1), imag(λ1), info.iterations)
     catch err
         @printf("%2d  %12s  %12s      --\n", m, "ERROR", "ERROR")
         @warn "Failed to converge" m err

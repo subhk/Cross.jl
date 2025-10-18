@@ -54,19 +54,33 @@ println(@sprintf("%-5s %-15s %-15s %-10s", "m", "Ra_c", "ω_c", "Status"))
 println("-"^70)
 
 # Scan azimuthal wavenumbers
-for m in 1:30
+# Note: Starting from m=5 because:
+# - For m=1,2,3,4: Ra_c is extremely high (> 10^8) and may not converge easily
+# - The critical mode is around m_c ≈ 15 (from paper)
+# - Figure 2 in the paper shows the curve for m ∈ [5, 30]
+for m in 5:30
     try
         # Initial guess based on expected scaling
-        Ra_guess = 1e7
+        # For low m, Ra_c is much higher; for high m, Ra_c is higher
+        if m < 10
+            Ra_guess = 5e7  # Higher guess for low m
+            bracket_factor = (0.1, 50.0)
+        elseif m < 20
+            Ra_guess = 1e7  # Near the minimum
+            bracket_factor = (0.3, 3.0)
+        else
+            Ra_guess = 3e7  # Higher guess for high m
+            bracket_factor = (0.1, 10.0)
+        end
 
         # Find critical Rayleigh number for this m
         Ra_c, ω_c, vec = find_critical_rayleigh(
             E, Pr, χ, m, lmax, Nr;
             Ra_guess = Ra_guess,
-            Ra_bracket = (Ra_guess * 0.03, Ra_guess * 30.0),
-            mechanical_bc = :stress_free,
+            Ra_bracket = (Ra_guess * bracket_factor[1], Ra_guess * bracket_factor[2]),
+            mechanical_bc = :no_slip,  # Changed to no_slip to match paper
             thermal_bc = :fixed_temperature,
-            tol = 1e-4
+            tol = 1e-6  # Tighter tolerance
         )
 
         push!(m_values, m)

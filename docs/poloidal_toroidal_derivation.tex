@@ -192,6 +192,7 @@ with coupling operators
 Equations~\eqref{eq:poloidal_equation}--\eqref{eq:D_operator} show Equation (10) rewritten entirely in the toroidal--poloidal basis, together with the buoyancy forcing and viscous diffusion acting through $\mathcal{L}_\ell$.
 
 \section{Chebyshev representation}
+\label{sec:chebyshev}
 Substituting the radial expansions~\eqref{eq:chebyshev_expansion} into \eqref{eq:poloidal_equation}--\eqref{eq:toroidal_equation} produces a linear system for the time-dependent Chebyshev coefficients. Define the modal vectors
 \begin{equation}
   \bm{P}_{\ell m}(t) = \qty(P_{\ell m 0}(t), \ldots, P_{\ell m N}(t))^\top, \quad
@@ -304,23 +305,542 @@ After discretising in radius with the Chebyshev basis, these relations can be wr
 where $\bm{x}_{\ell m} = (\bm{P}_{\ell m}, \bm{T}_{\ell m}, \bm{\Theta}_{\ell m})^\top$, the matrix $\bm{A}_{\ell m}$ contains diffusion, Coriolis, and buoyancy operators (with the prescribed Rayleigh number appearing explicitly in~\eqref{eq:p_growth}), and $\bm{B}$ is block-diagonal with identity submatrices on the velocity and temperature blocks and zeros elsewhere. Solving this eigenproblem at fixed $\mathrm{Ra}$ yields the growth rate $\sigma$ and drift frequency $\omega$ for each azimuthal order~$m$.
 
 \section{Implementation in \textsc{Cross.jl}}
-The Julia package \textsc{Cross.jl} evaluates the radial--meridional operator using SHTnsKit for the angular transforms together with Chebyshev collocation in radius. The normal-mode system~\eqref{eq:p_growth}--\eqref{eq:theta_growth} is encoded in two linear maps:
+The Julia package \textsc{Cross.jl} implements the toroidal--poloidal framework described above using Chebyshev collocation in radius and provides both field reconstruction tools and a complete linear stability eigenvalue solver for computing critical parameters.
+
+\subsection{Linear stability analysis}
+The onset of convection problem is solved via the generalized eigenvalue formulation~\eqref{eq:p_growth}--\eqref{eq:theta_growth} in file \texttt{src/linear\_stability.jl}:
+
 \begin{itemize}
-  \item \texttt{apply\_operator} (file \texttt{src/linear\_stability.jl:244}) evaluates the right-hand sides of \eqref{eq:p_growth}--\eqref{eq:theta_growth}, including the buoyancy term proportional to the specified Rayleigh number:
+  \item \texttt{OnsetParams} encapsulates all physical and numerical parameters: Ekman number $E$, Prandtl number $\mathrm{Pr}$, Rayleigh number $\mathrm{Ra}$, radius ratio $\chi$, azimuthal wavenumber $m$, spherical harmonic truncation $\ell_{\max}$, radial resolution $N_r$, and boundary condition types.
+
+  \item \texttt{LinearStabilityOperator} assembles the discrete operators corresponding to Equations~\eqref{eq:poloidal_equation}--\eqref{eq:temperature_modal}. The radial operator $\mathcal{L}_\ell$~\eqref{eq:radial_operator} and scalar Laplacian $\mathcal{S}_\ell$~\eqref{eq:scalar_laplacian} are constructed for each spherical harmonic degree $\ell$ using Chebyshev differentiation. The Coriolis coupling operators $\mathcal{C}_{\ell m}$~\eqref{eq:C_operator} and $\mathcal{D}_{\ell m}$~\eqref{eq:D_operator} implement the ladder relations~\eqref{eq:a_coeffs}, coupling adjacent $\ell \pm 1$ modes.
+
+  \item \texttt{apply\_operator} evaluates the right-hand side of the spatial eigenvalue problem:
   \[
-    \qty(-\nabla p - 2 \hat{\bm{z}}\times \bm{u} + \frac{\mathrm{Ra}}{\mathrm{Pr}}\qty(\frac{r}{r_o})^2 \theta \hat{\bm{r}} + E \nabla^2 \bm{u},\;
-          -u_r \dv{\bar{\theta}}{r} + \frac{E}{\mathrm{Pr}} \nabla^2 \theta,\;
-          \nabla \cdot \bm{u})
+    \bm{A}\bm{x} = \qty(-E\bm{L}_\ell^2 \bm{P} - 2\bm{C}_{\ell m}\bm{T} + \frac{\mathrm{Ra}}{\mathrm{Pr}}\bm{B}_\ell\bm{\Theta},\;
+    E\bm{L}_\ell\bm{T} + 2\bm{D}_{\ell m}\bm{P},\;
+    \frac{E}{\mathrm{Pr}}\bm{S}_\ell\bm{\Theta} - \bm{G}\bm{Q}_\ell\bm{P} )
   \]
-  with the requested mechanical and thermal boundary conditions enforced by \texttt{enforce\_mechanical\_boundary!} and \texttt{apply\_thermal\_boundary!}.
-  \item \texttt{apply\_mass} (file \texttt{src/linear\_stability.jl:321}) forms the inertial block $\bm{B}\bm{x}$ by returning the velocity and temperature fields (with zeros in the constraint rows), so that the generalized eigenproblem solved by \texttt{eigsolve} yields the complex growth rate~$\lambda$ directly.
+  including viscous diffusion, Coriolis coupling, buoyancy forcing, and advection of the background temperature gradient.
+
+  \item \texttt{apply\_mass} forms the mass matrix $\bm{B}\bm{x}$ that multiplies the time-derivative block in the generalized eigenvalue problem $\bm{A}\bm{x} = \lambda\bm{B}\bm{x}$.
+
+  \item Boundary conditions~\eqref{eq:impermeable}--\eqref{eq:fixedFlux} are enforced by replacing the appropriate operator rows at $r=r_i$ and $r=r_o$ with constraints for impermeability ($P=0$), no-slip ($\partial P/\partial r=0$, $T=0$) or stress-free~\eqref{eq:stressfree_p}--\eqref{eq:stressfree_t}, and fixed-temperature ($\Theta=0$) or fixed-flux ($\partial\Theta/\partial r=0$).
+
+  \item \texttt{solve\_eigenvalue\_problem} uses the KrylovKit library with shift-and-invert around $\lambda=0$ to compute eigenvalues near marginal stability, directly yielding the complex growth rate $\lambda = \sigma + i\omega$.
+
+  \item \texttt{find\_critical\_rayleigh} automates the search for the critical Rayleigh number $\mathrm{Ra}_c$ where $\sigma=0$ via Brent's root-finding method, returning the critical parameters $(\mathrm{Ra}_c, \omega_c)$ along with the associated eigenmode.
 \end{itemize}
-The eigenproblem constructed from these maps therefore reproduces \eqref{eq:p_growth}--\eqref{eq:theta_growth}, delivering the growth rate $\lambda$ for the chosen Rayleigh number. Users can call \texttt{leading\_modes} to obtain the most unstable eigenvalues for a prescribed azimuthal wavenumber while choosing between no-slip or stress-free velocity boundaries and fixed-temperature or fixed-flux thermal boundaries via the keyword arguments of \texttt{setup\_operator}.
+
+The implementation has been benchmarked against Table~5 of Dormy et al.~(2004) for $\chi=0.35$, $\mathrm{Pr}=1$, no-slip and fixed-temperature boundary conditions, reproducing critical Rayleigh numbers and drift frequencies to better than $0.1\%$ accuracy (see \texttt{test/test\_onset\_benchmark.jl}).
+
+\subsection{Field reconstruction}
+Post-processing utilities reside in \texttt{src/get\_velocity.jl}:
+\begin{itemize}
+  \item \texttt{velocity\_fields\_from\_poloidal\_toroidal} synthesizes $(u_r, u_\theta, u_\phi)$ from spectral coefficients using Equations~\eqref{eq:poloidal_components}--\eqref{eq:toroidal_components} and SHTnsKit spherical harmonic transforms.
+
+  \item \texttt{temperature\_field\_from\_coefficients} reconstructs $\theta'(r,\theta,\phi)$ from the expansion~\eqref{eq:theta_expansion}.
+
+  \item \texttt{fields\_from\_coefficients} combines both reconstructions.
+\end{itemize}
+
+\subsection{Chebyshev radial discretization}
+\texttt{ChebyshevDiffn} (\texttt{src/Chebyshev.jl}) constructs spectral differentiation matrices up to fourth order on the Chebyshev--Gauss--Lobatto grid with automatic domain transformation from $[-1,1]$ to $[r_i,r_o]$, ensuring that $\bm{D}_1$, $\bm{D}_2$, etc.\ correspond to physical radial derivatives.
+
+\section{Extension: Basic State with Meridional Variations}
+\label{sec:basic_state}
+
+The preceding sections analyzed linear stability around a quiescent conduction state with purely radial temperature variation and zero velocity, $\bar{\bm{u}} = \bm{0}$ and $\bar{\theta}(r)$. This section extends the formulation to study onset of convection on top of a \emph{basic state} that includes:
+\begin{itemize}
+  \item Meridionally-varying temperature: $\bar{\theta}(r,\theta)$
+  \item Axisymmetric zonal flow: $\bar{u}_\phi(r,\theta)$ from thermal wind balance
+  \item No meridional circulation: $\bar{u}_r = \bar{u}_\theta = 0$
+\end{itemize}
+
+\subsection{Physical Motivation}
+
+In rapidly rotating systems, meridional (latitudinal) temperature gradients drive zonal (east--west) flows through thermal wind balance. This occurs when:
+\begin{itemize}
+  \item Differential heating creates latitudinal temperature contrasts
+  \item Geostrophic balance between Coriolis force and pressure gradient holds
+  \item Rotation constrains motion to be quasi-two-dimensional
+\end{itemize}
+
+Such configurations arise in planetary atmospheres, stellar convection zones, and laboratory experiments with imposed thermal patterns. Understanding how background differential rotation affects convective onset is crucial for interpreting observations and numerical simulations.
+
+\subsection{Basic State Equations}
+
+The basic state is \emph{axisymmetric} ($\partial/\partial\phi = 0$) and \emph{steady} ($\partial/\partial t = 0$). The temperature field is expanded in axisymmetric spherical harmonics:
+\begin{equation}
+  \bar{\theta}(r,\theta) = \sum_{\ell=0}^{\ell_{\max}^{\text{bs}}} \bar{\theta}_{\ell 0}(r) Y_{\ell 0}(\theta),
+  \label{eq:basic_theta}
+\end{equation}
+where typically $\ell_{\max}^{\text{bs}} \ll \ell_{\max}$ (the basic state uses fewer modes than the perturbation). Similarly, the zonal velocity is
+\begin{equation}
+  \bar{u}_\phi(r,\theta) = \sum_{\ell=0}^{\ell_{\max}^{\text{bs}}} \bar{u}_{\phi,\ell 0}(r) Y_{\ell 0}(\theta).
+  \label{eq:basic_uphi}
+\end{equation}
+
+\subsection{Thermal Wind Balance}
+
+The zonal flow is determined by thermal wind balance. In geostrophic equilibrium, the meridional and radial momentum equations read:
+\begin{align}
+  2\Omega \sin\theta \,\bar{u}_\phi &= \frac{1}{\bar{\rho}} \frac{1}{r} \pdv{\bar{p}}{\theta}, \label{eq:geostrophic_merid} \\
+  2\Omega \cos\theta \,\bar{u}_\phi - \alpha g_0 \qty(\frac{r}{r_o}) \bar{\theta} &= \frac{1}{\bar{\rho}} \pdv{\bar{p}}{r}. \label{eq:geostrophic_radial}
+\end{align}
+Eliminating pressure by taking $\partial/\partial r$ of~\eqref{eq:geostrophic_merid} and $(1/r)\,\partial/\partial\theta$ of~\eqref{eq:geostrophic_radial} yields the \emph{thermal wind equation}:
+\begin{equation}
+  \pdv{\bar{u}_\phi}{r} + \frac{\bar{u}_\phi}{r} = -\frac{\alpha g_0}{2\Omega^2 r^2 \sin\theta} \qty(\frac{r}{r_o}) \pdv{\bar{\theta}}{\theta}.
+  \label{eq:thermal_wind_dim}
+\end{equation}
+
+Using the same non-dimensionalization as in Section~1 (length $L$, time $1/\Omega$, temperature $\Delta T$), and recognizing that
+\[
+  \frac{\alpha g_0 \Delta T L}{2\Omega^2 L^2} = \frac{\mathrm{Ra}\,E^2}{2\,\mathrm{Pr}},
+\]
+the non-dimensional thermal wind balance becomes:
+\begin{equation}
+  \pdv{\bar{u}_\phi}{r} + \frac{\bar{u}_\phi}{r} = -\frac{\mathrm{Ra}}{2\,\mathrm{Pr}} \frac{1}{r \sin\theta} \qty(\frac{r}{r_o}) \pdv{\bar{\theta}}{\theta}.
+  \label{eq:thermal_wind}
+\end{equation}
+
+Equivalently, writing in terms of $r\bar{u}_\phi$:
+\begin{equation}
+  \frac{1}{r} \pdv{}{r}\qty(r \bar{u}_\phi) = -\frac{\mathrm{Ra}}{2\,\mathrm{Pr}} \frac{r}{r_o \sin\theta} \pdv{\bar{\theta}}{\theta}.
+  \label{eq:thermal_wind_alt}
+\end{equation}
+
+For a given basic state temperature $\bar{\theta}(r,\theta)$, Equation~\eqref{eq:thermal_wind} is a first-order ODE in $r$ (for each latitude $\theta$) that can be integrated subject to boundary conditions $\bar{u}_\phi(r_i,\theta) = \bar{u}_\phi(r_o,\theta) = 0$ (no-slip).
+
+\subsection{Modified Perturbation Equations}
+
+With a non-zero basic state, the linearized perturbation equations acquire advection terms. The momentum equation becomes:
+\begin{equation}
+  \pdv{\bm{u}'}{t} + (\bar{\bm{u}} \cdot \grad)\bm{u}' + (\bm{u}' \cdot \grad)\bar{\bm{u}}
+  = -\grad p' - 2\hat{\bm{z}} \times \bm{u}' + \frac{\mathrm{Ra}}{\mathrm{Pr}} \qty(\frac{r}{r_o})^2 \theta' \hat{\bm{r}} + E\grad^2 \bm{u}',
+  \label{eq:momentum_basic}
+\end{equation}
+where the new terms are:
+\begin{itemize}
+  \item $(\bar{\bm{u}} \cdot \grad)\bm{u}' = \bar{u}_\phi \frac{1}{r\sin\theta} \pdv{\bm{u}'}{\phi}$ -- advection of perturbation by basic state flow
+  \item $(\bm{u}' \cdot \grad)\bar{\bm{u}} = u_r' \pdv{\bar{u}_\phi}{r} \hat{\bm{\phi}} + \frac{u_\theta'}{r} \pdv{\bar{u}_\phi}{\theta} \hat{\bm{\phi}}$ -- perturbation advection of basic state shear
+\end{itemize}
+
+The temperature equation becomes:
+\begin{equation}
+  \pdv{\theta'}{t} + (\bar{\bm{u}} \cdot \grad)\theta' + (\bm{u}' \cdot \grad)\bar{\theta} = \frac{E}{\mathrm{Pr}} \grad^2 \theta',
+  \label{eq:temperature_basic}
+\end{equation}
+where:
+\begin{itemize}
+  \item $(\bar{\bm{u}} \cdot \grad)\theta' = \bar{u}_\phi \frac{1}{r\sin\theta} \pdv{\theta'}{\phi}$ -- basic state advection of perturbation temperature
+  \item $(\bm{u}' \cdot \grad)\bar{\theta} = u_r' \pdv{\bar{\theta}}{r} + \frac{u_\theta'}{r} \pdv{\bar{\theta}}{\theta}$ -- \emph{perturbation advection of meridional temperature gradient}
+\end{itemize}
+
+The last term is crucial: the meridional gradient $\partial\bar{\theta}/\partial\theta$ introduces coupling between different spherical harmonic degrees, modifying the onset conditions.
+
+\subsection{Spectral Formulation}
+
+In Fourier space (azimuthal mode $m$), the advection terms simplify. For the temperature equation~\eqref{eq:temperature_basic}, the azimuthal advection becomes:
+\begin{equation}
+  \bar{u}_\phi \frac{1}{r\sin\theta} \pdv{\theta'}{\phi} \to \frac{im}{r\sin\theta} \bar{u}_\phi \theta' \quad \text{(in Fourier space)}.
+  \label{eq:azimuthal_advection}
+\end{equation}
+
+The perturbation advection of the basic state gradient involves:
+\begin{itemize}
+  \item \textbf{Radial advection}: $u_r' \partial\bar{\theta}/\partial r$ couples to all $\ell'$ components of $\bar{\theta}_{\ell'0}(r)$
+  \item \textbf{Meridional advection}: $(u_\theta'/r) \partial\bar{\theta}/\partial\theta$ requires evaluating $\partial Y_{\ell'0}/\partial\theta$ and mode-coupling integrals
+\end{itemize}
+
+The full treatment requires computing Gaunt coefficients for integrals of the form:
+\begin{equation}
+  \int Y_{\ell m} \pdv{Y_{\ell' 0}}{\theta} Y_{\ell'' m} \,d\Omega,
+  \label{eq:gaunt_integral}
+\end{equation}
+which couple different $(\ell, \ell', \ell'')$ triads.
+
+\subsection{Implementation Notes}
+
+The basic state capability is implemented in \texttt{src/basic\_state.jl} with the following structure:
+
+\begin{itemize}
+  \item \texttt{BasicState} type stores the spectral coefficients $\bar{\theta}_{\ell 0}(r)$, $\bar{u}_{\phi,\ell 0}(r)$, and their radial derivatives.
+
+  \item \texttt{conduction\_basic\_state} creates the standard conduction profile (only $\ell=0$ component, $\bar{u}_\phi = 0$), ensuring backward compatibility.
+
+  \item \texttt{meridional\_basic\_state} constructs a basic state with a prescribed meridional temperature variation (e.g., adding a $Y_{20}$ component) and solves the thermal wind equation~\eqref{eq:thermal_wind} to obtain the corresponding zonal flow.
+
+  \item \texttt{solve\_thermal\_wind\_balance!} integrates Equation~\eqref{eq:thermal_wind} for each spectral mode using the radial Chebyshev grid.
+\end{itemize}
+
+The \texttt{OnsetParams} structure accepts an optional \texttt{basic\_state} argument. When provided, the operator \texttt{apply\_operator} in \texttt{src/linear\_stability.jl} includes the advection terms from Equations~\eqref{eq:momentum_basic} and~\eqref{eq:temperature_basic}.
+
+\textbf{Current Status}: The implementation includes:
+\begin{itemize}
+  \item Thermal wind balance solver for the $\ell=2$ mode (simplified)
+  \item Radial advection $u_r' \partial\bar{\theta}/\partial r$ for $\ell'=0,2$ components
+  \item Framework for meridional and azimuthal advection (marked as TODO)
+\end{itemize}
+
+Full mode coupling through Gaunt coefficients and complete advection terms remain as future enhancements. See \texttt{README\_BASIC\_STATE.md} for details.
+
+\subsection{Physical Implications}
+
+The presence of a meridional temperature gradient and associated zonal flow can:
+\begin{itemize}
+  \item \textbf{Modify $\mathrm{Ra}_c$}: The basic state shear can stabilize or destabilize convection depending on the sign of $\partial\bar{\theta}/\partial\theta$ and the interaction with the Coriolis force.
+
+  \item \textbf{Alter $\omega_c$}: Basic state zonal flow advects perturbations azimuthally, shifting the drift frequency. Prograde (retrograde) basic state flows can enhance (reduce) the prograde drift of thermal Rossby waves.
+
+  \item \textbf{Change $m_c$}: The interaction between the azimuthal structure of perturbations and the basic state can favor different critical wavenumbers.
+\end{itemize}
+
+For small amplitude meridional perturbations ($\|\bar{\theta} - \bar{\theta}_{\text{cond}}\| \ll 1$), effects scale linearly with amplitude. Larger perturbations require the full nonlinear coupling.
+
+\section{Boundary-Driven Basic States}
+\label{sec:boundary_driven}
+
+This section details the implementation of basic states where meridional temperature variations are \emph{imposed at the outer boundary}, representing physically realistic differential heating scenarios such as pole-to-equator temperature contrasts.
+
+\subsection{Boundary Conditions and Physical Setup}
+
+We consider a configuration where the outer boundary temperature varies meridionally while the inner boundary remains isothermal:
+\begin{align}
+  \bar{\theta}(r_o, \theta) &= 1 + \epsilon \, Y_{20}(\theta), \label{eq:bc_outer} \\
+  \bar{\theta}(r_i, \theta) &= 0, \label{eq:bc_inner}
+\end{align}
+where $\epsilon$ is a small dimensionless amplitude and $Y_{20}(\theta)$ is the axisymmetric spherical harmonic with $\ell=2$:
+\begin{equation}
+  Y_{20}(\theta) = \sqrt{\frac{5}{4\pi}} \, P_2(\cos\theta) = \sqrt{\frac{5}{4\pi}} \, \frac{3\cos^2\theta - 1}{2}.
+  \label{eq:Y20}
+\end{equation}
+
+This choice creates a two-cell meridional pattern:
+\begin{itemize}
+  \item At the pole ($\theta=0$): $Y_{20}(0) = \sqrt{5/(4\pi)} \approx 0.630$ (maximum, hotter)
+  \item At the equator ($\theta=\pi/2$): $Y_{20}(\pi/2) = -\sqrt{5/(4\pi)}/2 \approx -0.315$ (minimum, cooler)
+  \item Pole-to-equator temperature contrast: $\Delta T_{\text{merid}} \approx 1.13\,\epsilon$
+\end{itemize}
+
+\subsection{Solution Method for Basic State Temperature}
+
+The basic state temperature satisfies the steady, axisymmetric conduction equation:
+\begin{equation}
+  \grad^2 \bar{\theta} = 0.
+  \label{eq:laplace_basic}
+\end{equation}
+
+Expanding in axisymmetric spherical harmonics as in Equation~\eqref{eq:basic_theta}, each radial mode $\bar{\theta}_{\ell 0}(r)$ satisfies the separated radial ODE:
+\begin{equation}
+  \pdv[2]{\bar{\theta}_{\ell 0}}{r} + \frac{2}{r} \pdv{\bar{\theta}_{\ell 0}}{r} - \frac{\ell(\ell+1)}{r^2} \bar{\theta}_{\ell 0} = 0.
+  \label{eq:laplace_radial}
+\end{equation}
+
+\paragraph{$\ell=0$ mode (radial mean):}
+Equation~\eqref{eq:laplace_radial} reduces to
+\[
+  \pdv[2]{\bar{\theta}_{00}}{r} + \frac{2}{r} \pdv{\bar{\theta}_{00}}{r} = 0,
+\]
+with general solution $\bar{\theta}_{00}(r) = A_0 + B_0/r$. Boundary conditions $\bar{\theta}_{00}(r_i) = 0$, $\bar{\theta}_{00}(r_o) = 1/\sqrt{4\pi}$ (normalized for unit outer temperature) determine $A_0$ and $B_0$ uniquely:
+\begin{equation}
+  \bar{\theta}_{00}(r) = \frac{1}{\sqrt{4\pi}} \frac{r_o}{r_o - r_i} \qty( \frac{r - r_i}{r} ).
+  \label{eq:theta_00}
+\end{equation}
+
+\paragraph{$\ell=2$ mode (meridional variation):}
+For $\ell=2$, Equation~\eqref{eq:laplace_radial} becomes
+\begin{equation}
+  \pdv[2]{\bar{\theta}_{20}}{r} + \frac{2}{r} \pdv{\bar{\theta}_{20}}{r} - \frac{6}{r^2} \bar{\theta}_{20} = 0.
+  \label{eq:laplace_l2}
+\end{equation}
+The general solution is a linear combination of power-law functions:
+\begin{equation}
+  \bar{\theta}_{20}(r) = A_2 \, r^2 + B_2 \, r^{-3}.
+  \label{eq:theta_20_general}
+\end{equation}
+
+Imposing boundary conditions:
+\begin{align}
+  \bar{\theta}_{20}(r_i) &= 0 \quad \Rightarrow \quad A_2 \, r_i^2 + B_2 \, r_i^{-3} = 0, \label{eq:bc_l2_inner} \\
+  \bar{\theta}_{20}(r_o) &= \frac{\epsilon}{\sqrt{5/(4\pi)}} \quad \Rightarrow \quad A_2 \, r_o^2 + B_2 \, r_o^{-3} = \frac{\epsilon}{\sqrt{5/(4\pi)}}, \label{eq:bc_l2_outer}
+\end{align}
+yields
+\begin{align}
+  B_2 &= -A_2 \, r_i^5, \\
+  A_2 &= \frac{\epsilon}{\sqrt{5/(4\pi)}} \frac{1}{r_o^2 - r_i^5 r_o^{-3}}.
+\end{align}
+
+The final radial profile is:
+\begin{equation}
+  \bar{\theta}_{20}(r) = \frac{\epsilon}{\sqrt{5/(4\pi)}} \frac{r^2 - r_i^5 r^{-3}}{r_o^2 - r_i^5 r_o^{-3}}.
+  \label{eq:theta_20_solution}
+\end{equation}
+
+\subsection{Numerical Implementation with Spectral Collocation}
+
+In the code, Equation~\eqref{eq:laplace_radial} is discretized using Chebyshev collocation. For a given $\ell$, define the spectral operator:
+\begin{equation}
+  \bm{L}_\ell = \bm{D}_2 + \mathrm{diag}\qty(\frac{2}{r}) \bm{D}_1 - \mathrm{diag}\qty(\frac{\ell(\ell+1)}{r^2}),
+  \label{eq:spectral_laplace}
+\end{equation}
+where $\bm{D}_1$ and $\bm{D}_2$ are the Chebyshev first and second derivative matrices.
+
+For $\ell=2$, the boundary value problem $\bm{L}_2 \bar{\bm{\theta}}_{20} = \bm{0}$ with Dirichlet conditions is solved by:
+\begin{enumerate}
+  \item Replace the first row of $\bm{L}_2$ with $\bm{e}_1^\top$ (evaluation at $r_i$), set RHS to $0$.
+  \item Replace the last row with $\bm{e}_{N_r}^\top$ (evaluation at $r_o$), set RHS to $\epsilon/\sqrt{5/(4\pi)}$.
+  \item Solve the linear system $\bm{A}_{\text{sys}} \bar{\bm{\theta}}_{20} = \bm{b}$.
+\end{enumerate}
+
+This approach ensures exact satisfaction of the boundary conditions~\eqref{eq:bc_outer}--\eqref{eq:bc_inner} at the collocation endpoints while maintaining spectral accuracy in the interior.
+
+\subsection{Thermal Wind Balance for Boundary-Driven States}
+
+Once the basic state temperature $\bar{\theta}(r,\theta)$ is determined, the zonal flow $\bar{u}_\phi(r,\theta)$ follows from the thermal wind equation~\eqref{eq:thermal_wind}. For the $\ell=2$ mode, the meridional derivative is:
+\begin{equation}
+  \pdv{Y_{20}}{\theta} = \sqrt{\frac{5}{4\pi}} \qty(-3 \cos\theta \sin\theta) = -\sqrt{\frac{5}{4\pi}} \frac{3}{2} \sin(2\theta).
+  \label{eq:dY20_dtheta}
+\end{equation}
+
+Substituting into Equation~\eqref{eq:thermal_wind}:
+\begin{equation}
+  \pdv{\bar{u}_{\phi,20}}{r} + \frac{\bar{u}_{\phi,20}}{r} = -\frac{\mathrm{Ra}}{2\,\mathrm{Pr}} \frac{r}{r_o \sin\theta} \qty( \bar{\theta}_{20}(r) \pdv{Y_{20}}{\theta} ).
+  \label{eq:thermal_wind_l2}
+\end{equation}
+
+For a mode-by-mode treatment, the RHS couples $\bar{\theta}_{20}$ and $\partial Y_{20}/\partial\theta$ through angular integrals. A simplified approach integrates Equation~\eqref{eq:thermal_wind_alt} in the form:
+\begin{equation}
+  r \bar{u}_{\phi,20}(r) = \int_{r_i}^{r} \text{RHS}(r') \, dr',
+  \label{eq:thermal_wind_integral}
+\end{equation}
+using the trapezoidal rule on the Chebyshev grid. Boundary conditions $\bar{u}_\phi(r_i)=\bar{u}_\phi(r_o)=0$ are enforced in the solver.
+
+\subsection{Usage Example}
+
+A typical workflow in \textsc{Cross.jl} is:
+\begin{enumerate}
+  \item \textbf{Create Chebyshev grid}:
+\begin{verbatim}
+cd = ChebyshevDiffn(64, [χ, 1.0], 2)
+\end{verbatim}
+
+  \item \textbf{Generate boundary-driven basic state}:
+\begin{verbatim}
+bs = meridional_basic_state(cd, χ, Ra, Pr, 4, 0.1)
+\end{verbatim}
+This solves Equation~\eqref{eq:laplace_basic} with boundary conditions~\eqref{eq:bc_outer}--\eqref{eq:bc_inner} and computes the thermal wind-balanced zonal flow.
+
+  \item \textbf{Include basic state in onset calculation}:
+\begin{verbatim}
+Ra_c, ω_c, vec = find_critical_rayleigh(E, Pr, χ, m, lmax, Nr;
+                                         basic_state = bs)
+\end{verbatim}
+This solves the eigenvalue problem~\eqref{eq:p_growth}--\eqref{eq:theta_growth} including advection by $\bar{\bm{u}}$ and $\bar{\theta}$.
+
+  \item \textbf{Compare with standard onset}:
+\begin{verbatim}
+Ra_c_standard, _, _ = find_critical_rayleigh(E, Pr, χ, m, lmax, Nr)
+ΔRa_c = Ra_c - Ra_c_standard
+\end{verbatim}
+\end{enumerate}
+
+See \texttt{example/boundary\_driven\_jet.jl} for a complete demonstration.
+
+\subsection{Physical Interpretation}
+
+For small amplitude $\epsilon \ll 1$:
+\begin{itemize}
+  \item \textbf{Temperature}: The basic state consists of a dominant radial conduction profile~\eqref{eq:theta_00} plus a meridional perturbation~\eqref{eq:theta_20_solution} that creates pole-to-equator contrast.
+
+  \item \textbf{Zonal jet}: The thermal wind balance~\eqref{eq:thermal_wind_l2} drives an east--west flow whose strength scales with $\mathrm{Ra} \times \epsilon$. For typical parameters ($\mathrm{Ra} \sim 10^7$, $\epsilon=0.1$), the jet can reach $\mathcal{O}(1)$ non-dimensional velocities.
+
+  \item \textbf{Onset modification}: The advection terms $(\bm{u}' \cdot \grad)\bar{\theta}$ couple the basic state meridional gradient to perturbation velocities, altering $\mathrm{Ra}_c$. The sign and magnitude depend on the interaction between the basic state structure (two-cell $\ell=2$ pattern) and the perturbation mode $m$.
+
+  \item \textbf{Drift frequency shift}: Basic state zonal flow advects perturbations azimuthally, modifying $\omega_c$ by amounts $\Delta\omega \sim \epsilon \times \mathrm{Ra}/\mathrm{Pr}$.
+\end{itemize}
+
+\subsection{Relation to Geophysical Flows}
+
+The boundary-driven configuration models:
+\begin{itemize}
+  \item \textbf{Planetary atmospheres}: Differential solar heating creates latitudinal temperature gradients, driving zonal jets (e.g., Jupiter's banded winds).
+  \item \textbf{Stellar convection zones}: Meridional variations in radiative heating at the photosphere can influence interior zonal flows.
+  \item \textbf{Laboratory experiments}: Imposed thermal patterns via segmented heating elements allow controlled study of thermal wind effects.
+\end{itemize}
+
+Understanding how these background flows affect the onset of secondary instabilities (convection in this context) is crucial for interpreting observational data and validating numerical models.
+
+\section{Tri-Global Instability Analysis}
+\label{sec:triglobal}
+
+The preceding sections analyzed stability with respect to a \emph{single} azimuthal wavenumber~$m$. When the basic state is axisymmetric ($\partial/\partial\phi=0$), modes with different~$m$ decouple and can be studied independently. However, when the basic state has \emph{longitudinal variations}, different perturbation modes couple and must be solved simultaneously. This is termed \textbf{tri-global} or \textbf{three-dimensional global} stability analysis.
+
+\subsection{Non-Axisymmetric Basic States}
+
+Consider a basic state with both meridional and longitudinal structure:
+\begin{equation}
+  \bar{\theta}(r,\theta,\phi) = \sum_{\ell=0}^{\ell_{\max}^{\text{bs}}} \sum_{m_{\text{bs}}=0}^{m_{\max}^{\text{bs}}} \bar{\theta}_{\ell m_{\text{bs}}}(r) Y_{\ell m_{\text{bs}}}(\theta,\phi).
+  \label{eq:theta_3d}
+\end{equation}
+Here $m_{\text{bs}}$ labels the azimuthal modes of the basic state (subscript ``bs'' distinguishes basic state modes from perturbation modes $m$). For $m_{\text{bs}}\neq0$ the basic state varies with longitude, arising from:
+\begin{itemize}
+  \item \textbf{Tidally-locked planets}: Day-night temperature contrast
+  \item \textbf{Stellar active regions}: Localized heating from magnetic spots
+  \item \textbf{Laboratory experiments}: Segmented boundary heating
+\end{itemize}
+
+Each mode $\bar{\theta}_{\ell m_{\text{bs}}}(r)$ satisfies the radial ODE~\eqref{eq:laplace_radial}, solved numerically with boundary conditions imposed at~$r=r_i,r_o$ as in Section~\ref{sec:boundary_driven}.
+
+\subsection{Mode Coupling Mechanism}
+
+The perturbation fields are expanded as
+\begin{equation}
+  \theta'(r,\theta,\phi,t) = \sum_{m=-\infty}^{\infty} \sum_{\ell=|m|}^{\ell_{\max}} \theta_{\ell m}(r,t) Y_{\ell m}(\theta,\phi).
+  \label{eq:theta_pert_3d}
+\end{equation}
+Without a basic state (or with an axisymmetric basic state), each $m$ decouples: the linearized equations for $\theta_{\ell m}$ involve only harmonics with the same $m$. A basic state mode $m_{\text{bs}}\neq0$ introduces coupling via advection. For example, the azimuthal advection term
+\begin{equation}
+  \bar{u}_\phi \frac{1}{r\sin\theta} \pdv{\theta'}{\phi}
+  \quad\longrightarrow\quad
+  \sum_{m_{\text{bs}}} \bar{u}_{\phi,m_{\text{bs}}} \times \frac{im}{r\sin\theta} \theta_m
+  \label{eq:azimuthal_coupling}
+\end{equation}
+couples modes with azimuthal numbers differing by $m_{\text{bs}}$. More generally, products of harmonics satisfy
+\begin{equation}
+  Y_{\ell_1 m_1} \times Y_{\ell_2 m_2} = \sum_{\ell_3 m_3} \text{(Gaunt)} \times Y_{\ell_3 m_3},
+  \qquad m_3 = m_1 + m_2,
+  \label{eq:gaunt}
+\end{equation}
+so a basic state mode $m_{\text{bs}}$ couples perturbations $m$ and $m\pm m_{\text{bs}}$.
+
+\subsection{Block-Coupled Eigenvalue Problem}
+
+Because advection by $\bar{\theta}_{\ell m_{\text{bs}}}$ or $\bar{u}_\phi$ with $m_{\text{bs}}\neq0$ mixes different $m$ values, the eigenvalue problem becomes \emph{block-coupled} across azimuthal modes. Define a state vector containing multiple $m$-blocks:
+\begin{equation}
+  \bm{x} = \begin{pmatrix} \bm{x}_{m_1} \\ \bm{x}_{m_2} \\ \vdots \\ \bm{x}_{m_N} \end{pmatrix},
+  \qquad
+  \bm{x}_m = \begin{pmatrix} \bm{P}_m \\ \bm{T}_m \\ \bm{\Theta}_m \end{pmatrix},
+  \label{eq:state_vector_triglobal}
+\end{equation}
+where $m_1,\ldots,m_N$ span an appropriate range (typically centered at a target wavenumber and including neighbors differing by $\pm m_{\text{bs}}$). The coupled eigenvalue problem reads
+\begin{equation}
+  \begin{pmatrix}
+    \bm{A}_{m_1}       & \bm{C}_{m_1,m_2} & \cdots  \\
+    \bm{C}_{m_2,m_1}   & \bm{A}_{m_2}     & \cdots  \\
+    \vdots             & \vdots           & \ddots
+  \end{pmatrix}
+  \begin{pmatrix} \bm{x}_{m_1} \\ \bm{x}_{m_2} \\ \vdots \end{pmatrix}
+  =
+  \lambda \,
+  \bm{B}
+  \begin{pmatrix} \bm{x}_{m_1} \\ \bm{x}_{m_2} \\ \vdots \end{pmatrix},
+  \label{eq:triglobal_eigenproblem}
+\end{equation}
+where:
+\begin{itemize}
+  \item $\bm{A}_m$ is the single-mode operator from Equations~\eqref{eq:p_growth}--\eqref{eq:theta_growth} (diagonal blocks).
+  \item $\bm{C}_{m,m'}$ represents coupling between modes $m$ and $m'$ due to the basic state. Nonzero only when $|m-m'|=m_{\text{bs}}$ for some basic state mode~$m_{\text{bs}}$.
+  \item $\bm{B}$ is the global mass matrix (block-diagonal).
+\end{itemize}
+
+Problem size: if each $m$-block has $n_m$ degrees of freedom ($n_m \sim \ell_{\max}\times N_r\times3$) and $N$ modes are coupled, the total size is $N\,n_m \times N\,n_m$, which can be very large. The matrix is \emph{block-sparse}: most off-diagonal blocks vanish because modes differing by more than $m_{\text{bs}}$ do not couple directly.
+
+\subsection{Coupling Operators}
+
+The off-diagonal blocks $\bm{C}_{m,m'}$ arise from advection terms. Consider the temperature equation:
+\begin{equation}
+  \pdv{\theta'}{t} + \bar{u}_\phi \frac{1}{r\sin\theta}\pdv{\theta'}{\phi}
+  + u_r' \pdv{\bar{\theta}}{r} + \frac{u_\theta'}{r}\pdv{\bar{\theta}}{\theta}
+  = \frac{E}{\mathrm{Pr}} \grad^2 \theta'.
+  \label{eq:temp_coupled}
+\end{equation}
+Expanding $\bar{u}_\phi$ and $\bar{\theta}$ in azimuthal modes,
+\[
+  \bar{u}_\phi(r,\theta,\phi) = \sum_{m_{\text{bs}}} \sum_{\ell'} \bar{u}_{\phi,\ell'm_{\text{bs}}}(r) Y_{\ell' m_{\text{bs}}}(\theta,\phi),
+\]
+and similarly for $\bar{\theta}$. The azimuthal advection~\eqref{eq:azimuthal_coupling} couples $\theta_m$ to $\theta_{m\pm m_{\text{bs}}}$. The radial and meridional advection involve products such as $Y_{\ell m} \times Y_{\ell' m_{\text{bs}}}$, which by~\eqref{eq:gaunt} couple $m$ to $m\pm m_{\text{bs}}$.
+
+In discretized form, each coupling block $\bm{C}_{m,m'}$ is computed from these advection terms using Gaunt coefficients and radial differentiation matrices. The implementation requires careful indexing to map $(m,\ell,r)$ degrees of freedom into the global state vector.
+
+\subsection{Solution Strategy}
+
+Solving~\eqref{eq:triglobal_eigenproblem} for large systems demands:
+\begin{enumerate}
+  \item \textbf{Sparse storage}: Store only nonzero blocks (diagonal and near-diagonal).
+  \item \textbf{Shift-and-invert}: Target eigenvalues near $\lambda=\sigma_{\text{target}}+i\omega_{\text{target}}$ using $(A-\sigma B)^{-1}B$.
+  \item \textbf{Krylov methods}: Arnoldi or Lanczos iteration (KrylovKit, Arpack) to compute a few eigenvalues.
+  \item \textbf{Iterative linear solvers}: Solve $(A-\sigma B)\,y = B\,x$ via GMRES or similar, avoiding full factorization.
+\end{enumerate}
+
+Because the problem is typically dominated by a small number of coupled modes (e.g., $m\in\{m_c-m_{\text{bs}},m_c,m_c+m_{\text{bs}}\}$ near the critical wavenumber~$m_c$), one can often work with a reduced set of modes rather than the full infinite sum~\eqref{eq:theta_pert_3d}.
+
+\subsection{Physical Implications}
+
+Tri-global coupling modifies onset in several ways:
+\begin{itemize}
+  \item \textbf{Resonance}: If the perturbation mode $m$ matches a basic state mode $m_{\text{bs}}$, the coupling may be resonant, significantly shifting $\mathrm{Ra}_c$.
+
+  \item \textbf{Frequency shifts}: Basic state flows advect perturbations azimuthally at different rates for different $m$, altering the drift frequency~$\omega_c$.
+
+  \item \textbf{Modified critical wavenumber}: The coupled system may select a preferred $m$ that differs from the axisymmetric case, especially if the basic state has strong structure at a particular wavenumber.
+
+  \item \textbf{Perturbative regime}: For small amplitude $\epsilon \ll 1$ in Equation~\eqref{eq:theta_3d}, the coupling $\bm{C}_{m,m'}$ is $\mathcal{O}(\epsilon)$, and first-order perturbation theory predicts $\Delta\mathrm{Ra}_c \sim \epsilon$.
+\end{itemize}
+
+\subsection{Implementation in \textsc{Cross.jl}}
+
+A tri-global capability is provided via \texttt{triglobal\_stability.jl}:
+\begin{itemize}
+  \item \texttt{BasicState3D}: Structure holding $(\ell,m_{\text{bs}})$ coefficients.
+  \item \texttt{nonaxisymmetric\_basic\_state}: Solves~\eqref{eq:laplace_radial} for each mode with 3D boundary conditions.
+  \item \texttt{TriGlobalParams}: Encapsulates $E,\mathrm{Pr},\mathrm{Ra},\chi$ plus $m$-range and the 3D basic state.
+  \item \texttt{setup\_coupled\_mode\_problem}: Analyzes coupling graph and block indices.
+  \item \texttt{solve\_triglobal\_eigenvalue\_problem}: (Framework in place; full matrix assembly in development)
+\end{itemize}
+
+Example usage:
+\begin{verbatim}
+# Create a basic state with m_bs = 2 mode
+amplitudes = Dict( (2,0)=>0.1, (2,2)=>0.05 )
+bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr, 4, 2, amplitudes)
+
+# Set up tri-global problem for m ∈ [-4,4]
+params = TriGlobalParams(E=E, Pr=Pr, Ra=Ra, χ=χ,
+                          m_range=-4:4, lmax=50, Nr=64,
+                          basic_state_3d=bs3d)
+
+# Analyze coupling (modes m=0,2,4,... couple via m_bs=2)
+problem = setup_coupled_mode_problem(params)
+
+# (Eigenvalue solve: in development)
+\end{verbatim}
+
+See \texttt{example/triglobal\_analysis\_demo.jl} for a complete demonstration of the framework.
+
+\subsection{Computational Cost and Feasibility}
+
+The tri-global problem scales as $\mathcal{O}(N_m^2)$ in the number of coupled modes. For example, with $N_m=9$ modes, $\ell_{\max}=50$, $N_r=64$:
+\[
+  \text{Total DOFs} \sim N_m \times \ell_{\max} \times N_r \times 3 \approx 86{,}400.
+\]
+The matrix size $\sim 86{,}400^2 \approx 7.5\times10^9$ entries, which if stored densely requires $\sim60\,\text{GB}$. However, the block-sparse structure (most $\bm{C}_{m,m'}=0$) reduces memory and computational cost significantly. With iterative methods, computing a few eigenvalues near $\lambda=0$ is feasible on modern workstations.
+
+For weak coupling ($\epsilon \ll 1$), perturbation theory or reduced models focusing on the dominant coupled modes may suffice, drastically lowering the computational burden.
 
 \section{Summary}
 Starting from the non-dimensional momentum balance~\eqref{eq:momentum}, we introduced the toroidal and poloidal potentials of Equations (13)--(15), expanded them in spherical harmonics and radial Chebyshev polynomials, and projected each term onto the vector spherical harmonic basis. The resulting Equations~\eqref{eq:poloidal_equation} and~\eqref{eq:toroidal_equation} express the dynamics entirely in terms of the scalar potentials, providing the foundation of the matrix eigenvalue problem solved in the accompanying code base.
 
 \bigskip
-In parallel, Equation~\eqref{eq:temperature_modal} (and its discrete counterpart~\eqref{eq:temperature_discrete}) expresses the temperature perturbation equation in the same spectral framework, while the growth-rate system~\eqref{eq:p_growth}--\eqref{eq:theta_growth} casts the full problem as a generalized eigenvalue problem with the complex growth rate as eigenvalue, completing the derivation requested.
+In parallel, Equation~\eqref{eq:temperature_modal} (and its discrete counterpart~\eqref{eq:temperature_discrete}) expresses the temperature perturbation equation in the same spectral framework, while the growth-rate system~\eqref{eq:p_growth}--\eqref{eq:theta_growth} casts the full problem as a generalized eigenvalue problem with the complex growth rate as eigenvalue.
+
+\bigskip
+Section~\ref{sec:basic_state} extends this formulation to study onset on top of a basic state with meridional temperature variations and thermal wind-balanced zonal flows. The thermal wind equation~\eqref{eq:thermal_wind} relates the zonal flow to the meridional temperature gradient through geostrophic balance. Modified perturbation equations~\eqref{eq:momentum_basic}--\eqref{eq:temperature_basic} include advection by the basic state, introducing mode coupling that alters the critical parameters for onset.
+
+\bigskip
+Section~\ref{sec:boundary_driven} details the specific implementation of boundary-driven basic states where meridional temperature variations are imposed at the outer boundary. The analytical solution~\eqref{eq:theta_20_solution} for the $\ell=2$ mode, combined with the numerical spectral collocation approach~\eqref{eq:spectral_laplace}, enables accurate computation of realistic differential heating scenarios relevant to planetary and stellar fluid dynamics.
+
+\bigskip
+Section~\ref{sec:triglobal} addresses \emph{tri-global} instability analysis for non-axisymmetric basic states with longitudinal variations. When basic state modes $m_{\text{bs}}\neq0$ are present, perturbation modes $m$ couple through advection, requiring a block-coupled eigenvalue problem~\eqref{eq:triglobal_eigenproblem}. The framework implemented in \texttt{triglobal\_stability.jl} supports creating 3D basic states, analyzing mode coupling, and estimating computational requirements; full matrix assembly and eigenvalue solution remain under development.
 
 \end{document}

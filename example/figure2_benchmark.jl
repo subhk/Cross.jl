@@ -20,7 +20,7 @@ end
 using Cross
 using Printf
 
-const E = 1e-5
+const E =  1e-5
 const Pr = 1.0
 const ri = 0.35
 const ro = 1.0
@@ -29,8 +29,8 @@ const nθ = 96
 
 # Rayleigh number brackets used for the bisection searches.  The values
 # were chosen to cover the neutral curve reported in the paper.
-const RA_LOWER = 1.5e7
-const RA_UPPER = 3.0e7
+const RA_LOWER = 1.0e6
+const RA_UPPER = 3.0e8
 const BIS_TOL  = 1e-3
 const MAX_ITERS = 40
 

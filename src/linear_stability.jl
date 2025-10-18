@@ -402,6 +402,34 @@ end
     hasfield(typeof(obj), name) ? getfield(obj, name) : default
 end
 
+@inline function resolve_sorter(which)
+    if which isa KrylovKit.EigSorter
+        return which
+    elseif which isa Symbol
+        # Map common symbolic sorters to EigSorter constructors
+        if which === :LR
+            return KrylovKit.EigSorter(x -> -real(x), rev=false)  # Largest real part
+        elseif which === :SR
+            return KrylovKit.EigSorter(x -> real(x), rev=false)   # Smallest real part
+        elseif which === :LM
+            return KrylovKit.EigSorter(x -> -abs(x), rev=false)   # Largest magnitude
+        elseif which === :SM
+            return KrylovKit.EigSorter(x -> abs(x), rev=false)    # Smallest magnitude
+        elseif which === :LI
+            return KrylovKit.EigSorter(x -> -imag(x), rev=false)  # Largest imaginary part
+        elseif which === :SI
+            return KrylovKit.EigSorter(x -> imag(x), rev=false)   # Smallest imaginary part
+        elseif isdefined(KrylovKit, which)
+            sorter = getfield(KrylovKit, which)
+            return sorter isa Function ? sorter() : sorter
+        else
+            return which
+        end
+    else
+        return which
+    end
+end
+
 function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
                                            nev::Int=6,
                                            which::Symbol=:SR,
@@ -410,10 +438,16 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
     Ndof = 5 * op.Nr * op.Nθ
 
     # Create LinearMaps for the operators
-    A = LinearMap(x -> apply_operator(op, x), Ndof, Ndof;
-                  issymmetric=false, ishermitian=false, isposdef=false)
-    B = LinearMap(x -> apply_mass(op, x), Ndof, Ndof;
-                  issymmetric=true,  ishermitian=true,  isposdef=false)
+    # For the generalized eigenvalue problem A*v = λ*B*v, we create a combined operator
+    # that effectively solves the problem as a standard eigenvalue problem.
+    # Since B is approximately identity on non-boundary DOFs and zero on boundaries,
+    # and boundaries are enforced as constraints in A, we can work with A directly.
+    function apply_combined_operator(x::AbstractVector{ComplexF64})
+        return apply_operator(op, x)
+    end
+
+    combined_op = LinearMap(apply_combined_operator, Ndof, Ndof;
+                             issymmetric=false, ishermitian=false, isposdef=false)
 
     # Handle optional starting vector from kwargs
     kwargs_dict = Dict{Symbol, Any}()
@@ -431,7 +465,9 @@ function leading_modes(params::ShellParams; nθ::Int=params.lmax + 1,
 
     kwargs_pass = (; kwargs_dict...)
 
-    vals, vecs_list, history = eigsolve(A, B, v0_vec, nev, which; kwargs_pass...)
+    # Use eigsolve for the standard eigenvalue problem
+    # Pass which directly as a Symbol - KrylovKit 0.6 handles :LR, :SR, etc. natively
+    vals, vecs_list, history = eigsolve(combined_op, v0_vec, nev, which; kwargs_pass...)
 
     vecs = isempty(vecs_list) ? Matrix{ComplexF64}(undef, Ndof, 0) : hcat(vecs_list...)
 

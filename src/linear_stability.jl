@@ -10,6 +10,9 @@ using Parameters
 
 import ..Cross: ChebyshevDiffn
 
+# Spherical harmonic utilities using SHTnsKit
+include("spherical_harmonic_utils_shtns.jl")
+
 # =============================================================================
 #  Parameter Structure
 # =============================================================================
@@ -355,13 +358,89 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
                 end
             end
 
-            # TODO: Add meridional advection term -(u'_θ/r) ∂θ̄/∂θ
-            # This requires computing u'_θ from poloidal potential and evaluating
-            # spherical harmonic derivatives ∂Y_ℓ0/∂θ
-            # This is a mode-coupling term that requires careful treatment
+            # ================================================================
+            # Meridional advection: -(u'_θ/r) ∂θ̄/∂θ
+            # ================================================================
+            # u'_θ comes from poloidal potential: u'_θ = (1/r) ∂P/∂r × (∂Y_ℓm/∂θ factor)
+            # ∂θ̄/∂θ comes from basic state: ∂θ̄/∂θ = Σ θ̄_ℓ'0(r) (∂Y_ℓ'0/∂θ)
+            #
+            # Mode coupling: ∫ Y_ℓm × [(∂P/∂r)/r] × [∂θ̄/∂θ] dΩ
+            # This couples ℓ with ℓ±1 due to ∂Y/∂θ ladder relations
 
-            # TODO: Add azimuthal advection by basic state flow: -(ū_φ/r)(im/sinθ)θ'
-            # This is simpler as it's diagonal in ℓ for each mode
+            # Loop over basic state modes that have meridional gradients
+            for ℓ_bs in keys(bs.theta_coeffs)
+                if ℓ_bs == 0 || !haskey(bs.theta_coeffs, ℓ_bs)
+                    continue  # No meridional gradient for ℓ=0
+                end
+
+                theta_bar_bs = bs.theta_coeffs[ℓ_bs]
+                if maximum(abs.(theta_bar_bs)) < 1e-14
+                    continue  # Negligible component
+                end
+
+                # Compute meridional velocity component: u'_θ = (1/r) ∂P_ℓm/∂r
+                dP_dr = op.cd.D1 * P_fields[ℓ]
+                u_theta_factor = dP_dr ./ op.r
+
+                # Mode coupling through ∂Y_ℓ_bs,0/∂θ
+                # ∂Y_ℓ,0/∂θ = -(ℓ+1) a⁺_ℓ,0 Y_{ℓ+1,0} + ℓ a⁻_ℓ,0 Y_{ℓ-1,0}
+                # This couples to ℓ ± 1
+
+                # Coupling coefficient using spherical harmonic derivative relations
+                coupling_coeff = compute_meridional_advection_coupling(ℓ, p.m, ℓ_bs, 0, ℓ)
+
+                if abs(coupling_coeff) > 1e-14
+                    # Meridional advection contribution
+                    # -(u'_θ/r) × ∂θ̄_ℓ_bs/∂θ → contributes to mode ℓ
+                    advection_merid = -coupling_coeff .* u_theta_factor .* theta_bar_bs ./ op.r
+                    result[Θ_idx] .+= advection_merid
+                end
+            end
+
+            # ================================================================
+            # Azimuthal advection by basic state: -(ū_φ/r)(im/sinθ)θ'
+            # ================================================================
+            # Basic state zonal flow advects perturbation azimuthally
+            # For mode (ℓ,m): -(ū_φ,ℓ_bs,0/r) × (im/sinθ) × θ'_ℓm
+            # This is diagonal in ℓ for axisymmetric basic state (m_bs=0)
+
+            if haskey(bs.uphi_coeffs, 0)
+                # Axisymmetric zonal flow (ℓ=0 component)
+                uphi_bar_0 = bs.uphi_coeffs[0]
+                if maximum(abs.(uphi_bar_0)) > 1e-14
+                    # Coefficient: im/sinθ factor gives azimuthal coupling
+                    # For Schmidt harmonics: im × m × Y_ℓm
+                    azim_coeff = azimuthal_advection_coefficient_axisym(ℓ, p.m)
+
+                    if abs(azim_coeff) > 1e-14
+                        # Note: This gives the REAL coefficient; factor of i is absorbed
+                        # in the eigenvalue problem (time derivative gives iω)
+                        advection_azim = -azim_coeff .* (uphi_bar_0 ./ op.r) .* Θ_fields[ℓ]
+                        result[Θ_idx] .+= advection_azim ./ sqrt(4π)  # Normalize by Y_00
+                    end
+                end
+            end
+
+            # For non-axisymmetric basic state (m_bs ≠ 0), loop over uphi modes
+            for (ℓ_bs, m_bs) in keys(bs.uphi_coeffs)
+                if m_bs == 0  # Already handled above
+                    continue
+                end
+
+                uphi_bar_bs = bs.uphi_coeffs[(ℓ_bs, m_bs)]
+                if maximum(abs.(uphi_bar_bs)) < 1e-14
+                    continue
+                end
+
+                # Azimuthal mode coupling: m_result = m_pert ± m_bs
+                # For tri-global case, this couples different m values
+                azim_coeff = azimuthal_advection_coefficient(ℓ, p.m, m_bs)
+
+                if abs(azim_coeff) > 1e-14
+                    advection_azim = -azim_coeff .* (uphi_bar_bs ./ op.r) .* Θ_fields[ℓ]
+                    result[Θ_idx] .+= advection_azim
+                end
+            end
         end
     end
 

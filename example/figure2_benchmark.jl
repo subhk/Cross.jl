@@ -1,4 +1,3 @@
-#!/usr/bin/env julia
 #
 # Benchmark script reproducing the neutral-stability curve shown in
 # Figure 2 of docs/Onset_convection.pdf (Barik et al., 2023).
@@ -58,16 +57,16 @@ println("-"^70)
 for m in 1:30
     try
         # Initial guess based on expected scaling
-        Ra_guess = 2e7
+        Ra_guess = 1e7
 
         # Find critical Rayleigh number for this m
         Ra_c, ω_c, vec = find_critical_rayleigh(
             E, Pr, χ, m, lmax, Nr;
             Ra_guess = Ra_guess,
-            Ra_bracket = (Ra_guess * 0.3, Ra_guess * 3.0),
-            mechanical_bc = :no_slip,
+            Ra_bracket = (Ra_guess * 0.03, Ra_guess * 30.0),
+            mechanical_bc = :stress_free,
             thermal_bc = :fixed_temperature,
-            tol = 1e-6
+            tol = 1e-4
         )
 
         push!(m_values, m)

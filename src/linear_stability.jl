@@ -6,6 +6,8 @@
 using LinearAlgebra
 using SparseArrays
 using KrylovKit
+using KrylovKit: GMRES
+using LinearMaps
 using Parameters
 
 import ..Cross: ChebyshevDiffn
@@ -34,6 +36,7 @@ Parameters for the onset of convection problem in a rotating spherical shell.
 - `ro::Float64`: Outer radius
 - `mechanical_bc::Symbol`: Velocity BC (:no_slip or :stress_free)
 - `thermal_bc::Symbol`: Temperature BC (:fixed_temperature or :fixed_flux)
+- `use_kore_weighting::Bool`: Use r³ equation weighting (true for Kore compatibility)
 - `basic_state::Union{Nothing,BasicState}`: Optional basic state (default: conduction)
 """
 @with_kw struct OnsetParams{T<:Real}
@@ -57,12 +60,15 @@ Parameters for the onset of convection problem in a rotating spherical shell.
     mechanical_bc::Symbol = :no_slip
     thermal_bc::Symbol = :fixed_temperature
 
+    # Equation formulation
+    use_kore_weighting::Bool = false  # Set to true for Kore/Barik compatibility
+
     # Basic state (optional)
     basic_state::Union{Nothing,BasicState{T}} = nothing
 
     # Validation
     function OnsetParams{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
-                           mechanical_bc, thermal_bc, basic_state) where T
+                           mechanical_bc, thermal_bc, use_kore_weighting, basic_state) where T
         @assert 0 < χ < 1 "Radius ratio must satisfy 0 < χ < 1"
         @assert E > 0 "Ekman number must be positive"
         @assert Pr > 0 "Prandtl number must be positive"
@@ -72,22 +78,8 @@ Parameters for the onset of convection problem in a rotating spherical shell.
         @assert mechanical_bc in [:no_slip, :stress_free] "Invalid mechanical BC"
         @assert thermal_bc in [:fixed_temperature, :fixed_flux] "Invalid thermal BC"
 
-        new{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L, mechanical_bc, thermal_bc, basic_state)
+        new{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L, mechanical_bc, thermal_bc, use_kore_weighting, basic_state)
     end
-end
-
-# Outer constructor
-function OnsetParams(; E::T, Pr::T=1.0, Ra::T, χ::T, m::Int,
-                     lmax::Int, Nr::Int, kwargs...) where T<:Real
-    ri = χ
-    ro = one(T)
-    L = ro - ri
-    mechanical_bc = get(kwargs, :mechanical_bc, :no_slip)
-    thermal_bc = get(kwargs, :thermal_bc, :fixed_temperature)
-    basic_state = get(kwargs, :basic_state, nothing)
-
-    OnsetParams{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
-                   mechanical_bc, thermal_bc, basic_state)
 end
 
 # =============================================================================
@@ -120,6 +112,27 @@ function scalar_operator_S(ℓ::Int, D1::AbstractMatrix, D2::AbstractMatrix,
     #        = d²f/dr² + (2/r) df/dr - ℓ(ℓ+1)/r² f
     # This is the same as L_ℓ!
     return radial_operator_L(ℓ, D1, D2, r)
+end
+
+"""
+    scalar_operator_S_weighted(ℓ, D1, D2, r)
+
+Construct the r³-weighted scalar radial operator for temperature equation
+with differential heating (as in Kore).
+
+For differential heating, the temperature equation is multiplied by r³:
+r³∇²Θ = r³∂²Θ/∂r² + 2r²∂Θ/∂r - ℓ(ℓ+1)r Θ
+
+This matches Kore's formulation:
+difus = -L*r1_D0_h + 2*r2_D1_h + r3_D2_h  (where L = ℓ(ℓ+1))
+"""
+function scalar_operator_S_weighted(ℓ::Int, D1::AbstractMatrix, D2::AbstractMatrix,
+                                    r::AbstractVector)
+    Nr = length(r)
+    # r³-weighted diffusion operator:
+    # r³∇²Θ = r³∂²Θ/∂r² + 2r²∂Θ/∂r - ℓ(ℓ+1)r Θ
+    Sℓ_weighted = Diagonal(r.^3) * D2 + Diagonal(2 .* r.^2) * D1 - Diagonal(ℓ*(ℓ+1) .* r)
+    return Sℓ_weighted
 end
 
 """
@@ -185,7 +198,12 @@ function LinearStabilityOperator(params::OnsetParams{T}) where T
 
     for ℓ in params.m:params.lmax
         Lℓ_ops[ℓ] = radial_operator_L(ℓ, cd.D1, cd.D2, r)
-        Sℓ_ops[ℓ] = scalar_operator_S(ℓ, cd.D1, cd.D2, r)
+        # Use weighted operator for Kore compatibility (differential heating with r³ weighting)
+        if params.use_kore_weighting
+            Sℓ_ops[ℓ] = scalar_operator_S_weighted(ℓ, cd.D1, cd.D2, r)
+        else
+            Sℓ_ops[ℓ] = scalar_operator_S(ℓ, cd.D1, cd.D2, r)
+        end
     end
 
     # Determine DOF structure
@@ -224,19 +242,54 @@ end
 Apply the A operator to state vector x.
 Implements the RHS of equations (167-174): the spatial operators + Coriolis + buoyancy.
 """
-function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) where T
+function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{S}) where {T<:Real,S<:Number}
     p = op.params
-    result = zeros(T, op.total_dof)
+    promoted_type = promote_type(S, Complex{T})
+    x_values = Vector{promoted_type}(x)
+    result = zeros(promoted_type, op.total_dof)
 
     # Extract fields for each ℓ
-    P_fields = Dict{Int, Vector{T}}()
-    T_fields = Dict{Int, Vector{T}}()
-    Θ_fields = Dict{Int, Vector{T}}()
+    P_fields = Dict{Int, Vector{promoted_type}}()
+    T_fields = Dict{Int, Vector{promoted_type}}()
+    Θ_fields = Dict{Int, Vector{promoted_type}}()
 
     for ℓ in p.m:p.lmax
-        P_fields[ℓ] = x[op.index_map[(ℓ, :P)]]
-        T_fields[ℓ] = x[op.index_map[(ℓ, :T)]]
-        Θ_fields[ℓ] = x[op.index_map[(ℓ, :Θ)]]
+        P_fields[ℓ] = Vector{promoted_type}(x_values[op.index_map[(ℓ, :P)]])
+        T_fields[ℓ] = Vector{promoted_type}(x_values[op.index_map[(ℓ, :T)]])
+        Θ_fields[ℓ] = Vector{promoted_type}(x_values[op.index_map[(ℓ, :Θ)]])
+    end
+
+    # Precompute velocity components derived from poloidal potential
+    u_r_cache = Dict{Int, Vector{promoted_type}}()
+    u_theta_cache = Dict{Int, Vector{promoted_type}}()
+    for ℓ in p.m:p.lmax
+        if ℓ == 0 && p.m == 0
+            u_r_cache[ℓ] = zeros(promoted_type, p.Nr)
+        else
+            u_r_cache[ℓ] = (ℓ * (ℓ + 1)) .* P_fields[ℓ] ./ op.r.^2
+        end
+        u_theta_cache[ℓ] = (op.cd.D1 * P_fields[ℓ]) ./ op.r
+    end
+
+    # Precompute basic state coefficients in promoted type, if present
+    theta_bs_cache = Dict{Int, Vector{promoted_type}}()
+    dtheta_bs_cache = Dict{Int, Vector{promoted_type}}()
+    uphi_bs_cache = Dict{Tuple{Int,Int}, Vector{promoted_type}}()
+    if p.basic_state !== nothing
+        bs = p.basic_state
+        for (ℓ_bs, vec) in bs.theta_coeffs
+            theta_bs_cache[ℓ_bs] = Vector{promoted_type}(vec)
+        end
+        for (ℓ_bs, vec) in bs.dtheta_dr_coeffs
+            dtheta_bs_cache[ℓ_bs] = Vector{promoted_type}(vec)
+        end
+        for (key, vec) in bs.uphi_coeffs
+            if key isa Int
+                uphi_bs_cache[(key, 0)] = Vector{promoted_type}(vec)
+            else
+                uphi_bs_cache[key] = Vector{promoted_type}(vec)
+            end
+        end
     end
 
     # Apply equations for each ℓ mode
@@ -257,7 +310,7 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
 
         # Coriolis coupling: -2 C_ℓm[T]  (equation 183)
         # C_ℓm[T] = (im/r²)[ℓ(ℓ-1)a⁻ T_{ℓ-1} + (ℓ+1)(ℓ+2)a⁺ T_{ℓ+1}]
-        C_term = zeros(ComplexF64, p.Nr)
+        C_term = zeros(promoted_type, p.Nr)
 
         # Contribution from ℓ-1
         if ℓ > p.m
@@ -271,7 +324,7 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
             C_term .+= (im * p.m) .* ((ℓ+1)*(ℓ+2) * a_plus) .* T_fields[ℓ+1] ./ op.r.^2
         end
 
-        result[P_idx] .-= 2.0 .* real(C_term)  # Take real part for real arithmetic
+        result[P_idx] .-= 2.0 .* C_term
 
         # Buoyancy term: (Ra/Pr) ℓ(ℓ+1)/r² (r/r₀)² Θ
         buoyancy = (p.Ra / p.Pr) .* (ℓ*(ℓ+1)) .* Θ_fields[ℓ] ./ op.r.^2 .* (op.r ./ p.ro).^2
@@ -285,7 +338,7 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
 
         # Coriolis coupling: 2 D_ℓm[P]  (equation 190)
         # D_ℓm[P] = (1/r)[(ℓ-1)(ℓ+1)a⁻ ∂P_{ℓ-1}/∂r + ℓ(ℓ+2)a⁺ ∂P_{ℓ+1}/∂r]
-        D_term = zeros(T, p.Nr)
+        D_term = zeros(promoted_type, p.Nr)
 
         # Contribution from ℓ-1
         if ℓ > p.m
@@ -320,82 +373,58 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
         # Advection of basic state temperature by perturbation velocity
         if p.basic_state === nothing
             # Default: pure conduction basic state with only radial variation
-            # From equation (6): dθ̄/dr = (rᵢr₀/(r₀-rᵢ)) (1/r²) ΔT
-            # In non-dimensional form with ΔT=1: dθ̄/dr = (rᵢr₀/L) / r²
-            dtheta_bar_dr = (p.ri * p.ro / p.L) ./ op.r.^2
+            if p.use_kore_weighting
+                # Kore formulation with r³ weighting for differential heating
+                # Unweighted: -u_r dθ̄/dr = ℓ(ℓ+1) P × (r_i r_o/L) / r⁴
+                # Weighted by r³: r³ × [ℓ(ℓ+1) P × (r_i r_o/L) / r⁴] = ℓ(ℓ+1) × (r_i r_o/L) × P / r
+                advection_radial = -(ℓ*(ℓ+1)) .* (p.ri * p.ro / p.L) .* P_fields[ℓ] ./ op.r
+                result[Θ_idx] .+= advection_radial
+            else
+                # Standard unweighted formulation
+                # From equation (6): dθ̄/dr = (rᵢr₀/(r₀-rᵢ)) (1/r²) ΔT
+                # In non-dimensional form with ΔT=1: dθ̄/dr = (rᵢr₀/L) / r²
+                dtheta_bar_dr = (p.ri * p.ro / p.L) ./ op.r.^2
 
-            # Radial advection: -u'_r ∂θ̄/∂r = -ℓ(ℓ+1)/r² P ∂θ̄/∂r
-            advection_radial = -(ℓ*(ℓ+1)) .* dtheta_bar_dr .* P_fields[ℓ] ./ op.r.^2
-            result[Θ_idx] .+= advection_radial
+                # Radial advection: -u'_r ∂θ̄/∂r = -ℓ(ℓ+1)/r² P ∂θ̄/∂r
+                advection_radial = -(ℓ*(ℓ+1)) .* dtheta_bar_dr .* P_fields[ℓ] ./ op.r.^2
+                result[Θ_idx] .+= advection_radial
+            end
 
         else
-            # Basic state with meridional variation: θ̄(r,θ) = Σ θ̄_ℓ'0(r) Y_ℓ'0(θ)
-            bs = p.basic_state
+            radial_sum = zeros(promoted_type, p.Nr)
+            meridional_sum = zeros(promoted_type, p.Nr)
 
             # Radial advection: -u'_r ∂θ̄/∂r
-            # The radial component comes from all ℓ' modes of the basic state
-            # For the current mode ℓ, we sum contributions from all basic state modes
+            for (ℓ_bs, dtheta_vec) in dtheta_bs_cache
+                if maximum(abs.(dtheta_vec)) < 1e-14
+                    continue
+                end
 
-            # This is an approximation: assume basic state is dominated by ℓ'=0,2
-            # Full implementation would require mode coupling integrals
-
-            if haskey(bs.theta_coeffs, 0)
-                # ℓ'=0 component (conduction profile)
-                dtheta_bar_dr_0 = bs.dtheta_dr_coeffs[0]
-                advection_r_0 = -(ℓ*(ℓ+1)) .* dtheta_bar_dr_0 .* P_fields[ℓ] ./ op.r.^2
-                result[Θ_idx] .+= advection_r_0 ./ sqrt(4π)  # Normalize by Y_00
-            end
-
-            if haskey(bs.theta_coeffs, 2) && ℓ >= 2
-                # ℓ'=2 component (meridional variation)
-                # This couples through integrals of Y_ℓm Y_20
-                # For simplicity, approximate coupling for ℓ=2 mode
-                if ℓ == 2
-                    dtheta_bar_dr_2 = bs.dtheta_dr_coeffs[2]
-                    norm_Y20 = sqrt(5/(4π))
-                    advection_r_2 = -(ℓ*(ℓ+1)) .* dtheta_bar_dr_2 .* P_fields[ℓ] ./ op.r.^2
-                    result[Θ_idx] .+= advection_r_2 .* norm_Y20
+                for ℓ_pert in p.m:p.lmax
+                    gaunt = gaunt_with_conjugate(ℓ, p.m, ℓ_pert, p.m, ℓ_bs, 0)
+                    if abs(gaunt) < 1e-14
+                        continue
+                    end
+                    radial_sum .-= gaunt .* u_r_cache[ℓ_pert] .* dtheta_vec
                 end
             end
 
-            # ================================================================
             # Meridional advection: -(u'_θ/r) ∂θ̄/∂θ
-            # ================================================================
-            # u'_θ comes from poloidal potential: u'_θ = (1/r) ∂P/∂r × (∂Y_ℓm/∂θ factor)
-            # ∂θ̄/∂θ comes from basic state: ∂θ̄/∂θ = Σ θ̄_ℓ'0(r) (∂Y_ℓ'0/∂θ)
-            #
-            # Mode coupling: ∫ Y_ℓm × [(∂P/∂r)/r] × [∂θ̄/∂θ] dΩ
-            # This couples ℓ with ℓ±1 due to ∂Y/∂θ ladder relations
-
-            # Loop over basic state modes that have meridional gradients
-            for ℓ_bs in keys(bs.theta_coeffs)
-                if ℓ_bs == 0 || !haskey(bs.theta_coeffs, ℓ_bs)
-                    continue  # No meridional gradient for ℓ=0
+            for (ℓ_bs, theta_vec) in theta_bs_cache
+                if ℓ_bs == 0 || maximum(abs.(theta_vec)) < 1e-14
+                    continue
                 end
 
-                theta_bar_bs = bs.theta_coeffs[ℓ_bs]
-                if maximum(abs.(theta_bar_bs)) < 1e-14
-                    continue  # Negligible component
-                end
-
-                # Compute meridional velocity component: u'_θ = (1/r) ∂P_ℓm/∂r
-                dP_dr = op.cd.D1 * P_fields[ℓ]
-                u_theta_factor = dP_dr ./ op.r
-
-                # Mode coupling through ∂Y_ℓ_bs,0/∂θ
-                # ∂Y_ℓ,0/∂θ = -(ℓ+1) a⁺_ℓ,0 Y_{ℓ+1,0} + ℓ a⁻_ℓ,0 Y_{ℓ-1,0}
-                # This couples to ℓ ± 1
-
-                # Coupling coefficient using spherical harmonic derivative relations
-                coupling_coeff = compute_meridional_advection_coupling(ℓ, p.m, ℓ_bs, 0, ℓ)
-
-                if abs(coupling_coeff) > 1e-14
-                    # Meridional advection contribution
-                    # -(u'_θ/r) × ∂θ̄_ℓ_bs/∂θ → contributes to mode ℓ
-                    advection_merid = -coupling_coeff .* u_theta_factor .* theta_bar_bs ./ op.r
-                    result[Θ_idx] .+= advection_merid
+                for ℓ_pert in p.m:p.lmax
+                    coupling_coeff = compute_meridional_advection_coupling(ℓ_pert, p.m, ℓ_bs, 0, ℓ)
+                    if abs(coupling_coeff) < 1e-14
+                        continue
+                    end
+                    meridional_sum .-= coupling_coeff .* u_theta_cache[ℓ_pert] .* theta_vec ./ op.r
                 end
             end
+
+            result[Θ_idx] .+= radial_sum + meridional_sum
 
             # ================================================================
             # Azimuthal advection by basic state: -(ū_φ/r)(im/sinθ)θ'
@@ -404,9 +433,9 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
             # For mode (ℓ,m): -(ū_φ,ℓ_bs,0/r) × (im/sinθ) × θ'_ℓm
             # This is diagonal in ℓ for axisymmetric basic state (m_bs=0)
 
-            if haskey(bs.uphi_coeffs, 0)
+            if haskey(uphi_bs_cache, (0, 0))
                 # Axisymmetric zonal flow (ℓ=0 component)
-                uphi_bar_0 = bs.uphi_coeffs[0]
+                uphi_bar_0 = uphi_bs_cache[(0, 0)]
                 if maximum(abs.(uphi_bar_0)) > 1e-14
                     # Coefficient: im/sinθ factor gives azimuthal coupling
                     # For Schmidt harmonics: im × m × Y_ℓm
@@ -415,19 +444,22 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
                     if abs(azim_coeff) > 1e-14
                         # Note: This gives the REAL coefficient; factor of i is absorbed
                         # in the eigenvalue problem (time derivative gives iω)
-                        advection_azim = -azim_coeff .* (uphi_bar_0 ./ op.r) .* Θ_fields[ℓ]
+                        advection_azim = -promoted_type(azim_coeff) .* (uphi_bar_0 ./ op.r) .* Θ_fields[ℓ]
                         result[Θ_idx] .+= advection_azim ./ sqrt(4π)  # Normalize by Y_00
                     end
                 end
             end
 
             # For non-axisymmetric basic state (m_bs ≠ 0), loop over uphi modes
-            for (ℓ_bs, m_bs) in keys(bs.uphi_coeffs)
+            for (ℓ_bs, m_bs) in keys(uphi_bs_cache)
+                if ℓ_bs == 0 && m_bs == 0
+                    continue
+                end
                 if m_bs == 0  # Already handled above
                     continue
                 end
 
-                uphi_bar_bs = bs.uphi_coeffs[(ℓ_bs, m_bs)]
+                uphi_bar_bs = uphi_bs_cache[(ℓ_bs, m_bs)]
                 if maximum(abs.(uphi_bar_bs)) < 1e-14
                     continue
                 end
@@ -437,7 +469,7 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
                 azim_coeff = azimuthal_advection_coefficient(ℓ, p.m, m_bs)
 
                 if abs(azim_coeff) > 1e-14
-                    advection_azim = -azim_coeff .* (uphi_bar_bs ./ op.r) .* Θ_fields[ℓ]
+                    advection_azim = -promoted_type(azim_coeff) .* (uphi_bar_bs ./ op.r) .* Θ_fields[ℓ]
                     result[Θ_idx] .+= advection_azim
                 end
             end
@@ -445,7 +477,7 @@ function apply_operator(op::LinearStabilityOperator{T}, x::AbstractVector{T}) wh
     end
 
     # Apply boundary conditions
-    apply_boundary_conditions!(result, x, op)
+    apply_boundary_conditions!(result, x_values, op)
 
     return result
 end
@@ -454,13 +486,49 @@ end
     apply_mass(op::LinearStabilityOperator, x::Vector)
 
 Apply the mass matrix B to state vector x.
-This is the identity for velocity and temperature fields (equations 204-208).
+For the standard formulation this is the identity; with Kore weighting the
+temperature block is scaled by r³ to match Kore's equation weighting.
 """
-function apply_mass(op::LinearStabilityOperator{T}, x::AbstractVector{T}) where T
-    result = copy(x)
+function apply_mass(op::LinearStabilityOperator{T}, x::AbstractVector{S}) where {T<:Real,S<:Number}
+    promoted_type = promote_type(S, Complex{T})
+    x_values = Vector{promoted_type}(x)
+    result = copy(x_values)
+
+    if op.params.use_kore_weighting
+        for ℓ in op.params.m:op.params.lmax
+            Θ_idx = op.index_map[(ℓ, :Θ)]
+            result[Θ_idx] .*= op.r.^3
+        end
+    end
 
     # Set boundary rows to zero (they don't participate in time evolution)
-    apply_boundary_conditions!(result, x, op; zero_bcs=true)
+    apply_boundary_conditions!(result, x_values, op; zero_bcs=true)
+
+    return result
+end
+
+"""
+    apply_inv_mass(op::LinearStabilityOperator, x::Vector)
+
+Apply the inverse mass matrix B⁻¹ to state vector x.
+For the standard formulation this is the identity; with Kore weighting the
+temperature block is scaled by 1/r³.
+"""
+function apply_inv_mass(op::LinearStabilityOperator{T}, x::AbstractVector{S}) where {T<:Real,S<:Number}
+    promoted_type = promote_type(S, Complex{T})
+    x_values = Vector{promoted_type}(x)
+    result = copy(x_values)
+
+    if op.params.use_kore_weighting
+        for ℓ in op.params.m:op.params.lmax
+            Θ_idx = op.index_map[(ℓ, :Θ)]
+            # Invert the r³ scaling
+            result[Θ_idx] ./= op.r.^3
+        end
+    end
+
+    # Note: Do NOT apply boundary conditions here
+    # BCs are already enforced in apply_operator, and we just want to invert the mass matrix
 
     return result
 end
@@ -471,12 +539,13 @@ end
 Enforce boundary conditions on the operator application.
 Implements equations (256-262) for no-slip and (268-272) for stress-free.
 """
-function apply_boundary_conditions!(result::AbstractVector{T}, x::AbstractVector{T},
+function apply_boundary_conditions!(result::AbstractVector{S}, x::AbstractVector{S},
                                    op::LinearStabilityOperator{T};
-                                   zero_bcs::Bool=false) where T
+                                   zero_bcs::Bool=false) where {S<:Number, T<:Real}
     p = op.params
     ri_idx = 1
     ro_idx = p.Nr
+    zero_val = zero(S)
 
     for ℓ in p.m:p.lmax
         P_idx = op.index_map[(ℓ, :P)]
@@ -487,8 +556,8 @@ function apply_boundary_conditions!(result::AbstractVector{T}, x::AbstractVector
 
         # Impermeability: P = 0 at boundaries (equation 256)
         if zero_bcs
-            result[P_idx[ri_idx]] = 0.0
-            result[P_idx[ro_idx]] = 0.0
+            result[P_idx[ri_idx]] = zero_val
+            result[P_idx[ro_idx]] = zero_val
         else
             result[P_idx[ri_idx]] = x[P_idx[ri_idx]]
             result[P_idx[ro_idx]] = x[P_idx[ro_idx]]
@@ -499,8 +568,8 @@ function apply_boundary_conditions!(result::AbstractVector{T}, x::AbstractVector
             dP_dr = op.cd.D1 * x[P_idx]
 
             if zero_bcs
-                result[T_idx[ri_idx]] = 0.0
-                result[T_idx[ro_idx]] = 0.0
+                result[T_idx[ri_idx]] = zero_val
+                result[T_idx[ro_idx]] = zero_val
             else
                 # Enforce ∂P/∂r = 0 by replacing the P equation at boundaries
                 # (already done above with P=0)
@@ -518,8 +587,8 @@ function apply_boundary_conditions!(result::AbstractVector{T}, x::AbstractVector
             dT_dr = op.cd.D1 * x[T_idx]
 
             if zero_bcs
-                result[T_idx[ri_idx]] = 0.0
-                result[T_idx[ro_idx]] = 0.0
+                result[T_idx[ri_idx]] = zero_val
+                result[T_idx[ro_idx]] = zero_val
             else
                 # Inner boundary
                 result[P_idx[ri_idx]] = op.r[ri_idx] * d2P_dr2[ri_idx] - 2*dP_dr[ri_idx]
@@ -536,8 +605,8 @@ function apply_boundary_conditions!(result::AbstractVector{T}, x::AbstractVector
         if p.thermal_bc == :fixed_temperature
             # Θ = 0 at boundaries (equation 278)
             if zero_bcs
-                result[Θ_idx[ri_idx]] = 0.0
-                result[Θ_idx[ro_idx]] = 0.0
+                result[Θ_idx[ri_idx]] = zero_val
+                result[Θ_idx[ro_idx]] = zero_val
             else
                 result[Θ_idx[ri_idx]] = x[Θ_idx[ri_idx]]
                 result[Θ_idx[ro_idx]] = x[Θ_idx[ro_idx]]
@@ -548,8 +617,8 @@ function apply_boundary_conditions!(result::AbstractVector{T}, x::AbstractVector
             dΘ_dr = op.cd.D1 * x[Θ_idx]
 
             if zero_bcs
-                result[Θ_idx[ri_idx]] = 0.0
-                result[Θ_idx[ro_idx]] = 0.0
+                result[Θ_idx[ri_idx]] = zero_val
+                result[Θ_idx[ro_idx]] = zero_val
             else
                 result[Θ_idx[ri_idx]] = dΘ_dr[ri_idx]
                 result[Θ_idx[ro_idx]] = dΘ_dr[ro_idx]
@@ -583,24 +652,22 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
     A_op(x) = apply_operator(op, x)
     B_op(x) = apply_mass(op, x)
 
-    # Use KrylovKit for the generalized eigenvalue problem
-    # We solve (A - σB)⁻¹ B x = θ x with shift-invert
-    # This finds eigenvalues near σ
-    σ = 0.0  # Look near λ=0 (marginal stability)
+    # Use shift-invert for the generalized eigenvalue problem A*v = λ*B*v
+    # We solve (A - σB)⁻¹ B x = θ x, then λ = σ + 1/θ
+    # For marginal stability, use σ = 0
+    σ = 0.0
 
     # Create the shifted operator: (A - σB)⁻¹ B
-    # For simplicity, we use iterative solver within the eigensolver
     function shifted_op(x)
-        # Solve (A - σB)y = B x for y
-        # Using GMRES
+        # Solve (A - σB)y = B x for y using iterative solver
         b = B_op(x)
 
         function shifted_A(y)
             return A_op(y) - σ .* B_op(y)
         end
 
-        # Simple fixed-point iteration (could use GMRES for better performance)
-        y, info = linsolve(shifted_A, b, x, maxiter=100, tol=1e-8)
+        # Use linsolve from KrylovKit with increased iterations for Kore weighting
+        y, info = linsolve(shifted_A, b, x; maxiter=500, tol=1e-6, verbosity=1)
 
         return y
     end
@@ -608,8 +675,8 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
     # Initial guess
     x0 = randn(T, op.total_dof)
 
-    # Solve eigenvalue problem
-    vals, vecs, info = eigsolve(shifted_op, x0, nev, which,
+    # Solve eigenvalue problem for θ
+    vals, vecs, info = eigsolve(shifted_op, x0, nev, which;
                                 tol=tol, maxiter=maxiter, issymmetric=false)
 
     # Convert back to original eigenvalues: λ = σ + 1/θ
@@ -668,7 +735,7 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
 
     # Find bracket where sign changes
     Ra_low, Ra_high = Ra_bracket
-    σ_low = growth_rate_at_Ra(Ra_low)
+    σ_low  = growth_rate_at_Ra(Ra_low)
     σ_high = growth_rate_at_Ra(Ra_high)
 
     # Adjust bracket if needed

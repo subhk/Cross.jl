@@ -52,6 +52,117 @@ function theta_derivative_coefficient(ℓ::Int, m::Int)
 end
 
 
+# -----------------------------------------------------------------------------
+#  Wigner 3j / Gaunt coefficient utilities
+# -----------------------------------------------------------------------------
+
+const _fourπ = 4π
+
+@inline _phase(k::Int) = isodd(k) ? -1.0 : 1.0
+
+@inline function _logfactorial(n::Int)
+    @assert n >= 0 "Factorial argument must be non-negative (got $n)"
+    return loggamma(n + 1)
+end
+
+"""
+    wigner_3j(ℓ1, ℓ2, ℓ3, m1, m2, m3)
+
+Evaluate the Wigner 3j symbol ⟨ℓ1 ℓ2 ℓ3; m1 m2 m3⟩ for integer indices.
+Returns 0.0 when the standard selection rules are violated.
+"""
+function wigner_3j(ℓ1::Int, ℓ2::Int, ℓ3::Int, m1::Int, m2::Int, m3::Int)
+    # Selection rules
+    if m1 + m2 + m3 != 0
+        return 0.0
+    end
+    if (ℓ1 < 0) || (ℓ2 < 0) || (ℓ3 < 0)
+        return 0.0
+    end
+    if abs(m1) > ℓ1 || abs(m2) > ℓ2 || abs(m3) > ℓ3
+        return 0.0
+    end
+    if ℓ3 < abs(ℓ1 - ℓ2) || ℓ3 > ℓ1 + ℓ2
+        return 0.0
+    end
+    if (ℓ1 + ℓ2 + ℓ3) % 2 != 0
+        return 0.0
+    end
+
+    # Prefactor
+    triangle_log = _logfactorial(ℓ1 + ℓ2 - ℓ3) +
+                   _logfactorial(ℓ1 - ℓ2 + ℓ3) +
+                   _logfactorial(-ℓ1 + ℓ2 + ℓ3) -
+                   _logfactorial(ℓ1 + ℓ2 + ℓ3 + 1)
+
+    fact_log = _logfactorial(ℓ1 + m1) + _logfactorial(ℓ1 - m1) +
+               _logfactorial(ℓ2 + m2) + _logfactorial(ℓ2 - m2) +
+               _logfactorial(ℓ3 + m3) + _logfactorial(ℓ3 - m3)
+
+    prefactor = _phase(ℓ1 - ℓ2 - m3) * exp(0.5 * (triangle_log + fact_log))
+
+    # Summation bounds
+    t_min = max(0, ℓ2 - ℓ3 - m1, ℓ1 - ℓ3 + m2)
+    t_max = min(ℓ1 + ℓ2 - ℓ3, ℓ1 - m1, ℓ2 + m2)
+
+    sum_val = 0.0
+    for t in t_min:t_max
+        denom_args = (
+            t,
+            ℓ1 + ℓ2 - ℓ3 - t,
+            ℓ1 - m1 - t,
+            ℓ2 + m2 - t,
+            ℓ3 - ℓ2 + m1 + t,
+            ℓ3 - ℓ1 - m2 + t,
+        )
+
+        if any(x -> x < 0, denom_args)
+            continue
+        end
+
+        log_term = -sum(_logfactorial, denom_args)
+        term = _phase(t) * exp(log_term)
+        sum_val += term
+    end
+
+    return prefactor * sum_val
+end
+
+"""
+    gaunt_coefficient(ℓ1, m1, ℓ2, m2, ℓ3, m3)
+
+Compute the Gaunt coefficient ∫ Y_{ℓ1 m1} Y_{ℓ2 m2} Y_{ℓ3 m3} dΩ for
+Schmidt semi-normalized spherical harmonics.
+"""
+function gaunt_coefficient(ℓ1::Int, m1::Int,
+                           ℓ2::Int, m2::Int,
+                           ℓ3::Int, m3::Int)
+    w1 = wigner_3j(ℓ1, ℓ2, ℓ3, 0, 0, 0)
+    if w1 == 0.0
+        return 0.0
+    end
+
+    w2 = wigner_3j(ℓ1, ℓ2, ℓ3, m1, m2, m3)
+    if w2 == 0.0
+        return 0.0
+    end
+
+    pref = sqrt((2ℓ1 + 1) * (2ℓ2 + 1) * (2ℓ3 + 1) / _fourπ)
+    return pref * w1 * w2
+end
+
+"""
+    gaunt_with_conjugate(ℓ_out, m_out, ℓ1, m1, ℓ2, m2)
+
+Helper returning ∫ Y_{ℓ_out,m_out}^* Y_{ℓ1,m1} Y_{ℓ2,m2} dΩ.
+"""
+function gaunt_with_conjugate(ℓ_out::Int, m_out::Int,
+                              ℓ1::Int, m1::Int,
+                              ℓ2::Int, m2::Int)
+    return _phase(m_out) * gaunt_coefficient(ℓ_out, -m_out, ℓ1, m1, ℓ2, m2)
+end
+
+
 """
     compute_meridional_advection_coupling(
         ℓ_pert::Int, m_pert::Int,
@@ -82,51 +193,17 @@ function compute_meridional_advection_coupling(
     ℓ_bs::Int, m_bs::Int,
     ℓ_test::Int)
 
-    # Result azimuthal mode
     m_test = m_pert + m_bs
-
-    # Get ∂Y_{ℓ_bs,m_bs}/∂θ coefficients
+    coupling = 0.0
     c_plus, c_minus = theta_derivative_coefficient(ℓ_bs, m_bs)
 
-    coupling = 0.0
-
-    # Contribution from Y_{ℓ_bs+1,m_bs} term
     if abs(c_plus) > 1e-14
         ℓ_temp = ℓ_bs + 1
-        # Need to compute: ∫ Y_{ℓ_test,m_test} × Y_{ℓ_pert,m_pert} × Y_{ℓ_temp,m_bs} dΩ
-        # This is a Gaunt coefficient
-
-        # SHTnsKit can compute this via Wigner 3j symbols
-        # For now, use analytical formulas for common cases
-
-        # Selection rules for Gaunt coefficient:
-        # 1. m_test = m_pert + m_bs (azimuthal)
-        # 2. |ℓ_test - ℓ_pert| ≤ ℓ_temp ≤ ℓ_test + ℓ_pert (triangle)
-        # 3. ℓ_test + ℓ_pert + ℓ_temp even (parity)
-
-        if m_test == m_pert + m_bs &&
-           ℓ_temp >= abs(ℓ_test - ℓ_pert) &&
-           ℓ_temp <= ℓ_test + ℓ_pert &&
-           (ℓ_test + ℓ_pert + ℓ_temp) % 2 == 0
-
-            # Compute Gaunt coefficient using SHTnsKit or analytical formula
-            gaunt = compute_gaunt_coefficient_simple(ℓ_test, m_test, ℓ_pert, m_pert, ℓ_temp, m_bs)
-            coupling += c_plus * gaunt
-        end
+        coupling += c_plus * gaunt_with_conjugate(ℓ_test, m_test, ℓ_pert, m_pert, ℓ_temp, m_bs)
     end
-
-    # Contribution from Y_{ℓ_bs-1,m_bs} term
     if abs(c_minus) > 1e-14 && ℓ_bs > 0
         ℓ_temp = ℓ_bs - 1
-
-        if m_test == m_pert + m_bs &&
-           ℓ_temp >= abs(ℓ_test - ℓ_pert) &&
-           ℓ_temp <= ℓ_test + ℓ_pert &&
-           (ℓ_test + ℓ_pert + ℓ_temp) % 2 == 0
-
-            gaunt = compute_gaunt_coefficient_simple(ℓ_test, m_test, ℓ_pert, m_pert, ℓ_temp, m_bs)
-            coupling += c_minus * gaunt
-        end
+        coupling += c_minus * gaunt_with_conjugate(ℓ_test, m_test, ℓ_pert, m_pert, ℓ_temp, m_bs)
     end
 
     return coupling
@@ -134,89 +211,25 @@ end
 
 
 """
-    compute_gaunt_coefficient_simple(ℓ1, m1, ℓ2, m2, ℓ3, m3)
-
-Simplified Gaunt coefficient calculation for common cases.
-
-Full implementation would use Wigner 3j symbols from SHTnsKit.
-This provides analytical formulas for frequently-occurring cases.
-
-Gaunt coefficient:
-    G(ℓ₁m₁, ℓ₂m₂, ℓ₃m₃) = ∫ Y_ℓ₁m₁ Y_ℓ₂m₂ Y_ℓ₃m₃ dΩ
-"""
-function compute_gaunt_coefficient_simple(ℓ1, m1, ℓ2, m2, ℓ3, m3)
-    # Selection rule: m₁ + m₂ + m₃ = 0
-    if m1 + m2 + m3 != 0
-        return 0.0
-    end
-
-    # Triangle inequality
-    if ℓ3 < abs(ℓ1 - ℓ2) || ℓ3 > ℓ1 + ℓ2
-        return 0.0
-    end
-
-    # Parity
-    if (ℓ1 + ℓ2 + ℓ3) % 2 != 0
-        return 0.0
-    end
-
-    # Special case: ℓ₂ = 0 (axisymmetric)
-    if ℓ2 == 0 && m2 == 0
-        if ℓ1 == ℓ3 && m1 == m3
-            return 1.0 / sqrt(4π)
-        else
-            return 0.0
-        end
-    end
-
-    # Special case: All equal (ℓ₁ = ℓ₂ = ℓ₃, m₁ = m₂ = -m₃/2)
-    if ℓ1 == ℓ2 && ℓ2 == ℓ3
-        if m1 == m2 && m3 == -(m1 + m2)
-            # Diagonal coupling
-            norm_factor = sqrt((2ℓ1 + 1) / (4π))
-            return norm_factor  # Simplified
-        end
-    end
-
-    # For general case, would use SHTnsKit's Wigner 3j functions
-    # TODO: Implement using SHTnsKit.wigner3j() or similar
-
-    # Default: Return 0 (conservative approximation)
-    return 0.0
-end
-
-
-"""
     azimuthal_advection_coefficient_axisym(ℓ::Int, m::Int)
 
-Compute coefficient for azimuthal advection by axisymmetric zonal flow:
-    -(ū_φ,00/r) × (im/sinθ) × θ'_ℓm
+Compute the real coupling factor for azimuthal advection by an
+axisymmetric (m=0) zonal flow component:
 
-For axisymmetric basic state (ℓ_bs=0, m_bs=0), this is diagonal in (ℓ,m).
+    -(ū_φ,ℓ_bs0 / r) × (im) θ'_ℓm × ∫ Y_ℓm^* Y_ℓm Y_ℓ_bs0 dΩ
 
-The coefficient involves:
-    ∫ Y_ℓm × (1/sinθ) × Y_00 × (im/sinθ) × Y_ℓm dΩ
-    = im × ∫ Y_ℓm × Y_ℓm / sin²θ dΩ × Y_00
+For the ℓ_bs = 0 component this reduces to m / √(4π); higher even ℓ_bs
+terms are handled automatically via Gaunt coefficients.
 
-For Schmidt harmonics, this gives a factor proportional to m.
-
-Returns:
-- Coupling coefficient (imaginary part gives im factor)
+Returns the real coefficient multiplying `ū_φ,ℓ_bs0 / r`, with the `im`
+factor kept external.
 """
 function azimuthal_advection_coefficient_axisym(ℓ::Int, m::Int)
-    # For axisymmetric flow (m_bs=0), the coefficient is:
-    # -(im/r) × ū_φ,00 × θ'_ℓm
-
-    # The angular integral: ∫ Y_ℓm × (im/sinθ) × Y_00 × (1/sinθ) × Y_ℓm dΩ
-    # = (im) × ∫ |Y_ℓm|² / sin²θ dΩ × √(4π)
-
-    # For Schmidt harmonics, this evaluates to approximately:
-    # Coefficient ≈ im × (something involving m)
-
-    # Simplified: Return real part of coefficient (user multiplies by im elsewhere)
-    # The factor is proportional to m due to e^{imφ} derivative
-
-    return Float64(m)
+    if m == 0
+        return 0.0
+    end
+    coeff = gaunt_with_conjugate(ℓ, m, ℓ, m, 0, 0)
+    return m * coeff
 end
 
 

@@ -291,6 +291,34 @@ function meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, Ra::T, Pr::T,
 end
 
 
+# Helper: coefficients for expanding derivatives of Legendre polynomials.
+#
+# Returns a vector `deriv_maps` where `deriv_maps[ℓ]` is a dictionary mapping
+# target degree L to the coefficient c_{ℓ,L} in
+#     P_ℓ'(x) = Σ c_{ℓ,L} P_L(x)
+# with L ranging over ℓ-1, ℓ-3, … (same parity as ℓ-1).
+function legendre_derivative_coefficients(lmax::Int)
+    maps = Dict{Int, Dict{Int,Float64}}()
+    maps[0] = Dict{Int,Float64}()           # P₀' = 0
+    if lmax >= 1
+        maps[1] = Dict(0 => 1.0)            # P₁' = P₀
+    end
+
+    for ℓ in 2:lmax
+        coeffs = Dict{Int,Float64}()
+        coeffs[ℓ-1] = (2ℓ - 1) * 1.0        # (2ℓ-1) P_{ℓ-1}
+
+        for (k, v) in maps[ℓ-2]
+            coeffs[k] = get(coeffs, k, 0.0) + v
+        end
+
+        maps[ℓ] = coeffs
+    end
+
+    return maps
+end
+
+
 """
     solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                 cd, r_i, r_o, Ra, Pr)
@@ -313,74 +341,63 @@ function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
     r = cd.x
     Nr = length(r)
 
-    # For now, implement a simplified version:
-    # The thermal wind balance for ℓ=2 temperature gives ℓ=2 zonal flow
-    #
-    # The coupling is: ∂θ̄/∂θ involves ∂Y_ℓ0/∂θ which can couple to different ℓ' modes
-    # For Y_20: ∂Y_20/∂θ ∝ sin(θ) dP_2/dθ
-    #
-    # Using recurrence relations for associated Legendre polynomials:
-    # (1-x²) dP_ℓ/dx = ℓ(x P_ℓ - P_{ℓ-1})
-    # where x = cos(θ), so dP_ℓ/dθ = -sin(θ) dP_ℓ/dx
-    #
-    # This means ∂Y_20/∂θ can be expressed as a combination of Y_10 and Y_30
+    lmax = maximum(keys(theta_coeffs))
+    deriv_maps = legendre_derivative_coefficients(lmax)
 
-    # For the ℓ=2 temperature component, we get:
-    # The thermal wind forcing is proportional to θ̄_20(r) × ∂Y_20/∂θ
+    # Compute coefficients of (1/sinθ) ∂θ̄/∂θ expanded in Y_ℓ0
+    grad_coeffs = Dict{Int, Vector{T}}()
+    four_T = T(4)
+    pi_T = T(pi)
 
-    # Simplified approach: Assume the dominant response is also ℓ=2
-    # This is an approximation that works for small amplitude perturbations
-
-    if haskey(theta_coeffs, 2) && any(abs.(theta_coeffs[2]) .> 1e-14)
-        # Thermal wind ODE for ℓ=2 mode (simplified):
-        # ∂ū_φ,20/∂r + ū_φ,20/r ≈ -C × (r/r_o)/r × θ̄_20(r)
-        #
-        # where C = (Ra)/(2Pr) × (coupling coefficient from ∂Y_20/∂θ)
-        #
-        # For Y_20 = √(5/4π) × (3cos²θ-1)/2 = √(5/4π) × P_2(cosθ)
-        # ∂Y_20/∂θ = √(5/4π) × sin(θ) × 3cosθ = ...
-        #
-        # The integral ∫ (1/sinθ) (∂Y_20/∂θ) Y_20 dΩ gives coupling strength
-
-        # Coupling coefficient (derived from spherical harmonic properties)
-        # For ℓ=2: the coupling is approximately -2√(5/3)
-        coupling = -2.0 * sqrt(5.0/3.0)
-
-        C = (Ra / (2.0 * Pr)) * coupling
-
-        # The ODE is: ∂ū_φ/∂r + ū_φ/r = -C × (r/r_o)/r × θ̄_20(r)
-        # Or: r ∂ū_φ/∂r + ū_φ = -C × (r/r_o) × θ̄_20(r)
-        # Or: ∂(r ū_φ)/∂r = -C × (r²/r_o) × θ̄_20(r)
-
-        # Right-hand side
-        rhs = -C .* (r.^2 ./ r_o) .* theta_coeffs[2]
-
-        # Integrate from r_i with boundary condition ū_φ(r_i) = 0
-        # ∫ ∂(r ū_φ)/∂r dr = ∫ rhs dr
-        # r ū_φ|_{r_i}^{r} = ∫_{r_i}^r rhs dr'
-        # r ū_φ(r) = ∫_{r_i}^r rhs dr' (since ū_φ(r_i)=0)
-
-        r_uphi = zeros(T, Nr)
-        # Trapezoidal integration
-        for i in 2:Nr
-            dr = r[i] - r[i-1]
-            r_uphi[i] = r_uphi[i-1] + 0.5 * (rhs[i-1] + rhs[i]) * dr
+    for (ℓ, coeff_vec) in theta_coeffs
+        if ℓ == 0
+            continue
+        end
+        deriv_map = get(deriv_maps, ℓ, Dict{Int,Float64}())
+        if isempty(deriv_map)
+            continue
         end
 
-        # ū_φ = (r ū_φ) / r
-        uphi_coeffs[2] = r_uphi ./ r
+        norm_source = sqrt(T(2ℓ + 1) / (four_T * pi_T))
 
-        # Compute derivative
-        duphi_dr_coeffs[2] = cd.D1 * uphi_coeffs[2]
-
-        # Apply boundary conditions: no-slip at boundaries
-        uphi_coeffs[2][1] = 0.0
-        uphi_coeffs[2][end] = 0.0
-        duphi_dr_coeffs[2][1] = 0.0
-        duphi_dr_coeffs[2][end] = 0.0
+        for (L, c_val) in deriv_map
+            if !haskey(grad_coeffs, L)
+                grad_coeffs[L] = zeros(T, Nr)
+            end
+            norm_target = sqrt(T(2L + 1) / (four_T * pi_T))
+            factor = -norm_source / norm_target * T(c_val)
+            grad_coeffs[L] .+= factor .* coeff_vec
+        end
     end
 
-    # All other ℓ modes remain zero (no forcing)
+    prefactor = -(Ra / (2 * Pr)) / r_o
+
+    for L in keys(grad_coeffs)
+        forcing = prefactor .* (r.^2) .* grad_coeffs[L]
+        r_uphi = zeros(T, Nr)
+        for i in 2:Nr
+            dr = r[i] - r[i-1]
+            r_uphi[i] = r_uphi[i-1] + 0.5 * (forcing[i-1] + forcing[i]) * dr
+        end
+        uphi_L = r_uphi ./ r
+        uphi_L[1] = zero(T)
+        uphi_L[end] = zero(T)
+
+        uphi_coeffs[L] = uphi_L
+        duphi = cd.D1 * uphi_L
+        duphi[1] = zero(T)
+        duphi[end] = zero(T)
+        duphi_dr_coeffs[L] = duphi
+    end
+
+    # Zero out modes without forcing
+    grad_modes = collect(keys(grad_coeffs))
+    for ℓ in collect(keys(uphi_coeffs))
+        if !(ℓ in grad_modes)
+            uphi_coeffs[ℓ] .= zero(T)
+            duphi_dr_coeffs[ℓ] .= zero(T)
+        end
+    end
 
     return nothing
 end

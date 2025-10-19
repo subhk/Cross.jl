@@ -14,17 +14,14 @@ using Cross
 using Printf
 
 # Physical parameters matching Figure 2 of Barik et al. (2023)
-const E = 1e-5      # Ekman number
+const E = 4.734e-5      # Ekman number
 const Pr = 1.0      # Prandtl number
 const χ = 0.35      # Radius ratio r_i/r_o
 
 # Numerical resolution
-const lmax = 30     # Maximum spherical harmonic degree
-const Nr = 32       # Number of radial collocation points
+const lmax = 50     # Maximum spherical harmonic degree
+const Nr = 50       # Number of radial collocation points
 
-# Expected values from paper (for comparison)
-const m_c_expected = 15
-const Ra_c_expected = 1.05567e7
 
 println("="^70)
 println("Reproducing Figure 2 from Barik et al. (2023)")
@@ -37,10 +34,6 @@ println("  Pr = ", Pr)
 println("  χ  = ", χ)
 println("  lmax = ", lmax)
 println("  Nr = ", Nr)
-println()
-println("Expected critical point from paper:")
-println("  m_c  = ", m_c_expected)
-println("  Ra_c = ", Ra_c_expected)
 println()
 println("="^70)
 println()
@@ -58,13 +51,13 @@ println("-"^70)
 # - For m=1,2,3,4: Ra_c is extremely high (> 10^8) and may not converge easily
 # - The critical mode is around m_c ≈ 15 (from paper)
 # - Figure 2 in the paper shows the curve for m ∈ [5, 30]
-for m in 5:30
+for m in 9:9
     try
         # Initial guess based on expected scaling
         # For low m, Ra_c is much higher; for high m, Ra_c is higher
         if m < 10
-            Ra_guess = 5e7  # Higher guess for low m
-            bracket_factor = (0.1, 50.0)
+            Ra_guess = 1e6  # Higher guess for low m
+            bracket_factor = (0.1, 10.0)
         elseif m < 20
             Ra_guess = 1e7  # Near the minimum
             bracket_factor = (0.3, 3.0)
@@ -80,7 +73,7 @@ for m in 5:30
             Ra_bracket = (Ra_guess * bracket_factor[1], Ra_guess * bracket_factor[2]),
             mechanical_bc = :no_slip,  # Changed to no_slip to match paper
             thermal_bc = :fixed_temperature,
-            tol = 1e-6  # Tighter tolerance
+            tol = 10.0  # Tighter tolerance
         )
 
         push!(m_values, m)

@@ -1,271 +1,160 @@
 using LinearAlgebra
 
-#══════════════════════════════════════════════════════════════════════════════#
-#                        CHEBYSHEV DIFFERENTIATION                             #
-#══════════════════════════════════════════════════════════════════════════════#
+# =============================================================================
+#  Chebyshev Differentiation Matrices (Kore-compatible)
+#
+#  This module constructs spectral differentiation matrices whose discrete
+#  derivatives exactly match the coefficient-based formulation used in Kore.
+#  The approach:
+#    1. Work with Chebyshev–Gauss–Lobatto nodes on [-1, 1].
+#    2. Build the Vandermonde matrix V relating Chebyshev coefficients to
+#       values at those nodes.
+#    3. Form derivative operators in coefficient space via the recursive
+#       Dcheb algorithm (ported from kore-main/bin/utils.py).
+#    4. Convert coefficient derivatives back to value space:
+#           Dₖ = V * Dₖ^(coeff) * V⁻¹
+#    5. Apply affine scaling for arbitrary physical domains [a, b].
+# =============================================================================
 
 """
-    chebdif(n::Int, m::Int) -> (x, D)
+    ChebyshevDiffn{T}
 
-Compute Chebyshev differentiation matrix of order `m` on `n` Chebyshev points.
+Container holding Chebyshev nodes and spectral differentiation matrices up to
+fourth order on an arbitrary interval `[a, b]`.
 
-Uses the Chebyshev-Gauss-Lobatto grid on [-1,1]:
-    x_k = cos(pi*k/(n-1)),  k = 0, 1, ..., n-1
+Fields
+------
+- `n`           : number of collocation points
+- `domain`      : `(a, b)` interval
+- `max_order`   : highest derivative order constructed
+- `x`           : physical nodes on `[a, b]`
+- `D1`          : first-derivative matrix acting on nodal values
+- `D2`          : second-derivative matrix
+- `D3`, `D4`    : third and fourth derivative matrices (or `nothing`)
 
-# Arguments
-- `n::Int`: Number of Chebyshev points (n >= 2)
-- `m::Int`: Order of differentiation (1 <= m < n)
-
-# Returns
-- `x::Vector{Float64}`: Chebyshev grid points in descending order
-- `D::Matrix{Float64}`: m-th order differentiation matrix
-
-# Example
-```julia
-x, D = chebdif(8, 1)  # 1st derivative on 8 points
-f = exp.(x)           # test function
-df = D * f            # numerical derivative
-```
-"""
-function chebdif(n::Int, m::Int)
-    @assert n >= 2 "Need at least 2 points"
-    @assert 1 <= m < n "Derivative order must satisfy 1 <= m < n"
-    
-    # Identity matrix for diagonal operations
-    I_mat = I(n)
-    
-    # Grid indices and symmetry points
-    k = 0:(n-1)
-    n1 = fld(n, 2)
-    n2 = ceil(Int, n/2)
-    
-    # Chebyshev-Gauss-Lobatto points and angles
-    x_hat = cos.(pi * k / (n-1))
-    theta = pi * k / (n-1)
-    
-    # Trigonometric matrix for efficient computation
-    Theta = repeat(theta/2, 1, n)
-    Delta_x = 2 * sin.(Theta' .+ Theta) .* sin.(Theta' .- Theta)
-    
-    # Exploit symmetry to reduce computation
-    Delta_x[n1+1:end, :] .= -reverse(reverse(Delta_x[1:n2, :], dims=2), dims=1)
-    Delta_x[I_mat] .= 1.0  # diagonal entries
-    
-    # Chebyshev weight matrix
-    v = (-1.0).^k
-    C_mat = Matrix{Float64}(undef, n, n)
-    @inbounds for i in 1:n, j in 1:n
-        C_mat[i, j] = v[abs(i - j) + 1]
-    end
-    C_mat[1, :] .*= 2
-    C_mat[end, :] .*= 2
-    C_mat[:, 1] .*= 0.5
-    C_mat[:, end] .*= 0.5
-    
-    # Inverse of off-diagonal entries
-    Z_mat = 1.0 ./ Delta_x
-    Z_mat[I_mat] .= 0.0
-    
-    # Build differentiation matrix recursively
-    D_mat = Matrix{Float64}(I, n, n)
-    
-    for ell in 1:m
-        D_mat = ell .* Z_mat .* (C_mat .* repeat(diag(D_mat), 1, n) .- D_mat)
-        D_mat[I_mat] .= -sum(D_mat, dims=2)
-    end
-    
-    # Reverse for descending order
-    reverse!(D_mat);
-    
-    return reverse(x_hat), D_mat
-end
-
-#══════════════════════════════════════════════════════════════════════════════#
-#                           MAIN CONTAINER TYPE                                #
-#══════════════════════════════════════════════════════════════════════════════#
-
-"""
-    ChebyshevDiffn{T<:Real}
-
-A spectral differentiation operator using Chebyshev polynomials.
-
-Pre-computes and caches differentiation matrices up to 4th order for efficient
-repeated use. Automatically handles domain transformation from [-1,1] to [a,b].
-
-# Fields
-- `n::Int`: Number of grid points
-- `domain::Tuple{T,T}`: Domain interval (a, b)
-- `max_order::Int`: Maximum derivative order computed
-- `x::Vector{T}`: Grid points on [a,b]
-- `D1, D2, D3, D4::Matrix{T}`: Differentiation matrices (higher orders may be Nothing)
-
-# Mathematical Foundation
-For domain transformation zeta in [-1,1] -> x in [a,b]:
-    x = (b-a)/2 * (zeta + 1) + a
-    
-Scaling factor alpha = 2/(b-a) ensures correct derivative computation:
-    d^n f/dx^n = alpha^n * (d^n f/dzeta^n)
+All derivative matrices act on column vectors of nodal values arranged in the
+standard Chebyshev–Gauss–Lobatto ordering (descending `x`).
 """
 struct ChebyshevDiffn{T<:Real}
-    n          :: Int
-    domain     :: Tuple{T,T}
-    max_order  :: Int
-    x          :: Vector{T}
-    D1         :: Matrix{T}
-    D2         :: Matrix{T}
-    D3         :: Union{Matrix{T}, Nothing}
-    D4         :: Union{Matrix{T}, Nothing}
+    n::Int
+    domain::Tuple{T,T}
+    max_order::Int
+    x::Vector{T}
+    D1::Matrix{T}
+    D2::Matrix{T}
+    D3::Union{Matrix{T},Nothing}
+    D4::Union{Matrix{T},Nothing}
 end
 
-"""
-    ChebyshevDiffn(n, domain, max_order=1)
+# -----------------------------------------------------------------------------
+#  Helper functions (internal)
+# -----------------------------------------------------------------------------
 
-Construct a Chebyshev differentiation operator.
+# Compute Chebyshev–Gauss–Lobatto nodes on [-1, 1] in descending order.
+chebyshev_nodes(n::Int) = cospi.(reverse(0:n-1) ./ (n-1))
 
-# Arguments
-- `n::Int`: Number of grid points
-- `domain::AbstractVector{T}`: Domain interval [a, b] as a 2-element vector where T<:Real
-- `max_order::Int=1`: Maximum derivative order to compute (1 <= max_order <= 4)
+# Vandermonde matrix evaluating Chebyshev polynomials T_k(x) at nodes x̂.
+function chebyshev_vandermonde(x̂::Vector{Float64})
+    n = length(x̂)
+    V = Array{Float64}(undef, n, n)
+    θ = acos.(x̂)
+    @inbounds for j in 1:n
+        V[:, j] = cos.((j - 1) .* θ)
+    end
+    return V
+end
 
-# Example
-```julia
-# Create operator for 16 points on [0, 2π] with derivatives up to 2nd order
-cd = ChebyshevDiffn(16, [0.0, 2*pi], 2)
+# Derivative of Chebyshev coefficients (ported from Kore's utils.Dcheb).
+function chebyshev_coeff_derivative!(out::Vector{Float64}, coeff::Vector{Float64})
+    s = length(coeff)
+    fill!(out, 0.0)
+    s <= 1 && return out
 
-# Use it to differentiate
-f = sin.(cd.x)
-df_dx = cd.D1 * f      # first derivative
-d2f_dx2 = cd.D2 * f    # second derivative
-```
-"""
-function ChebyshevDiffn(
-    n::Int,
-    domain::AbstractVector{T},
-    max_order::Int = 1
-) where T<:Real
-    
-    @assert length(domain) == 2 "Domain must be a 2-element vector [a, b]"
+    tmp0 = copy(coeff)
+    tmp0[1] *= 2.0
+
+    out[s - 1] = 2.0 * (s - 1) * tmp0[s]
+    for k in (s - 2):-1:1
+        out[k] = out[k + 2] + 2.0 * k * coeff[k + 1]
+    end
+    out[1] /= 2.0
+    return out
+end
+
+# Matrix mapping Chebyshev coefficients to derivatives (on [-1, 1]).
+function chebyshev_coeff_derivative_matrix(n::Int)
+    D = zeros(Float64, n, n)
+    scratch = zeros(Float64, n)
+    coeff = zeros(Float64, n)
+    for j in 1:n
+        fill!(coeff, 0.0)
+        coeff[j] = 1.0
+        chebyshev_coeff_derivative!(scratch, coeff)
+        D[:, j] .= scratch
+    end
+    return D
+end
+
+# Promote Float64 matrices to element type T.
+promote_matrix(::Type{T}, M::Matrix{Float64}) where {T<:Real} = Matrix{T}(M)
+
+# -----------------------------------------------------------------------------
+#  Constructor
+# -----------------------------------------------------------------------------
+
+function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) where {T<:Real}
+    @assert length(domain) == 2 "Domain must be specified as [a, b]"
+    @assert n ≥ 2 "Need at least two Chebyshev points"
+    @assert 1 ≤ max_order ≤ 4 "Supported derivative orders: 1 ≤ max_order ≤ 4"
+
     a, b = domain[1], domain[2]
     @assert a < b "Domain must satisfy a < b"
-    @assert 1 <= max_order <= 4 "Maximum order must be between 1 and 4"
-    
-    # ──────────────────────────────────────────────────────────────────────────
-    # Compute raw differentiation matrices on [-1,1]
-    # ──────────────────────────────────────────────────────────────────────────
-    x_hat, D1_hat = chebdif(n, 1)
-    _, D2_hat  = chebdif(n, 2)
 
-    D3_hat = max_order >= 3 ? chebdif(n, 3)[2] : nothing
-    D4_hat = max_order >= 4 ? chebdif(n, 4)[2] : nothing
-    
-    # ──────────────────────────────────────────────────────────────────────────
-    # Transform domain and scale derivatives
-    # ──────────────────────────────────────────────────────────────────────────
-    
-    # Map from [-1,1] to [a,b]
-    x = @. (b - a)/2 * (x_hat + 1) + a
+    # Nodes on [-1,1] and corresponding Vandermonde matrices
+    x̂ = chebyshev_nodes(n)
+    V = chebyshev_vandermonde(x̂)
+    V_inv = inv(V)
 
-    # Scaling factor for derivatives
-    alpha = 2 / (b - a)
+    # Coefficient-space derivative matrices
+    Dc1 = chebyshev_coeff_derivative_matrix(n)
+    Dc2 = Dc1 * Dc1
+    Dc3 = Dc1 * Dc2
+    Dc4 = Dc1 * Dc3
 
-    # Apply appropriate scaling to each derivative order
-    D1 = alpha * D1_hat
-    D2 = alpha^2 * D2_hat
-    D3 = D3_hat === nothing ? nothing : alpha^3 * D3_hat
-    D4 = D4_hat === nothing ? nothing : alpha^4 * D4_hat
+    # Convert to value-space operators (on [-1, 1])
+    D1_hat = V * Dc1 * V_inv
+    D2_hat = V * Dc2 * V_inv
+    D3_hat = V * Dc3 * V_inv
+    D4_hat = V * Dc4 * V_inv
 
-    return ChebyshevDiffn(n, (a, b), max_order, x, D1, D2, D3, D4)
+    # Map nodes to [a, b] and scale derivatives
+    x = @. (b - a) / 2 * (x̂ + 1) + a
+    α = 2 / (b - a)
+
+    D1 = α * D1_hat
+    D2 = α^2 * D2_hat
+    D3 = max_order ≥ 3 ? α^3 * D3_hat : nothing
+    D4 = max_order ≥ 4 ? α^4 * D4_hat : nothing
+
+    return ChebyshevDiffn(
+        n,
+        (T(a), T(b)),
+        max_order,
+        Vector{T}(x),
+        promote_matrix(T, D1),
+        promote_matrix(T, D2),
+        D3 === nothing ? nothing : promote_matrix(T, D3),
+        D4 === nothing ? nothing : promote_matrix(T, D4)
+    )
 end
 
-#══════════════════════════════════════════════════════════════════════════════#
-#                              PRETTY PRINTING                                 #
-#══════════════════════════════════════════════════════════════════════════════#
-
-function Base.show(io::IO, cd::ChebyshevDiffn{T}) where T
-    println(io, "Chebyshev Differentiation{$T}")
-    println(io, "  ├─ Grid points: $(cd.n)")
-    println(io, "  ├─ Domain: [$(cd.domain[1]), $(cd.domain[2])]")
-    println(io, "  ├─ Max order: $(cd.max_order)")
-    print(io,   "  └─ Available: D1")
-
-    cd.max_order >= 2 && print(io, ", D2")
-    cd.max_order >= 3 && print(io, ", D3")
-    cd.max_order >= 4 && print(io, ", D4")
-    println(io)
-end
-
-#══════════════════════════════════════════════════════════════════════════════#
-#                            CONVENIENCE METHODS                               #
-#══════════════════════════════════════════════════════════════════════════════#
-
-"""
-    derivative(cd::ChebyshevDiffn, f::Vector, order::Int=1)
-
-Compute the derivative of function values `f` at the Chebyshev grid points.
-
-# Arguments
-- `cd::ChebyshevDiffn`: The differentiation operator
-- `f::Vector`: Function values at grid points cd.x
-- `order::Int=1`: Derivative order (1 <= order <= cd.max_order)
-
-# Returns
-- `Vector`: Derivative values at grid points
-"""
-function derivative(cd::ChebyshevDiffn, f::Vector, order::Int=1)
-    @assert 1 <= order <= cd.max_order "Derivative order $order not available"
-    @assert length(f) == cd.n "Function vector length must match grid size"
-    
-    if order == 1
-        return cd.D1 * f
-    elseif order == 2
-        return cd.D2 * f
-    elseif order == 3
-        return cd.D3 * f
-    elseif order == 4
-        return cd.D4 * f
-    end
-end
-
-# Convenient operator overloading
-Base.:*(cd::ChebyshevDiffn, f::Vector) = derivative(cd, f, 1)
-
-#══════════════════════════════════════════════════════════════════════════════#
-#                              EXAMPLE USAGE                                   #
-#══════════════════════════════════════════════════════════════════════════════#
-
-"""
-    demo_chebyshev_differentiation()
-
-Demonstrate the Chebyshev differentiation capabilities with a simple example.
-"""
-function demo_chebyshev_differentiation()
-    println("╔═══════════════════════════════════════════════════════════════╗")
-    println("║              CHEBYSHEV DIFFERENTIATION DEMO                   ║")
-    println("╚═══════════════════════════════════════════════════════════════╝")
-    
-    # Create differentiation operator
-    n = 16
-    domain = [0.0, 2*pi]
-    cd = ChebyshevDiffn(n, domain, 2)
-    
-    println("\n", cd)
-    
-    # Test function: sin(x)
-    f = sin.(cd.x)
-    
-    # Compute derivatives
-    df_exact = cos.(cd.x)           # exact first derivative
-    df_numerical = cd.D1 * f        # numerical first derivative
-
-    d2f_exact = -sin.(cd.x)         # exact second derivative
-    d2f_numerical = cd.D2 * f       # numerical second derivative
-    
-    # Show errors
-    error_1st = maximum(abs.(df_numerical - df_exact))
-    error_2nd = maximum(abs.(d2f_numerical - d2f_exact))
-    
-    println("\nAccuracy test with f(x) = sin(x):")
-    println("  • 1st derivative max error: $(error_1st)")
-    println("  • 2nd derivative max error: $(error_2nd)")
-    println("\nSpectral accuracy achieved!")
+function Base.show(io::IO, cd::ChebyshevDiffn{T}) where {T}
+    println(io, "ChebyshevDiffn{$T}")
+    println(io, "  points    : ", cd.n)
+    println(io, "  domain    : [", cd.domain[1], ", ", cd.domain[2], "]")
+    println(io, "  max order : ", cd.max_order)
+    available = ["D1", "D2"]
+    cd.max_order ≥ 3 && push!(available, "D3")
+    cd.max_order ≥ 4 && push!(available, "D4")
+    println(io, "  matrices  : ", join(available, ", "))
 end

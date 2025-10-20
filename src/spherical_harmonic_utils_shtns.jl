@@ -232,6 +232,17 @@ function azimuthal_advection_coefficient_axisym(ℓ::Int, m::Int)
     return m * coeff
 end
 
+"""
+    azimuthal_advection_coefficient(ℓ::Int, m::Int, m_bs::Int)
+
+Placeholder coupling coefficient for non-axisymmetric basic states. The current
+single-m Kore solver does not support cross-m couplings, so this returns zero
+and effectively disables the contribution.
+"""
+function azimuthal_advection_coefficient(ℓ::Int, m::Int, m_bs::Int)
+    return 0.0
+end
+
 
 """
     evaluate_spherical_harmonic_grid(ℓmax::Int, m::Int, θ_grid::Vector{T}, φ_grid::Vector{T}) where T

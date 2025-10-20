@@ -112,15 +112,13 @@ function conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int) wher
     r = cd.x
     Nr = length(r)
 
-    # Conduction temperature profile (only ℓ=0 component)
-    # θ̄_cond(r) such that ∇²θ̄ = 0 with θ̄(r_i)=1, θ̄(r_o)=0
-    # Solution: θ̄(r) = (r_o/r - 1)/(r_o/r_i - 1)
     r_i = χ
     r_o = 1.0
-    theta_cond = @. (r_o/r - 1.0)/(r_o/r_i - 1.0)
 
-    # Radial derivative
-    dtheta_dr_cond = cd.D1 * theta_cond
+    inner_value = sqrt(T(4) * T(pi))   # θ̄_00(r_i) = 1 × √(4π)
+    outer_value = zero(T)               # θ̄_00(r_o) = 0
+    theta_cond, dtheta_dr_cond = laplace_mode_profile(0, r, r_i, r_o,
+                                                     inner_value, outer_value)
 
     # Initialize dictionaries
     theta_coeffs = Dict{Int,Vector{T}}()
@@ -131,8 +129,8 @@ function conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int) wher
     # Only ℓ=0 component is non-zero
     # Need to normalize by spherical harmonic coefficient
     # Y_00 = 1/√(4π), so θ̄_00(r) = √(4π) × θ_cond(r)
-    theta_coeffs[0] = sqrt(4π) .* theta_cond
-    dtheta_dr_coeffs[0] = sqrt(4π) .* dtheta_dr_cond
+    theta_coeffs[0] = theta_cond
+    dtheta_dr_coeffs[0] = dtheta_dr_cond
     uphi_coeffs[0] = zeros(T, Nr)
     duphi_dr_coeffs[0] = zeros(T, Nr)
 
@@ -199,65 +197,18 @@ function meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, Ra::T, Pr::T,
     uphi_coeffs = Dict{Int,Vector{T}}()
     duphi_dr_coeffs = Dict{Int,Vector{T}}()
 
-    # Solve conduction equation ∇²θ̄ = 0 for each ℓ mode
-    # For ℓ=0: standard conduction profile
-    # For ℓ>0: solve with meridional boundary conditions
-
-    # =========================================================================
-    # ℓ=0 mode: Standard conduction (radially symmetric)
-    # =========================================================================
-    # BC: θ̄_00(r_i) = 0, θ̄_00(r_o) = √(4π) (normalized by Y_00)
-    # Solution: θ̄_00(r) = √(4π) × [(r_o/r - 1)/(r_o/r_i - 1)]
-
-    theta_cond = @. (r_o/r - 1.0)/(r_o/r_i - 1.0)
-    dtheta_dr_cond = cd.D1 * theta_cond
-
-    theta_coeffs[0] = sqrt(4π) .* theta_cond
-    dtheta_dr_coeffs[0] = sqrt(4π) .* dtheta_dr_cond
+    # ℓ=0 mode matches Eq. (6) exactly (constant boundary temperatures)
+    theta_0, dtheta_0 = laplace_mode_profile(0, r, r_i, r_o, sqrt(4π), zero(T))
+    theta_coeffs[0] = theta_0
+    dtheta_dr_coeffs[0] = dtheta_0
     uphi_coeffs[0] = zeros(T, Nr)
     duphi_dr_coeffs[0] = zeros(T, Nr)
 
-    # =========================================================================
-    # ℓ=2 mode: Meridional variation driven by boundary conditions
-    # =========================================================================
-    # The scalar Laplacian for ℓ=2 in spherical coordinates is:
-    # Sℓ[θ̄_ℓ0] = (1/r²) d/dr(r² dθ̄_ℓ0/dr) - ℓ(ℓ+1)/r² θ̄_ℓ0 = 0
-    #
-    # This gives: d²θ̄_ℓ0/dr² + (2/r) dθ̄_ℓ0/dr - ℓ(ℓ+1)/r² θ̄_ℓ0 = 0
-    #
-    # For ℓ=2: d²θ̄/dr² + (2/r) dθ̄/dr - 6/r² θ̄ = 0
-    #
-    # General solution: θ̄(r) = A r² + B r⁻³
-    #
-    # BC: θ̄(r_i) = 0, θ̄(r_o) = amplitude / norm_Y20
-
-    norm_Y20 = sqrt(5/(4π))
-    ℓ = 2
-
-    # Solve the boundary value problem using the spectral method
-    # Lℓ[θ̄] = 0 with BCs
-
-    Lℓ_op = cd.D2 + Diagonal(2 ./ r) * cd.D1 - Diagonal(ℓ*(ℓ+1) ./ r.^2)
-
-    # Build the system with boundary conditions
-    # Replace first and last rows with boundary conditions
-    A_system = copy(Lℓ_op)
-    A_system[1, :] .= 0.0
-    A_system[1, 1] = 1.0  # θ̄(r_i) = 0
-    A_system[end, :] .= 0.0
-    A_system[end, end] = 1.0  # θ̄(r_o) = amplitude / norm_Y20
-
-    # Right-hand side
-    rhs = zeros(T, Nr)
-    rhs[1] = 0.0  # Inner boundary
-    rhs[end] = amplitude / norm_Y20  # Outer boundary (meridional variation!)
-
-    # Solve for θ̄_20(r)
-    theta_20 = A_system \ rhs
-    dtheta_20_dr = cd.D1 * theta_20
-
-    theta_coeffs[2] = theta_20
-    dtheta_dr_coeffs[2] = dtheta_20_dr
+    norm_Y20 = sqrt(T(5) / (T(4) * T(pi)))
+    theta_2, dtheta_2 = laplace_mode_profile(2, r, r_i, r_o,
+                                            zero(T), amplitude / norm_Y20)
+    theta_coeffs[2] = theta_2
+    dtheta_dr_coeffs[2] = dtheta_2
     uphi_coeffs[2] = zeros(T, Nr)
     duphi_dr_coeffs[2] = zeros(T, Nr)
 
@@ -316,6 +267,22 @@ function legendre_derivative_coefficients(lmax::Int)
     end
 
     return maps
+end
+
+
+function laplace_mode_profile(ℓ::Int, r::AbstractVector{T}, r_i::T, r_o::T,
+                             inner_value::T, outer_value::T) where T
+    M = T[
+        r_i^ℓ          r_i^(-(ℓ+1));
+        r_o^ℓ          r_o^(-(ℓ+1))
+    ]
+    rhs = T[inner_value, outer_value]
+    α, β = M \ rhs
+
+    θ = α .* r.^ℓ .+ β .* r.^(-(ℓ+1))
+    dθ = α * ℓ .* r.^(ℓ-1) .- β * (ℓ+1) .* r.^(-(ℓ+2))
+
+    return θ, dθ
 end
 
 

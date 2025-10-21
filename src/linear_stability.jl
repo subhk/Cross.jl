@@ -19,7 +19,7 @@ import ..Cross: ChebyshevDiffn
 const _fourπ = 4π
 
 import FeastKit
-using FeastKit: feastinit!, feast_set_defaults!, feast_general, FeastResult, Feast_SUCCESS
+using FeastKit: feastinit!, feast_set_defaults!, feast_general, Feast_SUCCESS
 
 @inline function _symmetry_flag(sym::Symbol)
     sym === :symmetric && return 1
@@ -492,7 +492,11 @@ function _feast_eigensolve(A_full::Matrix{Complex{T}},
     feast_set_defaults!(fpm; print_level=0, tolerance_exp=tol_exp)
 
     for r in radii
-        result = FeastKit.feast_general(copy(A), copy(B), center, r; M0=M0_eff, fpm=fpm)
+        result = try
+            FeastKit.feast_general(copy(A), copy(B), center, r; M0=M0_eff, fpm=fpm)
+        catch
+            continue
+        end
 
         if result.info != Feast_SUCCESS.value
             continue

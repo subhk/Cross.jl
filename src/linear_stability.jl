@@ -50,11 +50,13 @@ end
     L::T = ro - ri
     mechanical_bc::Symbol = :no_slip
     thermal_bc::Symbol = :fixed_temperature
-    use_kore_weighting::Bool = false
+    use_kore_weighting::Bool = true
+    equatorial_symmetry::Symbol = :both
     basic_state::Nothing = nothing
 
     function OnsetParams{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
                            mechanical_bc, thermal_bc, use_kore_weighting,
+                           equatorial_symmetry,
                            basic_state) where {T}
         @assert 0 < χ < 1 "Radius ratio must satisfy 0 < χ < 1"
         @assert E > 0 "Ekman number must be positive"
@@ -64,9 +66,11 @@ end
         @assert Nr ≥ 4 "Need at least 4 radial points"
         @assert mechanical_bc in (:no_slip, :stress_free) "Invalid mechanical BC"
         @assert thermal_bc in (:fixed_temperature, :fixed_flux) "Invalid thermal BC"
+        @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
 
         new{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
-               mechanical_bc, thermal_bc, use_kore_weighting, basic_state)
+               mechanical_bc, thermal_bc, use_kore_weighting, equatorial_symmetry,
+               basic_state)
     end
 end
 

@@ -84,7 +84,7 @@ end
     L::T = ro - ri
     mechanical_bc::Symbol = :no_slip
     thermal_bc::Symbol = :fixed_temperature
-    use_kore_weighting::Bool = true
+    use_kore_weighting::Bool = false
     equatorial_symmetry::Symbol = :both
     basic_state::Nothing = nothing
 
@@ -102,8 +102,10 @@ end
         @assert thermal_bc in (:fixed_temperature, :fixed_flux) "Invalid thermal BC"
         @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
 
+        use_weighting = equatorial_symmetry === :both ? use_kore_weighting : true
+
         new{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
-               mechanical_bc, thermal_bc, use_kore_weighting, equatorial_symmetry,
+               mechanical_bc, thermal_bc, use_weighting, equatorial_symmetry,
                basic_state)
     end
 end
@@ -182,11 +184,8 @@ function impose_boundary_conditions!(A::Matrix{Complex{T}}, B::Matrix{Complex{T}
     D1 = op.cd.D1
     D2 = op.cd.D2
 
-    for ℓ in p.m:p.lmax
+    for ℓ in op.l_sets[:P]
         P_idx = op.index_map[(ℓ, :P)]
-        T_idx = op.index_map[(ℓ, :T)]
-        Θ_idx = op.index_map[(ℓ, :Θ)]
-
         ri, inner_tau, outer_tau, ro = poloidal_tau_indices(P_idx)
 
         # Dirichlet: P = 0
@@ -200,7 +199,10 @@ function impose_boundary_conditions!(A::Matrix{Complex{T}}, B::Matrix{Complex{T}
             A[inner_tau, :] .= 0; B[inner_tau, :] .= 0; A[inner_tau, P_idx] .= op.r[1] .* D2[1, :]
             A[outer_tau, :] .= 0; B[outer_tau, :] .= 0; A[outer_tau, P_idx] .= op.r[end] .* D2[end, :]
         end
+    end
 
+    for ℓ in op.l_sets[:T]
+        T_idx = op.index_map[(ℓ, :T)]
         riT, roT = toroidal_boundary_indices(T_idx)
         if p.mechanical_bc == :no_slip
             A[riT, :] .= 0; B[riT, :] .= 0; A[riT, riT] = 1
@@ -213,7 +215,10 @@ function impose_boundary_conditions!(A::Matrix{Complex{T}}, B::Matrix{Complex{T}
             A[riT, riT] += 1
             A[roT, roT] += 1
         end
+    end
 
+    for ℓ in op.l_sets[:Θ]
+        Θ_idx = op.index_map[(ℓ, :Θ)]
         riΘ, roΘ = temperature_boundary_indices(Θ_idx)
         if p.thermal_bc == :fixed_temperature
             A[riΘ, :] .= 0; B[riΘ, :] .= 0; A[riΘ, riΘ] = 1
@@ -259,24 +264,18 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     R4D1 = radial_matrix(op, 4, 1)
     R4D2 = radial_matrix(op, 4, 2)
     R4D4 = radial_matrix(op, 4, 4)
+    Rneg2 = radial_matrix(op, -2, 0)
 
     TT = eltype(op.r)
-
-    for ℓ in p.m:p.lmax
+    poloidal_ls = op.l_sets[:P]
+    toroidal_ls = op.l_sets[:T]
+    for ℓ in poloidal_ls
         L = TT(ℓ * (ℓ + 1))
 
         P_idx = op.index_map[(ℓ, :P)]
-        T_idx = op.index_map[(ℓ, :T)]
-        Θ_idx = op.index_map[(ℓ, :Θ)]
+        Θ_idx = haskey(op.index_map, (ℓ, :Θ)) ? op.index_map[(ℓ, :Θ)] : nothing
 
-        # B matrix blocks
         B[P_idx, P_idx] = -Complex.(L * (L * R2D0 - 2 * R3D1 - R4D2))
-        B[T_idx, T_idx] = -Complex.(L * R2D0)
-        if p.use_kore_weighting
-            B[Θ_idx, Θ_idx] = Complex.(radial_matrix(op, 3, 0))
-        else
-            B[Θ_idx, Θ_idx] = Complex.(radial_matrix(op, 2, 0))
-        end
 
         # Poloidal diagonal
         coriolis_p = 2im * m * (-L * R2D0 + 2 * R3D1 + R4D2)
@@ -285,16 +284,38 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
         A[P_idx, P_idx] .+= Complex.(coriolis_p - viscous_p + buoyancy)
 
         # Poloidal ↔ toroidal coupling
-        if ℓ > p.m
+        if haskey(op.index_map, (ℓ - 1, :T))
             Cminus = (ℓ^2 - 1) * sqrt(max(zero(TT), ℓ^2 - m^2)) / (2ℓ - 1)
             coupling = 2 * Cminus * ((ℓ - 1) * R3D0 - R4D1)
             A[P_idx, op.index_map[(ℓ-1, :T)]] .+= Complex.(coupling)
         end
-        if ℓ < p.lmax
+        if haskey(op.index_map, (ℓ + 1, :T))
             Cplus = ℓ*(ℓ+2) * sqrt(max(zero(TT), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
             coupling = 2 * Cplus * (-(ℓ + 2) * R3D0 - R4D1)
             A[P_idx, op.index_map[(ℓ+1, :T)]] .+= Complex.(coupling)
         end
+
+        # Temperature equation blocks for matching Θ ℓ
+        if Θ_idx !== nothing
+            if p.use_kore_weighting
+                B[Θ_idx, Θ_idx] = Complex.(R3D0)
+                adv_factor = ri / gap
+                diffusion = -L * R1D0 + 2 * R2D1 + R3D2
+            else
+                B[Θ_idx, Θ_idx] = Complex.(R2D0)
+                adv_factor = (ri * ro) / p.L
+                diffusion = -L * R0 + 2 * R1D1 + R2D2
+            end
+            A[Θ_idx, P_idx] .+= Complex.(L * adv_factor * (p.use_kore_weighting ? R0 : Rneg2))
+            A[Θ_idx, Θ_idx] .+= Complex.(thermaD * diffusion)
+        end
+    end
+
+    for ℓ in toroidal_ls
+        L = TT(ℓ * (ℓ + 1))
+        T_idx = op.index_map[(ℓ, :T)]
+
+        B[T_idx, T_idx] = -Complex.(L * R2D0)
 
         # Toroidal diagonal
         coriolis_t = -2im * m * L * R2D0
@@ -302,43 +323,32 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
         A[T_idx, T_idx] .+= Complex.(coriolis_t - viscous_t)
 
         # Toroidal ↔ poloidal coupling
-        if ℓ > p.m
+        if haskey(op.index_map, (ℓ - 1, :P))
             Cminus = (ℓ^2 - 1) * sqrt(max(zero(TT), ℓ^2 - m^2)) / (2ℓ - 1)
             coupling = 2 * Cminus * ((ℓ - 1) * R1D0 - R2D1)
             A[T_idx, op.index_map[(ℓ-1, :P)]] .+= Complex.(coupling)
         end
-        if ℓ < p.lmax
+        if haskey(op.index_map, (ℓ + 1, :P))
             Cplus = ℓ*(ℓ+2) * sqrt(max(zero(TT), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
             coupling = 2 * Cplus * (-(ℓ + 2) * R1D0 - R2D1)
             A[T_idx, op.index_map[(ℓ+1, :P)]] .+= Complex.(coupling)
-        end
-
-        # Temperature equation
-        if p.use_kore_weighting
-            adv_factor = ri / gap
-            A[Θ_idx, P_idx] .+= Complex.(L * adv_factor * R0)
-            diffusion = -L * R1D0 + 2 * R2D1 + R3D2
-            A[Θ_idx, Θ_idx] .+= Complex.(thermaD * diffusion)
-        else
-            adv_factor = (ri * ro) / p.L
-            A[Θ_idx, P_idx] .+= Complex.(L * adv_factor * radial_matrix(op, -2, 0))
-            diffusion = -L * R0 + 2 * R1D1 + R2D2
-            A[Θ_idx, Θ_idx] .+= Complex.(thermaD * diffusion)
         end
     end
 
     impose_boundary_conditions!(A, B, op)
 
     boundary_dofs = Int[]
-    for ℓ in p.m:p.lmax
+    for ℓ in op.l_sets[:P]
         P_idx = op.index_map[(ℓ, :P)]
         ri, inner_tau, outer_tau, ro = poloidal_tau_indices(P_idx)
         append!(boundary_dofs, (ri, inner_tau, outer_tau, ro))
-
+    end
+    for ℓ in op.l_sets[:T]
         T_idx = op.index_map[(ℓ, :T)]
         riT, roT = toroidal_boundary_indices(T_idx)
         append!(boundary_dofs, (riT, roT))
-
+    end
+    for ℓ in op.l_sets[:Θ]
         Θ_idx = op.index_map[(ℓ, :Θ)]
         riΘ, roΘ = temperature_boundary_indices(Θ_idx)
         append!(boundary_dofs, (riΘ, roΘ))

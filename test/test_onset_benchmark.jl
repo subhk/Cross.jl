@@ -6,6 +6,59 @@
 using Cross
 using Printf
 
+function parse_solver_options(args)
+    opts = Dict{Symbol,Any}()
+    for arg in args
+        if arg in ("-h", "--help")
+            println("""
+                Usage: julia test/test_onset_benchmark.jl [options]
+
+                Options:
+                  --solver=feast|krylov          Solver backend (default krylov)
+                  --feast-center=<complex>        FEAST contour center (e.g. 0.0+0.0im)
+                  --feast-radius=<float>          FEAST contour radius (default 1.0)
+                  --feast-M0=<int>                FEAST subspace size (default 48)
+                  --feast-integration=<int>       FEAST integration points (default 8)
+                  --feast-refine=<int>            FEAST max refinement loops (default 20)
+                  --help                          Show this message
+                """)
+            exit(0)
+        elseif startswith(arg, "--solver=")
+            opts[:solver] = Symbol(lowercase(split(arg, '=' )[2]))
+        elseif startswith(arg, "--feast-center=")
+            val = split(arg, '=' )[2]
+            center_val = try
+                parse(ComplexF64, val)
+            catch
+                parse(Float64, val) + 0im
+            end
+            opts[:feast_center] = center_val
+        elseif startswith(arg, "--feast-radius=")
+            opts[:feast_radius] = parse(Float64, split(arg, '=' )[2])
+        elseif startswith(arg, "--feast-M0=")
+            opts[:feast_M0] = parse(Int, split(arg, '=' )[2])
+        elseif startswith(arg, "--feast-integration=")
+            opts[:feast_integration] = parse(Int, split(arg, '=' )[2])
+        elseif startswith(arg, "--feast-refine=")
+            opts[:feast_refine] = parse(Int, split(arg, '=' )[2])
+        end
+    end
+    return opts
+end
+
+cli_opts = parse_solver_options(ARGS)
+solver = get(cli_opts, :solver, Symbol(lowercase(get(ENV, "CROSS_SOLVER", "krylov"))))
+solver = solver in (:feast, :krylov) ? solver : :krylov
+feast_center = get(cli_opts, :feast_center,
+                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_REAL", "0.0")) +
+                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_IMAG", "0.0")) * im)
+
+feast_radius = get(cli_opts, :feast_radius, parse(Float64, get(ENV, "CROSS_FEAST_RADIUS", "1.0")))
+
+feast_M0 = get(cli_opts, :feast_M0, parse(Int, get(ENV, "CROSS_FEAST_M0", "48")))
+feast_integration = get(cli_opts, :feast_integration, parse(Int, get(ENV, "CROSS_FEAST_INTEGRATION", "8")))
+feast_refine = get(cli_opts, :feast_refine, parse(Int, get(ENV, "CROSS_FEAST_REFINE", "20")))
+
 """
 Benchmark against Table 1 in docs/poloidal_toroidal_derivation.tex
 which comes from Dormy et al. (2004) Table 5.
@@ -14,6 +67,8 @@ function benchmark_dormy2004()
     println("="^70)
     println("Benchmarking against Dormy et al. (2004)")
     println("Aspect ratio χ = 0.35, Pr = 1")
+    println(@sprintf("Solver: %s (center=%s, radius=%.3f, M0=%d, integration=%d, refine=%d)",
+                    String(solver), sprint(show, feast_center), feast_radius, feast_M0, feast_integration, feast_refine))
     println("="^70)
     println()
 
@@ -57,7 +112,13 @@ function benchmark_dormy2004()
                 Ra_guess=Ra_c_dormy,
                 Ra_bracket=(Ra_c_dormy*0.5, Ra_c_dormy*1.5),
                 mechanical_bc=:no_slip,
-                thermal_bc=:fixed_temperature
+                thermal_bc=:fixed_temperature,
+                solver=solver,
+                feast_center=feast_center,
+                feast_radius=feast_radius,
+                feast_M0=feast_M0,
+                feast_integration=feast_integration,
+                feast_refine=feast_refine
             )
 
             # Calculate percentage difference

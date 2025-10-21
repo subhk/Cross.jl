@@ -746,9 +746,8 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
     end
 
     Ra_c = b
-    params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_c, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-    op_c = LinearStabilityOperator(params_c)
-    σ_c, ω_c, vec_c = find_growth_rate(op_c)
+    op_c = build_operator(Ra_c)
+    σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
 
     return Ra_c, ω_c, vec_c
 end

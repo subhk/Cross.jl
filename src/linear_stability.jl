@@ -420,6 +420,123 @@ function find_growth_rate(op::LinearStabilityOperator; kwargs...)
     return σ, ω, eigenvectors[idx]
 end
 
+function _krylov_eigensolve(A_full::Matrix{Complex{T}},
+                            B_full::Matrix{Complex{T}},
+                            interior_dofs::Vector{Int};
+                            nev::Int,
+                            tol::Float64,
+                            maxiter::Int,
+                            which::Symbol) where {T<:Float64}
+    A = Matrix(A_full[interior_dofs, interior_dofs])
+    B = Matrix(B_full[interior_dofs, interior_dofs])
+
+    σ = Complex{T}(0.1, 0.1)
+
+    lu_factor = lu(A - σ * B)
+    tmp = zeros(Complex{T}, size(A, 1))
+    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp),
+                                      size(A, 1); ismutating=true)
+
+    krylovdim = min(size(A, 1), max(nev * 8, 60))
+    x0 = randn(Complex{T}, size(A, 1))
+
+    vals_inv, vecs_int, info = eigsolve(shift_map,
+                                        x0, nev, :LM;
+                                        tol=tol,
+                                        maxiter=maxiter,
+                                        krylovdim=krylovdim,
+                                        verbosity=0)
+
+    finite = [abs(λ) > eps(T) for λ in vals_inv]
+    any(finite) || error("No finite eigenvalues returned by eigensolver")
+    vals_inv = vals_inv[finite]
+    vecs_int = vecs_int[finite]
+
+    eigenvalues = Complex{T}[σ + inv(λ) for λ in vals_inv]
+
+    vecs_full = Vector{Vector{Complex{T}}}(undef, length(vecs_int))
+    n_full = size(A_full, 1)
+    for (i, v_int) in enumerate(vecs_int)
+        full_vec = zeros(Complex{T}, n_full)
+        full_vec[interior_dofs] = v_int
+        vecs_full[i] = full_vec
+    end
+
+    ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
+               which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
+               collect(1:length(eigenvalues))
+
+    return eigenvalues[ordering], vecs_full[ordering], info
+end
+
+function _feast_eigensolve(A_full::Matrix{Complex{T}},
+                           B_full::Matrix{Complex{T}},
+                           interior_dofs::Vector{Int};
+                           nev::Int,
+                           which::Symbol,
+                           tol::Float64,
+                           center::Complex{T},
+                           radius::Float64,
+                           M0::Int) where {T<:Float64}
+    A = Matrix(A_full[interior_dofs, interior_dofs])
+    B = Matrix(B_full[interior_dofs, interior_dofs])
+
+    n = size(A, 1)
+    M0_eff = min(max(M0, nev * 2), n)
+
+    radii = [radius, radius * 2, radius * 4]
+
+    fpm = zeros(Int, 64)
+    feastinit!(fpm)
+    tol_exp = clamp(Int(round(-log10(tol))), 6, 12)
+    feast_set_defaults!(fpm; print_level=0, tolerance_exp=tol_exp)
+
+    for r in radii
+        result = FeastKit.feast_general(copy(A), copy(B), center, r; M0=M0_eff, fpm=fpm)
+
+        if result.info != Feast_SUCCESS.value
+            continue
+        end
+        if result.M == 0
+            continue
+        end
+
+        # Use Rayleigh quotient to recover complex eigenvalues
+        vecs = result.q[:, 1:result.M]
+        eigenvalues = Vector{Complex{T}}(undef, result.M)
+        for k in 1:result.M
+            v = vecs[:, k]
+            num = dot(v, A * v)
+            den = dot(v, B * v)
+            eigenvalues[k] = num / den
+        end
+
+        ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
+                   which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
+                   collect(1:length(eigenvalues))
+
+        if length(ordering) < nev
+            continue
+        end
+
+        sel = ordering[1:nev]
+        eigenvalues_sel = eigenvalues[sel]
+
+        vecs_full = Vector{Vector{Complex{T}}}(undef, nev)
+        n_full = size(A_full, 1)
+        for (i, idx) in enumerate(sel)
+            full_vec = zeros(Complex{T}, n_full)
+            full_vec[interior_dofs] = vecs[:, idx]
+            vecs_full[i] = full_vec
+        end
+
+        info = FeastConvergenceInfo(true, result.info, result.loop, result.M, r)
+        return eigenvalues_sel, vecs_full, info
+    end
+
+    return nothing
+end
+
 function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
                                 Ra_guess::T=one(T)*1e6,
                                 tol::T=1e-6,

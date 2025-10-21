@@ -18,6 +18,40 @@ import ..Cross: ChebyshevDiffn
 
 const _fourπ = 4π
 
+@inline function _symmetry_flag(sym::Symbol)
+    sym === :symmetric && return 1
+    sym === :antisymmetric && return -1
+    sym === :both && return nothing
+    error("Invalid equatorial symmetry flag $sym")
+end
+
+function compute_l_sets(p::OnsetParams{T}) where {T<:Real}
+    if p.equatorial_symmetry === :both
+        ls = collect(p.m:p.lmax)
+        return Dict(:P => ls, :T => ls, :Θ => ls)
+    end
+
+    vsymm = _symmetry_flag(p.equatorial_symmetry)
+    @assert vsymm !== nothing
+
+    signm = p.m == 0 ? 0 : 1
+    lm1 = p.lmax - p.m + 1
+    ll_start = p.m + 1 - signm
+    ll = collect(ll_start:(ll_start + lm1 - 1))
+
+    s = Int((vsymm + 1) ÷ 2)
+    pol_start = (signm + s) % 2
+    tor_start = (signm + s + 1) % 2
+
+    pol_idxs = pol_start:2:(lm1 - 1)
+    tor_idxs = tor_start:2:(lm1 - 1)
+
+    pol_ls = [ll[k + 1] for k in pol_idxs]
+    tor_ls = [ll[k + 1] for k in tor_idxs]
+
+    return Dict(:P => pol_ls, :T => tor_ls, :Θ => pol_ls)
+end
+
 @inline function poloidal_tau_indices(idx::UnitRange{Int})
     length(idx) ≥ 4 || throw(ArgumentError("Need at least 4 radial points to impose boundary conditions."))
     ri = first(idx)
@@ -83,6 +117,7 @@ struct LinearStabilityOperator{T<:Real}
     cd::ChebyshevDiffn{T}
     r::Vector{T}
     index_map::Dict{Tuple{Int,Symbol}, UnitRange{Int}}
+    l_sets::Dict{Symbol, Vector{Int}}
     total_dof::Int
     radial_cache::Dict{Tuple{Int,Int}, Matrix{T}}
 end
@@ -91,16 +126,21 @@ function LinearStabilityOperator(params::OnsetParams{T}) where {T}
     cd = ChebyshevDiffn(params.Nr, [params.ri, params.ro], 4)
     r = cd.x
 
+    l_sets = compute_l_sets(params)
     index_map = Dict{Tuple{Int,Symbol}, UnitRange{Int}}()
     idx = 1
-    for ℓ in params.m:params.lmax
+    for ℓ in l_sets[:P]
         index_map[(ℓ, :P)] = idx:(idx + params.Nr - 1);   idx += params.Nr
+    end
+    for ℓ in l_sets[:T]
         index_map[(ℓ, :T)] = idx:(idx + params.Nr - 1);   idx += params.Nr
+    end
+    for ℓ in l_sets[:Θ]
         index_map[(ℓ, :Θ)] = idx:(idx + params.Nr - 1);   idx += params.Nr
     end
 
     total_dof = idx - 1
-    return LinearStabilityOperator{T}(params, cd, r, index_map, total_dof,
+    return LinearStabilityOperator{T}(params, cd, r, index_map, l_sets, total_dof,
                                       Dict{Tuple{Int,Int}, Matrix{T}}())
 end
 

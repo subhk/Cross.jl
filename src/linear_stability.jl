@@ -39,14 +39,14 @@ end
 
 @with_kw struct OnsetParams{T<:Real}
     E::T
-    Pr::T = one(T)
+    Pr::T = one(E)
     Ra::T
     χ::T
     m::Int
     lmax::Int
     Nr::Int
     ri::T = χ
-    ro::T = one(T)
+    ro::T = one(E)
     L::T = ro - ri
     mechanical_bc::Symbol = :no_slip
     thermal_bc::Symbol = :fixed_temperature
@@ -216,8 +216,10 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     R4D2 = radial_matrix(op, 4, 2)
     R4D4 = radial_matrix(op, 4, 4)
 
+    TT = eltype(op.r)
+
     for ℓ in p.m:p.lmax
-        L = T(ℓ * (ℓ + 1))
+        L = TT(ℓ * (ℓ + 1))
 
         P_idx = op.index_map[(ℓ, :P)]
         T_idx = op.index_map[(ℓ, :T)]
@@ -240,12 +242,12 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
 
         # Poloidal ↔ toroidal coupling
         if ℓ > p.m
-            Cminus = (ℓ^2 - 1) * sqrt(max(T(0), ℓ^2 - m^2)) / (2ℓ - 1)
+            Cminus = (ℓ^2 - 1) * sqrt(max(zero(TT), ℓ^2 - m^2)) / (2ℓ - 1)
             coupling = 2 * Cminus * ((ℓ - 1) * R3D0 - R4D1)
             A[P_idx, op.index_map[(ℓ-1, :T)]] .+= Complex.(coupling)
         end
         if ℓ < p.lmax
-            Cplus = ℓ*(ℓ+2) * sqrt(max(T(0), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
+            Cplus = ℓ*(ℓ+2) * sqrt(max(zero(TT), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
             coupling = 2 * Cplus * (-(ℓ + 2) * R3D0 - R4D1)
             A[P_idx, op.index_map[(ℓ+1, :T)]] .+= Complex.(coupling)
         end
@@ -257,12 +259,12 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
 
         # Toroidal ↔ poloidal coupling
         if ℓ > p.m
-            Cminus = (ℓ^2 - 1) * sqrt(max(T(0), ℓ^2 - m^2)) / (2ℓ - 1)
+            Cminus = (ℓ^2 - 1) * sqrt(max(zero(TT), ℓ^2 - m^2)) / (2ℓ - 1)
             coupling = 2 * Cminus * ((ℓ - 1) * R1D0 - R2D1)
             A[T_idx, op.index_map[(ℓ-1, :P)]] .+= Complex.(coupling)
         end
         if ℓ < p.lmax
-            Cplus = ℓ*(ℓ+2) * sqrt(max(T(0), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
+            Cplus = ℓ*(ℓ+2) * sqrt(max(zero(TT), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
             coupling = 2 * Cplus * (-(ℓ + 2) * R1D0 - R2D1)
             A[T_idx, op.index_map[(ℓ+1, :P)]] .+= Complex.(coupling)
         end
@@ -317,23 +319,32 @@ end
 (M::ShiftInvertMap)(y, x) = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
 
 function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
-                                  nev::Int=6,
-                                  tol::Real=1e-10,
+                                  nev::Int=1,
+                                  tol::Float64=1e-10,
                                   maxiter::Int=1000,
-                                  which::Symbol=:LR) where {T<:Real}
+                                  which::Symbol=:LR) where {T<:Float64}
     A, B, _, _ = assemble_matrices(op)
-    σ = Complex{T}(0)
+    σ = 0.1 + 0.1im
 
     lu_factor = lu(A - σ * B)
     tmp = zeros(Complex{T}, size(A, 1))
-    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp), size(A, 1); ismutating=true)
+    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp), 
+                                size(A, 1); ismutating=true)
 
     krylovdim = min(size(A, 1), max(nev * 8, 60))
     x0 = randn(Complex{T}, size(A, 1))
 
-    vals_inv, vecs, info = eigsolve(shift_map, x0, nev, :LM;
-                                    tol=tol, maxiter=maxiter,
-                                    krylovdim=krylovdim, verbosity=0)
+    vals_inv, vecs, info = eigsolve(shift_map, 
+                                    x0, nev, :LM;
+                                    tol=tol, 
+                                    maxiter=maxiter,
+                                    krylovdim=500, 
+                                    verbosity=0)
+
+    finite = [abs(λ) > eps(T) for λ in vals_inv]
+    any(finite) || error("No finite eigenvalues returned by eigensolver")
+    vals_inv = vals_inv[finite]
+    vecs = vecs[finite]
 
     eigenvalues = Complex{T}[σ + inv(λ) for λ in vals_inv]
 
@@ -344,8 +355,13 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
     return eigenvalues[ordering], vecs[ordering], info
 end
 
+
 function find_growth_rate(op::LinearStabilityOperator; kwargs...)
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op; kwargs...)
+
+    println("Eigenvalue solver converged: ", info.converged)
+    println("Eigenvalues found: ", eigenvalues)
+
     idx = argmax(real.(eigenvalues))
     λ = eigenvalues[idx]
     σ = real(λ)
@@ -358,37 +374,195 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
                                 tol::T=1e-6,
                                 Ra_bracket::Tuple{T,T}=(Ra_guess/10, Ra_guess*10),
                                 kwargs...) where {T<:Real}
+    m_int = Int(m)
+    lmax ≥ m_int || error("lmax must be ≥ m (got lmax=$lmax, m=$m_int)")
 
     function growth_rate_at_Ra(Ra)
-        params = OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m=m, lmax=lmax, Nr=Nr; kwargs...)
+        params = OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
         op = LinearStabilityOperator(params)
         σ, _, _ = find_growth_rate(op)
         return σ
     end
 
-    Ra_low, Ra_high = Ra_bracket
-    σ_low = growth_rate_at_Ra(Ra_low)
-    σ_high = growth_rate_at_Ra(Ra_high)
+    cache = Dict{Float64,T}()
+    function sigma_cached(Ra_val::T)
+        key = Float64(Ra_val)
+        return get!(cache, key) do
+            growth_rate_at_Ra(Ra_val)
+        end
+    end
+
+    pos = Ref{Union{Nothing,Tuple{T,T}}}(nothing)
+    neg = Ref{Union{Nothing,Tuple{T,T}}}(nothing)
+
+    function add_sample!(Ra_val::T)
+        σ_val = sigma_cached(Ra_val)
+        if abs(σ_val) < tol
+            return (:root, Ra_val)
+        elseif σ_val > 0
+            pos[] = (Ra_val, σ_val)
+        else
+            neg[] = (Ra_val, σ_val)
+        end
+        return (:continue, Ra_val)
+    end
+
+    # Seed with guess and bracket endpoints
+    Ra_guess_T = convert(T, Ra_guess)
+    state, Ra_root = add_sample!(Ra_guess_T)
+    if state == :root
+        params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
+        op_c = LinearStabilityOperator(params_c)
+        σ_c, ω_c, vec_c = find_growth_rate(op_c)
+        return Ra_root, ω_c, vec_c
+    end
+
+    Ra_low = convert(T, Ra_bracket[1])
+    Ra_high = convert(T, Ra_bracket[2])
+    state, Ra_root = add_sample!(Ra_low)
+    if state == :root
+        params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
+        op_c = LinearStabilityOperator(params_c)
+        σ_c, ω_c, vec_c = find_growth_rate(op_c)
+        return Ra_root, ω_c, vec_c
+    end
+    state, Ra_root = add_sample!(Ra_high)
+    if state == :root
+        params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
+        op_c = LinearStabilityOperator(params_c)
+        σ_c, ω_c, vec_c = find_growth_rate(op_c)
+        return Ra_root, ω_c, vec_c
+    end
 
     attempt = 0
-    while σ_low * σ_high > 0 && attempt < 10
-        if σ_low > 0
-            Ra_low /= 2
-            σ_low = growth_rate_at_Ra(Ra_low)
-        else
-            Ra_high *= 2
-            σ_high = growth_rate_at_Ra(Ra_high)
+    while (pos[] === nothing || neg[] === nothing) && attempt < 12
+        if pos[] === nothing
+            Ra_high *= T(2)
+            state, Ra_root = add_sample!(Ra_high)
+            if state == :root
+                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
+                op_c = LinearStabilityOperator(params_c)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                return Ra_root, ω_c, vec_c
+            end
+        end
+        if neg[] === nothing
+            Ra_low /= T(2)
+            state, Ra_root = add_sample!(Ra_low)
+            if state == :root
+                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
+                op_c = LinearStabilityOperator(params_c)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                return Ra_root, ω_c, vec_c
+            end
         end
         attempt += 1
     end
 
-    σ_low * σ_high > 0 && error("Could not bracket the critical Rayleigh number")
+    if pos[] === nothing || neg[] === nothing
+        log_guess = log10(Float64(Ra_guess_T))
+        step = 0.25
+        for k in 1:80
+            Ra_up = convert(T, 10.0^(log_guess + k * step))
+            state, Ra_root = add_sample!(Ra_up)
+            if state == :root
+                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
+                op_c = LinearStabilityOperator(params_c)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                return Ra_root, ω_c, vec_c
+            end
+            if pos[] !== nothing && neg[] !== nothing
+                break
+            end
+            Ra_down = convert(T, 10.0^(log_guess - k * step))
+            state, Ra_root = add_sample!(Ra_down)
+            if state == :root
+                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
+                op_c = LinearStabilityOperator(params_c)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                return Ra_root, ω_c, vec_c
+            end
+            if pos[] !== nothing && neg[] !== nothing
+                break
+            end
+        end
+    end
 
-    prob = BracketingNonlinearProblem((Ra, _) -> growth_rate_at_Ra(Ra), (Ra_low, Ra_high), nothing)
-    sol = solve(prob, Brent(); abstol=tol, reltol=tol, maxiters=200)
-    Ra_c = T(sol.u)
+    (pos[] === nothing || neg[] === nothing) && error("Could not bracket the critical Rayleigh number")
 
-    params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_c, χ=χ, m=m, lmax=lmax, Nr=Nr; kwargs...)
+    (Ra_pos, σ_pos) = pos[]
+    (Ra_neg, σ_neg) = neg[]
+    if σ_pos < 0
+        Ra_pos, σ_pos, Ra_neg, σ_neg = Ra_neg, σ_neg, Ra_pos, σ_pos
+    end
+
+    a = Ra_neg
+    fa = σ_neg
+    b = Ra_pos
+    fb = σ_pos
+    c = a
+    fc = fa
+    d = b - a
+    e = d
+
+    for _ in 1:200
+        if fb == zero(fb)
+            a, fa = b, fb
+            break
+        end
+        if sign(fa) == sign(fb)
+            a, fa = c, fc
+            d = b - a
+            e = d
+        end
+        if abs(fa) < abs(fb)
+            c, fc = b, fb
+            b, fb = a, fa
+            a, fa = c, fc
+        end
+        tol_act = 2 * eps(T) * abs(b) + tol / 2
+        mid = (a - b) / 2
+        if abs(mid) <= tol_act || fb == zero(fb)
+            break
+        end
+        if abs(e) >= tol_act && abs(fc) > abs(fb)
+            s = fb / fc
+            if a == c
+                p = 2 * mid * s
+                q = 1 - s
+            else
+                q = fc / fa
+                r = fb / fa
+                p = s * (2 * mid * q * (q - r) - (b - c) * (r - 1))
+                q = (q - 1) * (r - 1) * (s - 1)
+            end
+            if p > 0
+                q = -q
+            else
+                p = -p
+            end
+            if 2 * p < 3 * mid * q - abs(tol_act * q) && p < abs(e * q / 2)
+                e = d
+                d = p / q
+            else
+                d = mid
+                e = mid
+            end
+        else
+            d = mid
+            e = mid
+        end
+        c, fc = b, fb
+        if abs(d) > tol_act
+            b += d
+        else
+            b += sign(mid) * tol_act
+        end
+        fb = sigma_cached(b)
+    end
+
+    Ra_c = b
+    params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_c, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
     op_c = LinearStabilityOperator(params_c)
     σ_c, ω_c, vec_c = find_growth_rate(op_c)
 

@@ -17,6 +17,7 @@ Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 SHTnsKit = "1b9d0af0-2e90-4fb0-9eae-4a2e2cdf5320"
 Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
 NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [compat]
 ArnoldiMethod = "0.2"

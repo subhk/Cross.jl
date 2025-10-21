@@ -390,6 +390,7 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   feast_center::Complex{T}=Complex{T}(0),
                                   feast_radius::Float64=1.0,
                                   feast_M0::Int=max(nev * 4, 32)) where {T<:Float64}
+
     A_full, B_full, interior_dofs, _ = assemble_matrices(op)
 
     if solver == :feast
@@ -478,6 +479,7 @@ function _feast_eigensolve(A_full::Matrix{Complex{T}},
                            center::Complex{T},
                            radius::Float64,
                            M0::Int) where {T<:Float64}
+                           
     A = Matrix(A_full[interior_dofs, interior_dofs])
     B = Matrix(B_full[interior_dofs, interior_dofs])
 
@@ -549,10 +551,27 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
     m_int = Int(m)
     lmax ≥ m_int || error("lmax must be ≥ m (got lmax=$lmax, m=$m_int)")
 
+    onset_fields = Set(fieldnames(OnsetParams{T}))
+    param_pairs = Pair{Symbol,Any}[]
+    solver_pairs = Pair{Symbol,Any}[]
+    for (key, val) in kwargs
+        if key in onset_fields
+            push!(param_pairs, key => val)
+        else
+            push!(solver_pairs, key => val)
+        end
+    end
+    onset_kwargs = isempty(param_pairs) ? NamedTuple() : (; param_pairs...)
+    solver_kwargs = isempty(solver_pairs) ? NamedTuple() : (; solver_pairs...)
+
+    function build_operator(Ra_val::T)
+        params = OnsetParams(E=E, Pr=Pr, Ra=Ra_val, χ=χ, m=m_int, lmax=lmax, Nr=Nr; onset_kwargs...)
+        return LinearStabilityOperator(params)
+    end
+
     function growth_rate_at_Ra(Ra)
-        params = OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-        op = LinearStabilityOperator(params)
-        σ, _, _ = find_growth_rate(op)
+        op = build_operator(Ra)
+        σ, _, _ = find_growth_rate(op; solver_kwargs...)
         return σ
     end
 
@@ -583,9 +602,8 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
     Ra_guess_T = convert(T, Ra_guess)
     state, Ra_root = add_sample!(Ra_guess_T)
     if state == :root
-        params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-        op_c = LinearStabilityOperator(params_c)
-        σ_c, ω_c, vec_c = find_growth_rate(op_c)
+        op_c = build_operator(Ra_root)
+        σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
         return Ra_root, ω_c, vec_c
     end
 
@@ -593,16 +611,14 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
     Ra_high = convert(T, Ra_bracket[2])
     state, Ra_root = add_sample!(Ra_low)
     if state == :root
-        params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-        op_c = LinearStabilityOperator(params_c)
-        σ_c, ω_c, vec_c = find_growth_rate(op_c)
+        op_c = build_operator(Ra_root)
+        σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
         return Ra_root, ω_c, vec_c
     end
     state, Ra_root = add_sample!(Ra_high)
     if state == :root
-        params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-        op_c = LinearStabilityOperator(params_c)
-        σ_c, ω_c, vec_c = find_growth_rate(op_c)
+        op_c = build_operator(Ra_root)
+        σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
         return Ra_root, ω_c, vec_c
     end
 
@@ -612,9 +628,8 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
             Ra_high *= T(2)
             state, Ra_root = add_sample!(Ra_high)
             if state == :root
-                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-                op_c = LinearStabilityOperator(params_c)
-                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                op_c = build_operator(Ra_root)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
                 return Ra_root, ω_c, vec_c
             end
         end
@@ -622,9 +637,8 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
             Ra_low /= T(2)
             state, Ra_root = add_sample!(Ra_low)
             if state == :root
-                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-                op_c = LinearStabilityOperator(params_c)
-                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                op_c = build_operator(Ra_root)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
                 return Ra_root, ω_c, vec_c
             end
         end
@@ -638,9 +652,8 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
             Ra_up = convert(T, 10.0^(log_guess + k * step))
             state, Ra_root = add_sample!(Ra_up)
             if state == :root
-                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-                op_c = LinearStabilityOperator(params_c)
-                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                op_c = build_operator(Ra_root)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
                 return Ra_root, ω_c, vec_c
             end
             if pos[] !== nothing && neg[] !== nothing
@@ -649,9 +662,8 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
             Ra_down = convert(T, 10.0^(log_guess - k * step))
             state, Ra_root = add_sample!(Ra_down)
             if state == :root
-                params_c = OnsetParams(E=E, Pr=Pr, Ra=Ra_root, χ=χ, m=m_int, lmax=lmax, Nr=Nr; kwargs...)
-                op_c = LinearStabilityOperator(params_c)
-                σ_c, ω_c, vec_c = find_growth_rate(op_c)
+                op_c = build_operator(Ra_root)
+                σ_c, ω_c, vec_c = find_growth_rate(op_c; solver_kwargs...)
                 return Ra_root, ω_c, vec_c
             end
             if pos[] !== nothing && neg[] !== nothing

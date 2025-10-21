@@ -47,7 +47,62 @@ ri = 0.35
 ro = 1.0
 Nr = 64
 
-meridional_points = 96  # choose independent meridional resolution (θ collocation)
+# ------------------------------------------------------------------------------
+# Solver configuration: environment variables or CLI flags
+# ------------------------------------------------------------------------------
+
+function parse_cli_args(args)
+    opts = Dict{Symbol,Any}()
+    for arg in args
+        if arg in ("-h", "--help")
+            println("""
+                Usage: julia example/linear_stability_demo.jl [options]
+
+                Options:
+                  --solver=feast|krylov          Choose eigen solver (default feast)
+                  --feast-center=<real>+<imag>im Complex center for FEAST contour (default 0.0+0.0im)
+                  --feast-radius=<float>         FEAST contour radius (default 1.0)
+                  --feast-M0=<int>               FEAST subspace size (default 48)
+                  --theta-points=<int>           Number of meridional grid points (default 96)
+                  --help                         Show this message
+                """)
+            exit(0)
+        elseif startswith(arg, "--solver=")
+            opts[:solver] = Symbol(lowercase(split(arg, '=' )[2]))
+        elseif startswith(arg, "--feast-center=")
+            val = split(arg, '=' )[2]
+            center_val = try
+                parse(ComplexF64, val)
+            catch
+                parse(Float64, val) + 0im
+            end
+            opts[:feast_center] = center_val
+        elseif startswith(arg, "--feast-radius=")
+            opts[:feast_radius] = parse(Float64, split(arg, '=' )[2])
+        elseif startswith(arg, "--feast-M0=")
+            opts[:feast_M0] = parse(Int, split(arg, '=' )[2])
+        elseif startswith(arg, "--theta-points=")
+            opts[:theta_points] = parse(Int, split(arg, '=' )[2])
+        else
+            @warn "Ignoring unrecognised argument" arg
+        end
+    end
+    return opts
+end
+
+cli_opts = parse_cli_args(ARGS)
+
+solver = get(cli_opts, :solver, Symbol(lowercase(get(ENV, "CROSS_SOLVER", "feast"))))
+if !(solver in (:feast, :krylov))
+    @warn "Unknown solver requested; defaulting to :feast" solver
+    solver = :feast
+end
+feast_center = get(cli_opts, :feast_center,
+                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_REAL", "0.0")) +
+                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_IMAG", "0.0")) * im)
+feast_radius = get(cli_opts, :feast_radius, parse(Float64, get(ENV, "CROSS_FEAST_RADIUS", "1.0")))
+feast_M0 = get(cli_opts, :feast_M0, parse(Int, get(ENV, "CROSS_FEAST_M0", "48")))
+meridional_points = get(cli_opts, :theta_points, parse(Int, get(ENV, "CROSS_THETA_POINTS", "96")))
 
 println("m    Re(λ₁)          Im(λ₁)          iterations")
 println("------------------------------------------------")
@@ -56,7 +111,16 @@ for m in 1:20
     lmax = max(48, m + 6)
     params = ShellParams(m=m, E=E, Pr=Pr, Ra=Ra, ri=ri, ro=ro, lmax=lmax, Nr=Nr)
     try
-        vals, _, _, info = leading_modes(params; nθ=meridional_points, nev=2, which=:LR, tol=1e-6, maxiter=120)
+        vals, _, _, info = leading_modes(params;
+                                         nθ=meridional_points,
+                                         nev=2,
+                                         which=:LR,
+                                         tol=1e-6,
+                                         maxiter=120,
+                                         solver=solver,
+                                         feast_center=feast_center,
+                                         feast_radius=feast_radius,
+                                         feast_M0=feast_M0)
         λ1 = vals[1]
         @printf("%2d  %12.5e  %12.5e  %5d\n", m, real(λ1), imag(λ1), info.iterations)
     catch err

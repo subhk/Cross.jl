@@ -25,33 +25,6 @@ const _fourπ = 4π
     error("Invalid equatorial symmetry flag $sym")
 end
 
-function compute_l_sets(p::OnsetParams{T}) where {T<:Real}
-    if p.equatorial_symmetry === :both
-        ls = collect(p.m:p.lmax)
-        return Dict(:P => ls, :T => ls, :Θ => ls)
-    end
-
-    vsymm = _symmetry_flag(p.equatorial_symmetry)
-    @assert vsymm !== nothing
-
-    signm = p.m == 0 ? 0 : 1
-    lm1 = p.lmax - p.m + 1
-    ll_start = p.m + 1 - signm
-    ll = collect(ll_start:(ll_start + lm1 - 1))
-
-    s = Int((vsymm + 1) ÷ 2)
-    pol_start = (signm + s) % 2
-    tor_start = (signm + s + 1) % 2
-
-    pol_idxs = pol_start:2:(lm1 - 1)
-    tor_idxs = tor_start:2:(lm1 - 1)
-
-    pol_ls = [ll[k + 1] for k in pol_idxs]
-    tor_ls = [ll[k + 1] for k in tor_idxs]
-
-    return Dict(:P => pol_ls, :T => tor_ls, :Θ => pol_ls)
-end
-
 @inline function poloidal_tau_indices(idx::UnitRange{Int})
     length(idx) ≥ 4 || throw(ArgumentError("Need at least 4 radial points to impose boundary conditions."))
     ri = first(idx)
@@ -84,7 +57,7 @@ end
     L::T = ro - ri
     mechanical_bc::Symbol = :no_slip
     thermal_bc::Symbol = :fixed_temperature
-    use_kore_weighting::Bool = false
+    use_kore_weighting::Bool = true
     equatorial_symmetry::Symbol = :both
     basic_state::Nothing = nothing
 
@@ -102,10 +75,8 @@ end
         @assert thermal_bc in (:fixed_temperature, :fixed_flux) "Invalid thermal BC"
         @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
 
-        use_weighting = equatorial_symmetry === :both ? use_kore_weighting : true
-
         new{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
-               mechanical_bc, thermal_bc, use_weighting, equatorial_symmetry,
+               mechanical_bc, thermal_bc, use_kore_weighting, equatorial_symmetry,
                basic_state)
     end
 end
@@ -113,6 +84,33 @@ end
 # -----------------------------------------------------------------------------
 #  Linear Stability Operator
 # -----------------------------------------------------------------------------
+
+function compute_l_sets(p::OnsetParams{T}) where {T<:Real}
+    if p.equatorial_symmetry === :both
+        ls = collect(p.m:p.lmax)
+        return Dict(:P => ls, :T => ls, :Θ => ls)
+    end
+
+    vsymm = _symmetry_flag(p.equatorial_symmetry)
+    @assert vsymm !== nothing
+
+    signm = p.m == 0 ? 0 : 1
+    lm1 = p.lmax - p.m + 1
+    ll_start = p.m + 1 - signm
+    ll = collect(ll_start:(ll_start + lm1 - 1))
+
+    s = Int((vsymm + 1) ÷ 2)
+    pol_start = (signm + s) % 2
+    tor_start = (signm + s + 1) % 2
+
+    pol_idxs = pol_start:2:(lm1 - 1)
+    tor_idxs = tor_start:2:(lm1 - 1)
+
+    pol_ls = [ll[k + 1] for k in pol_idxs]
+    tor_ls = [ll[k + 1] for k in tor_idxs]
+
+    return Dict(:P => pol_ls, :T => tor_ls, :Θ => pol_ls)
+end
 
 struct LinearStabilityOperator{T<:Real}
     params::OnsetParams{T}
@@ -373,49 +371,56 @@ end
 (M::ShiftInvertMap)(y, x) = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
 
 function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
-                                  nev::Int=1,
+                                  nev::Int=6,
                                   tol::Float64=1e-10,
                                   maxiter::Int=1000,
                                   which::Symbol=:LR) where {T<:Float64}
-    A, B, _, _ = assemble_matrices(op)
-    σ = 0.1 + 0.1im
+    A_full, B_full, interior_dofs, _ = assemble_matrices(op)
+    A = Matrix(A_full[interior_dofs, interior_dofs])
+    B = Matrix(B_full[interior_dofs, interior_dofs])
+
+    σ = Complex{T}(0.1, 0.1)
 
     lu_factor = lu(A - σ * B)
     tmp = zeros(Complex{T}, size(A, 1))
-    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp), 
-                                size(A, 1); ismutating=true)
+    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp),
+                                      size(A, 1); ismutating=true)
 
     krylovdim = min(size(A, 1), max(nev * 8, 60))
     x0 = randn(Complex{T}, size(A, 1))
 
-    vals_inv, vecs, info = eigsolve(shift_map, 
-                                    x0, nev, :LM;
-                                    tol=tol, 
-                                    maxiter=maxiter,
-                                    krylovdim=500, 
-                                    verbosity=0)
+    vals_inv, vecs_int, info = eigsolve(shift_map,
+                                        x0, nev, :LM;
+                                        tol=tol,
+                                        maxiter=maxiter,
+                                        krylovdim=krylovdim,
+                                        verbosity=0)
 
     finite = [abs(λ) > eps(T) for λ in vals_inv]
     any(finite) || error("No finite eigenvalues returned by eigensolver")
     vals_inv = vals_inv[finite]
-    vecs = vecs[finite]
+    vecs_int = vecs_int[finite]
 
     eigenvalues = Complex{T}[σ + inv(λ) for λ in vals_inv]
+
+    vecs_full = Vector{Vector{Complex{T}}}(undef, length(vecs_int))
+    n_full = size(A_full, 1)
+    for (i, v_int) in enumerate(vecs_int)
+        full_vec = zeros(Complex{T}, n_full)
+        full_vec[interior_dofs] = v_int
+        vecs_full[i] = full_vec
+    end
 
     ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
                which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
                collect(1:length(eigenvalues))
 
-    return eigenvalues[ordering], vecs[ordering], info
+    return eigenvalues[ordering], vecs_full[ordering], info
 end
 
 
 function find_growth_rate(op::LinearStabilityOperator; kwargs...)
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op; kwargs...)
-
-    println("Eigenvalue solver converged: ", info.converged)
-    println("Eigenvalues found: ", eigenvalues)
-
     idx = argmax(real.(eigenvalues))
     λ = eigenvalues[idx]
     σ = real(λ)

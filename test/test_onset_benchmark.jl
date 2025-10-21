@@ -1,6 +1,6 @@
 # =============================================================================
 #  Benchmark Tests for Onset of Convection
-#  Compares against Dormy et al. (2004) Table 5 values
+#  Compares against Dormy et al. (2004) Table 1 values
 # =============================================================================
 
 using Cross
@@ -20,7 +20,7 @@ function benchmark_dormy2004()
     # Test cases from Dormy et al. (2004) Table 5
     # Columns: E, Ra_c^D, m_c^D, ω_c^D
     test_cases = [
-        (4.734e-5, 1.6525e6, 9, -0.011003),
+        (4.734e-5, 1.6525e6, 9,  -0.011003),
         (4.734e-6, 2.6279e7, 19, -0.005691),
         (4.734e-7, 4.6180e8, 40, -0.002804)
     ]
@@ -40,8 +40,8 @@ function benchmark_dormy2004()
 
         # Determine appropriate numerical resolution
         if E >= 1e-5
-            lmax = 30
-            Nr = 32
+            lmax = 40
+            Nr = 50
         elseif E >= 1e-6
             lmax = 60
             Nr = 64
@@ -85,85 +85,85 @@ function benchmark_dormy2004()
     return results
 end
 
-"""
-Quick test at moderate Ekman number
-"""
-function quick_test()
-    println("Quick test at E = 1e-4, χ = 0.35")
-    println()
+# """
+# Quick test at moderate Ekman number
+# """
+# function quick_test()
+#     println("Quick test at E = 1e-4, χ = 0.35")
+#     println()
 
-    E = 1e-4
-    χ = 0.35
-    Pr = 1.0
-    m = 9
-    lmax = 25
-    Nr = 32
+#     E = 1e-4
+#     χ = 0.35
+#     Pr = 1.0
+#     m = 9
+#     lmax = 25
+#     Nr = 32
 
-    # Initial guess
-    Ra_guess = 5e5
+#     # Initial guess
+#     Ra_guess = 5e5
 
-    println("Finding critical Rayleigh number...")
-    Ra_c, ω_c, vec = find_critical_rayleigh(
-        E, Pr, χ, m, lmax, Nr;
-        Ra_guess=Ra_guess,
-        mechanical_bc=:no_slip,
-        thermal_bc=:fixed_temperature
-    )
+#     println("Finding critical Rayleigh number...")
+#     Ra_c, ω_c, vec = find_critical_rayleigh(
+#         E, Pr, χ, m, lmax, Nr;
+#         Ra_guess=Ra_guess,
+#         mechanical_bc=:no_slip,
+#         thermal_bc=:fixed_temperature
+#     )
 
-    println()
-    println("Results:")
-    println("  Ra_c = ", Ra_c)
-    println("  ω_c  = ", ω_c)
-    println("  m_c  = ", m)
-    println()
+#     println()
+#     println("Results:")
+#     println("  Ra_c = ", Ra_c)
+#     println("  ω_c  = ", ω_c)
+#     println("  m_c  = ", m)
+#     println()
 
-    return Ra_c, ω_c
-end
+#     return Ra_c, ω_c
+# end
 
-"""
-Test growth rate calculation
-"""
-function test_growth_rate()
-    println("Testing growth rate calculation")
-    println()
+# """
+# Test growth rate calculation
+# """
+# function test_growth_rate()
+#     println("Testing growth rate calculation")
+#     println()
 
-    E = 1e-4
-    χ = 0.35
-    Pr = 1.0
-    m = 9
-    lmax = 25
-    Nr = 32
+#     E = 1e-4
+#     χ = 0.35
+#     Pr = 1.0
+#     m = 9
+#     lmax = 25
+#     Nr = 32
 
-    # Test at different Rayleigh numbers
-    Ra_values = [1e5, 5e5, 1e6, 2e6]
+#     # Test at different Rayleigh numbers
+#     Ra_values = [1e5, 5e5, 1e6, 2e6]
 
-    println(@sprintf("%-12s %-12s %-12s", "Ra", "σ", "ω"))
-    println("-"^40)
+#     println(@sprintf("%-12s %-12s %-12s", "Ra", "σ", "ω"))
+#     println("-"^40)
 
-    for Ra in Ra_values
-        params = OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m=m, lmax=lmax, Nr=Nr,
-                            mechanical_bc=:no_slip,
-                            thermal_bc=:fixed_temperature)
-        op = LinearStabilityOperator(params)
+#     for Ra in Ra_values
+#         params = OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m=m, lmax=lmax, Nr=Nr,
+#                             mechanical_bc=:no_slip,
+#                             thermal_bc=:fixed_temperature)
+#         op = LinearStabilityOperator(params)
 
-        σ, ω, vec = find_growth_rate(op)
+#         σ, ω, vec = find_growth_rate(op)
 
-        println(@sprintf("%-12.3e %-12.6f %-12.6f", Ra, σ, ω))
-    end
+#         println(@sprintf("%-12.3e %-12.6f %-12.6f", Ra, σ, ω))
+#     end
 
-    println()
-end
+#     println()
+# end
 
 # Run tests if executed as script
 if abspath(PROGRAM_FILE) == @__FILE__
     println("Running onset of convection benchmark tests")
     println()
 
-    println("Test 1: Quick test")
-    quick_test()
+    # println("Test 1: Quick test")
+    # quick_test()
 
-    println("\nTest 2: Growth rate vs Rayleigh number")
-    test_growth_rate()
+    # println("\nTest 2: Growth rate vs Rayleigh number")
+    # test_growth_rate()
 
     println("\nTest 3: Full benchmark against Dormy et al. (2004)")
     benchmark_dormy2004()

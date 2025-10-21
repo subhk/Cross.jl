@@ -18,6 +18,9 @@ import ..Cross: ChebyshevDiffn
 
 const _fourπ = 4π
 
+import FeastKit
+using FeastKit: feastinit!, feast_set_defaults!, feast_general, FeastResult, Feast_SUCCESS
+
 @inline function _symmetry_flag(sym::Symbol)
     sym === :symmetric && return 1
     sym === :antisymmetric && return -1
@@ -370,52 +373,41 @@ end
 
 (M::ShiftInvertMap)(y, x) = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
 
+struct FeastConvergenceInfo
+    converged::Bool
+    info_code::Int
+    iterations::Int
+    found::Int
+    radius::Float64
+end
+
 function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   nev::Int=6,
                                   tol::Float64=1e-10,
                                   maxiter::Int=1000,
-                                  which::Symbol=:LR) where {T<:Float64}
+                                  which::Symbol=:LR,
+                                  solver::Symbol=:feast,
+                                  feast_center::Complex{T}=Complex{T}(0),
+                                  feast_radius::Float64=1.0,
+                                  feast_M0::Int=max(nev * 4, 32)) where {T<:Float64}
     A_full, B_full, interior_dofs, _ = assemble_matrices(op)
-    A = Matrix(A_full[interior_dofs, interior_dofs])
-    B = Matrix(B_full[interior_dofs, interior_dofs])
 
-    σ = Complex{T}(0.1, 0.1)
-
-    lu_factor = lu(A - σ * B)
-    tmp = zeros(Complex{T}, size(A, 1))
-    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp),
-                                      size(A, 1); ismutating=true)
-
-    krylovdim = min(size(A, 1), max(nev * 8, 60))
-    x0 = randn(Complex{T}, size(A, 1))
-
-    vals_inv, vecs_int, info = eigsolve(shift_map,
-                                        x0, nev, :LM;
-                                        tol=tol,
-                                        maxiter=maxiter,
-                                        krylovdim=krylovdim,
-                                        verbosity=0)
-
-    finite = [abs(λ) > eps(T) for λ in vals_inv]
-    any(finite) || error("No finite eigenvalues returned by eigensolver")
-    vals_inv = vals_inv[finite]
-    vecs_int = vecs_int[finite]
-
-    eigenvalues = Complex{T}[σ + inv(λ) for λ in vals_inv]
-
-    vecs_full = Vector{Vector{Complex{T}}}(undef, length(vecs_int))
-    n_full = size(A_full, 1)
-    for (i, v_int) in enumerate(vecs_int)
-        full_vec = zeros(Complex{T}, n_full)
-        full_vec[interior_dofs] = v_int
-        vecs_full[i] = full_vec
+    if solver == :feast
+        feast_result = _feast_eigensolve(A_full, B_full, interior_dofs;
+                                         nev=nev,
+                                         which=which,
+                                         tol=tol,
+                                         center=feast_center,
+                                         radius=feast_radius,
+                                         M0=feast_M0)
+        if feast_result !== nothing
+            return feast_result...
+        end
+        @warn "Feast solver failed or returned insufficient eigenpairs; falling back to Krylov shift-invert."
     end
 
-    ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
-               which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
-               collect(1:length(eigenvalues))
-
-    return eigenvalues[ordering], vecs_full[ordering], info
+    return _krylov_eigensolve(A_full, B_full, interior_dofs;
+                              nev=nev, tol=tol, maxiter=maxiter, which=which)
 end
 
 

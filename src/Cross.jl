@@ -11,6 +11,7 @@ module Cross
 
     using Arpack
     using KrylovKit
+    using FeastKit
 
     include("Chebyshev.jl")
     include("banner.jl")

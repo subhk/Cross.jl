@@ -16,6 +16,27 @@ else
     @warn "SHTnsKit path not found" sht_local
 end
 
+# Prefer a locally checked-out FeastKit before falling back to the registered version.
+feast_candidates = String[]
+if haskey(ENV, "FEASTKIT_PATH")
+    push!(feast_candidates, ENV["FEASTKIT_PATH"])
+end
+push!(feast_candidates, joinpath(repo_root, "..", "FeastKit.jl"))
+push!(feast_candidates, joinpath(repo_root, "..", "Feast.jl"))
+
+feast_path = nothing
+for candidate in feast_candidates
+    if isdir(candidate)
+        feast_path = candidate
+        push!(LOAD_PATH, joinpath(candidate, "src"))
+        break
+    end
+end
+
+if feast_path === nothing
+    @warn "FeastKit path not found; falling back to the registered package" feast_candidates
+end
+
 using Cross
 using Printf
 

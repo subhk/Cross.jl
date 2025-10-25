@@ -383,6 +383,40 @@ function operator_buoyancy(op::SparseStabilityOperator{T},
     return beyonce * L * op.r4_D0_u
 end
 
+"""
+    operator_coriolis_v_to_u(op, l, m, offset)
+
+Coriolis force coupling from toroidal velocity (v) to poloidal velocity (u).
+Implements op.coriolis(l, 'v', 'upol', ±1).
+
+This is the REVERSE coupling to operator_coriolis_offdiag (which does u→v).
+Both directions are required for correct rotating convection physics!
+
+Following Kore operators.py lines 93-113:
+- For l-1: C = (l²-1)*sqrt(l²-m²)/(2l-1)
+  out = 2*C*((l-1)*r¹D⁰_v - r²D¹_v)
+- For l+1: C = l*(l+2)*sqrt((l+m+1)*(l-m+1))/(2l+3)
+  out = 2*C*(-(l+2)*r¹D⁰_v - r²D¹_v)
+
+Returns: operator matrix
+"""
+function operator_coriolis_v_to_u(op::SparseStabilityOperator{T},
+                                 l::Int, m::Int, offset::Int) where {T}
+    if offset == -1
+        # Coupling from v at mode l to u at mode l-1
+        C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
+        return 2 * C * ((l - 1) * op.r1_D0_v - op.r2_D1_v)
+
+    elseif offset == 1
+        # Coupling from v at mode l to u at mode l+1
+        C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
+        return 2 * C * (-(l + 2) * op.r1_D0_v - op.r2_D1_v)
+
+    else
+        error("offset must be ±1 for Coriolis v→u coupling")
+    end
+end
+
 # -----------------------------------------------------------------------------
 # Toroidal velocity operators (section v, 1curl)
 # -----------------------------------------------------------------------------
@@ -640,6 +674,21 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # Viscous diffusion for toroidal velocity
         visc_tor_op = -operator_viscous_toroidal(op, l, E)
         add_block!(A_rows, A_cols, A_vals, visc_tor_op, row_base, col_base)
+
+        # Coriolis coupling from toroidal to poloidal velocity (v → u, l±1)
+        # This is the REVERSE coupling - essential for rotating convection!
+        for offset in [-1, 1]
+            l_coupled = l + offset
+            if l_coupled in op.ll_top
+                k_coupled = findfirst(==(l_coupled), op.ll_top)
+                row_coupled = (k_coupled - 1) * n_per_mode
+
+                # Compute Coriolis v→u coupling operator
+                cori_v_to_u = operator_coriolis_v_to_u(op, l, m, offset)
+                add_block!(A_rows, A_cols, A_vals, cori_v_to_u,
+                          row_coupled, col_base)  # Note: writes to Section u rows!
+            end
+        end
 
         # Note: No direct buoyancy coupling for toroidal velocity
         # (Buoyancy forces poloidal flow, which then couples to toroidal via Coriolis)

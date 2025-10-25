@@ -20,10 +20,31 @@ using SparseArrays
 using LinearMaps
 using KrylovKit
 using Printf
+using Random
 
 export solve_eigenvalue_problem,
        find_critical_rayleigh,
        find_onset_parameters
+
+struct ShiftInvertLinearMap{T,LUType,MatType,VecType}
+    lu::LUType
+    B::MatType
+    tmp::VecType
+end
+
+(M::ShiftInvertLinearMap{T})(y, x) where {T} = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
+
+ShiftInvertLinearMap(lu, B, tmp) = ShiftInvertLinearMap{eltype(tmp), typeof(lu), typeof(B), typeof(tmp)}(lu, B, tmp)
+
+struct MassInverseLinearMap{T,LUType,MatType,VecType}
+    lu::LUType
+    A::MatType
+    tmp::VecType
+end
+
+(M::MassInverseLinearMap{T})(y, x) where {T} = (mul!(M.tmp, M.A, x); ldiv!(y, M.lu, M.tmp); y)
+
+MassInverseLinearMap(lu, A, tmp) = MassInverseLinearMap{eltype(tmp), typeof(lu), typeof(A), typeof(tmp)}(lu, A, tmp)
 
 """
     solve_eigenvalue_problem(A, B; nev=20, sigma=nothing, which=:LR,
@@ -73,34 +94,30 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
     println("  A nnz: $(nnz(A)), B nnz: $(nnz(B))")
     println("  Computing $nev eigenvalues with which=$which")
 
-    # Helper for LinearMaps that wraps sparse matrix-vector multiply
-    function _sparse_linear_map(M::SparseMatrixCSC)
-        n, m = size(M)
-        LinearMap{ComplexF64}(
-            (y, x) -> begin
-                mul!(y, M, x)
-                y
-            end,
-            n, m;
-            ismutating = true
-        )
-    end
-
     # Determine Krylov subspace dimension
     kdim = something(krylovdim, min(n, max(4 * nev, 30)))
 
     try
         if sigma === nothing
-            A_map = _sparse_linear_map(A)
-            B_map = _sparse_linear_map(B)
+            A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
+            B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
+            b_factor = lu(B_complex)
+            tmp = zeros(ComplexF64, n)
+            mass_map = LinearMap{ComplexF64}(MassInverseLinearMap(b_factor, A_complex, tmp), n; ismutating=true)
+            x0 = randn(ComplexF64, n)
+
             values, vectors, history = eigsolve(
-                A_map, B_map, nev;
-                which = which,
+                mass_map, x0, nev, which;
                 tol = tol,
                 maxiter = maxiter,
                 krylovdim = kdim,
                 verbosity = verbosity
             )
+
+            keep = [!iszero(val) for val in values]
+            any(keep) || error("No eigenvalues returned by Krylov solver")
+            values = values[keep]
+            vectors = vectors[keep]
 
             eigenvalues = ComplexF64.(values)
             eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
@@ -128,9 +145,11 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                 "solver" => :krylovkit,
                 "strategy" => :generalized,
                 "krylovdim" => kdim,
-                "iterations" => history.iters,
+                "iterations" => history.numiter,
+                "operator_applications" => history.numops,
                 "converged" => history.converged,
-                "residuals" => history.realresnorm,
+                "residuals" => history.residual,
+                "residual_norms" => history.normres,
                 "selected" => eigenvalues[1],
                 "selection" => selection
             )
@@ -144,26 +163,22 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
             shift_matrix = A_complex - sigma * B_complex
             factor = lu(shift_matrix)
 
-            # Linear map for (A - σB)^{-1} B
-            n_rows = size(A, 1)
-            shift_map = LinearMap{ComplexF64}(
-                (y, x) -> begin
-                    mul!(y, B_complex, x)
-                    ldiv!(y, factor, y)
-                    y
-                end,
-                n_rows, n_rows;
-                ismutating = true
-            )
+            tmp = zeros(ComplexF64, n)
+            shift_map = LinearMap{ComplexF64}(ShiftInvertLinearMap(factor, B_complex, tmp), n; ismutating=true)
+            x0 = randn(ComplexF64, n)
 
             values, vectors, history = eigsolve(
-                shift_map, nev;
-                which = :LM,
+                shift_map, x0, nev, :LM;
                 tol = tol,
                 maxiter = maxiter,
                 krylovdim = kdim,
                 verbosity = verbosity
             )
+
+            keep = [abs(val) > eps(Float64) for val in values]
+            any(keep) || error("No finite eigenvalues returned by shift-invert solver")
+            values = values[keep]
+            vectors = vectors[keep]
 
             eigenvalues = ComplexF64.(sigma .+ inv.(values))
             eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
@@ -192,9 +207,11 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                 "strategy" => :shift_invert,
                 "shift" => sigma,
                 "krylovdim" => kdim,
-                "iterations" => history.iters,
+                "iterations" => history.numiter,
+                "operator_applications" => history.numops,
                 "converged" => history.converged,
-                "residuals" => history.realresnorm,
+                "residuals" => history.residual,
+                "residual_norms" => history.normres,
                 "selected" => eigenvalues[1],
                 "selection" => selection
             )

@@ -1,12 +1,12 @@
 # =============================================================================
-#  Kore-Style Sparse Linear Stability Operator
+#  Sparse Linear Stability Operator
 #
-#  Implementation following the Kore spectral method for onset of convection
+#  Implementation using ultraspherical spectral method for onset of convection
 #  in rotating spherical shells using sparse Gegenbauer (ultraspherical)
 #  polynomials.
 #
 #  References:
-#  - Rekier et al. (2019), Kore implementation
+#  - Rekier et al. (2019), Reference implementation
 #  - Barik et al. (2023), Earth and Space Science
 #  - Dormy et al. (2004), JFM
 # =============================================================================
@@ -23,17 +23,17 @@ using .UltrasphericalSpectral
 export SparseOnsetParams,
        SparseStabilityOperator,
        assemble_sparse_matrices,
-       kore_solve_eigenvalue
+       
 
 # -----------------------------------------------------------------------------
-# Parameters matching Kore's structure
+# Parameters for sparse onset calculations
 # -----------------------------------------------------------------------------
 
 """
     SparseOnsetParams
 
 Parameters for onset of convection in rotating spherical shells.
-Matches Kore's parameter naming conventions.
+Uses sparse ultraspherical spectral discretization.
 
 # Fields
 - `E::Float64`: Ekman number ν/(ΩL²)
@@ -151,7 +151,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     N = params.N
     ri, ro = params.ricb, one(T)
 
-    println("Building Kore sparse operators (N=$N, ricb=$ri)...")
+    println("Building sparse operators (N=$N, ricb=$ri)...")
 
     # Pre-compute radial operators for poloidal velocity
     println("  Computing poloidal operators...")
@@ -253,14 +253,14 @@ function estimate_sparsity(N::Int, nl_modes::Int)
 end
 
 # -----------------------------------------------------------------------------
-# Operator functions (matching Kore's operators.py structure)
+# Operator functions (for rotating convection)
 # -----------------------------------------------------------------------------
 
 """
     operator_u(op, l)
 
 Velocity operator: L(-L*r²D⁰ + 2r³D¹ + r⁴D²) for diagonal term.
-Matches Kore's op.u(l, 'u', 'upol', 0).
+Implements op.u(l, 'u', 'upol', 0).
 """
 function operator_u(op::SparseStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
@@ -271,7 +271,7 @@ end
     operator_coriolis_diagonal(op, l, m)
 
 Coriolis force operator for diagonal (l,l) coupling.
-Matches Kore's op.coriolis(l, 'u', 'upol', 0).
+Implements op.coriolis(l, 'u', 'upol', 0).
 
 Returns: 2im * m * (-L*r²D⁰ + 2r³D¹ + r⁴D²)
 """
@@ -285,7 +285,7 @@ end
     operator_coriolis_offdiag(op, l, m, offset)
 
 Coriolis force operator for off-diagonal (l, l±1) coupling.
-Matches Kore's op.coriolis(l, 'u', 'utor', ±1).
+Implements op.coriolis(l, 'u', 'utor', ±1).
 
 Returns: [operator, offset] where offset indicates which l-mode it couples to.
 """
@@ -313,8 +313,8 @@ end
 """
     operator_viscous_diffusion(op, l, E)
 
-Viscous diffusion operator: E * ∇²∇²u matching Kore's structure.
-Matches Kore's op.viscous_diffusion(l, 'u', 'upol', 0).
+Viscous diffusion operator: E * ∇²∇²u for sparse spectral method.
+Implements op.viscous_diffusion(l, 'u', 'upol', 0).
 
 Returns: E * L * (-L(l+2)(l-1)*r⁰D⁰ + 2L*r²D² - 4r³D³ - r⁴D⁴)
 """
@@ -330,14 +330,14 @@ end
 """
     operator_buoyancy(op, l, Ra, Pr)
 
-Buoyancy operator: (Ra * E² / Pr) * r² * θ matching Kore's structure.
-Matches Kore's op.buoyancy(l, 'u', '', 0).
+Buoyancy operator: (Ra * E² / Pr) * r² * θ for sparse spectral method.
+Implements op.buoyancy(l, 'u', '', 0).
 
 This couples the temperature field to the velocity equation.
 """
 function operator_buoyancy(op::SparseStabilityOperator{T},
                           l::Int, Ra::T, Pr::T) where {T}
-    # In Kore: Beyonce * r^power * D^0
+    # Reference: Beyonce * r^power * D^0
     # where Beyonce = BV² = -Ra * E² / Pr
     # For linear gravity g ∝ r, we have r² in the poloidal equation
     E = op.params.E
@@ -354,7 +354,7 @@ end
 
 Toroidal velocity operator (essentially identity for the mass matrix).
 For the 1curl (toroidal) equation, this is just r⁰D⁰ = I.
-Matches Kore's op.u(l, 'v', 'utor', 0) structure.
+Implements op.u(l, 'v', 'utor', 0) structure.
 """
 function operator_u_toroidal(op::SparseStabilityOperator{T}, l::Int) where {T}
     # For toroidal velocity, the time derivative term is just the identity
@@ -365,7 +365,7 @@ end
     operator_coriolis_toroidal(op, l, m)
 
 Coriolis force acting on toroidal velocity.
-Matches Kore's op.coriolis(l, 'u', 'utor', 0).
+Implements op.coriolis(l, 'u', 'utor', 0).
 
 Returns: -2im * m * r²D⁰_v
 
@@ -373,7 +373,7 @@ Note: In Kore, this is multiplied by Gaspard = 1.0 for time scale Tau = 1/Omega.
 """
 function operator_coriolis_toroidal(op::SparseStabilityOperator{T},
                                    l::Int, m::Int) where {T}
-    # From Kore operators.py line 122:
+    # From reference implementation line 122:
     # section == 'u', component == 'utor', offdiag == 0
     # out = -2j*par.m*r2_D0_v  (for non-magnetic case)
     # Multiplied by par.Gaspard = 1.0
@@ -387,7 +387,7 @@ end
     operator_viscous_toroidal(op, l, E)
 
 Viscous diffusion operator for toroidal velocity: E * ∇²u_toroidal.
-Matches Kore's op.viscous_diffusion(l, 'v', 'utor', 0).
+Implements op.viscous_diffusion(l, 'v', 'utor', 0).
 
 Returns: E * L * (-L*r⁰D⁰ + 2*r¹D¹ + r²D²)
 
@@ -395,7 +395,7 @@ where L = l(l+1).
 """
 function operator_viscous_toroidal(op::SparseStabilityOperator{T},
                                   l::Int, E::T) where {T}
-    # From Kore operators.py line 192:
+    # From reference implementation line 192:
     # section == 'v', component == 'utor', offdiag == 0
     # out = L*( -L*r0_D0_v + 2*r1_D1_v + r2_D2_v )
     # Multiplied by par.ViscosD = Ek = E
@@ -412,12 +412,12 @@ end
     operator_theta(op, l)
 
 Temperature operator for time derivative term.
-Matches Kore's op.theta(l, 'h', '', 0).
+Implements op.theta(l, 'h', '', 0).
 
 For non-anelastic, non-differential heating: returns r²D⁰
 """
 function operator_theta(op::SparseStabilityOperator{T}, l::Int) where {T}
-    # From Kore operators.py line 715:
+    # From reference implementation line 715:
     # section == 'h', non-anelastic, non-differential heating
     # out = r2_D0_h
     return op.r2_D0_h
@@ -427,7 +427,7 @@ end
     operator_thermal_diffusion(op, l, Etherm)
 
 Thermal diffusion operator: (E/Pr) * ∇²θ.
-Matches Kore's op.thermal_diffusion(l, 'h', '', 0).
+Implements op.thermal_diffusion(l, 'h', '', 0).
 
 Returns: Etherm * (-L*r⁰D⁰ + 2*r¹D¹ + r²D²)
 
@@ -435,7 +435,7 @@ where Etherm = E/Pr and L = l(l+1).
 """
 function operator_thermal_diffusion(op::SparseStabilityOperator{T},
                                    l::Int, Etherm::T) where {T}
-    # From Kore operators.py line 761:
+    # From reference implementation line 761:
     # section == 'h', non-anelastic, non-differential heating
     # difus = - L*r0_D0_h + 2*r1_D1_h + r2_D2_h  # eq. times r**2
     # out = difus * par.ThermaD
@@ -449,7 +449,7 @@ end
     operator_thermal_advection(op, l)
 
 Thermal advection operator: radial velocity advecting temperature.
-Matches Kore's op.thermal_advection(l, 'h', 'upol', 0).
+Implements op.thermal_advection(l, 'h', 'upol', 0).
 
 Returns: L * r²D⁰
 
@@ -458,7 +458,7 @@ For internal heating: dT/dr = -β*r, so the advection term is u_r * (-β*r)
 """
 function operator_thermal_advection(op::SparseStabilityOperator{T},
                                    l::Int) where {T}
-    # From Kore operators.py line 734:
+    # From reference implementation line 734:
     # section == 'h', component == 'upol', non-anelastic, internal heating
     # conv = r2_D0_h  # dT/dr = -beta*r. Heat equation is times r**2
     # out = L * conv
@@ -477,7 +477,7 @@ end
 Assemble the full sparse matrices A and B for the generalized eigenvalue problem:
     A * x = λ * B * x
 
-Following Kore's assembly structure from assemble.py.
+Assembly structure from assemble.py.
 
 Returns: (A, B, interior_dofs, info)
 """
@@ -496,7 +496,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # Matrix size
     n = op.matrix_size
 
-    println("\nAssembling Kore sparse matrices...")
+    println("\nAssembling sparse matrices...")
     println("  Matrix size: $n × $n")
     println("  Poloidal modes: $(op.ll_top)")
     println("  Toroidal modes: $(op.ll_bot)")
@@ -610,7 +610,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # -----------------------------------------------------------------
         # B matrix: Time derivative (weighted by r²)
         # -----------------------------------------------------------------
-        # In Kore: B = theta operator (r²D⁰ for non-anelastic)
+        # Reference: B = theta operator (r²D⁰ for non-anelastic)
         theta_op = operator_theta(op, l)
         add_block!(B_rows, B_cols, B_vals, theta_op, row_base, col_base)
 
@@ -643,7 +643,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # Apply boundary conditions
     # =========================================================================
     println("  Applying boundary conditions...")
-    apply_kore_boundary_conditions!(A, B, op)
+    apply_sparse_boundary_conditions!(A, B, op)
 
     println("  Final A sparsity: $(nnz(A)) / $(n^2)")
     println("  Final B sparsity: $(nnz(B)) / $(n^2)")
@@ -656,7 +656,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     println("  Interior DOFs: $(length(interior_dofs)) / $n")
 
     info = Dict(
-        "method" => "Kore sparse ultraspherical",
+        "method" => "Sparse ultraspherical",
         "N" => N,
         "lmax" => params.lmax,
         "m" => m,
@@ -668,12 +668,12 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
 end
 
 """
-    apply_kore_boundary_conditions!(A, B, op)
+    apply_sparse_boundary_conditions!(A, B, op)
 
 Apply boundary conditions by replacing appropriate rows in A and B matrices.
-Uses the tau method following Kore's approach.
+Uses the tau method using tau method.
 """
-function apply_kore_boundary_conditions!(A::SparseMatrixCSC,
+function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
                                         B::SparseMatrixCSC,
                                         op::SparseStabilityOperator{T}) where {T}
     params = op.params

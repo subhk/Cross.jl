@@ -32,6 +32,7 @@ module Cross
         ShellParams,
         LinearStabilityOperator,
         solve_eigenvalue_problem,
+        leading_modes,
         find_growth_rate,
         find_critical_rayleigh,
         print_cross_header,

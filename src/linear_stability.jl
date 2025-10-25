@@ -83,8 +83,8 @@ end
     end
 end
 
-# Convenience constructor: compute χ from ri and ro if χ is not provided
-function OnsetParams(; E, Pr=one(E), Ra, m, lmax, Nr,
+# Backward compatibility: helper function that converts ri/ro to χ
+function ShellParams(; E, Pr=one(E), Ra, m, lmax, Nr,
                      ri=nothing, ro=nothing, χ=nothing,
                      mechanical_bc=:no_slip, thermal_bc=:fixed_temperature,
                      use_kore_weighting=true, equatorial_symmetry=:both,
@@ -92,34 +92,24 @@ function OnsetParams(; E, Pr=one(E), Ra, m, lmax, Nr,
     # Compute χ from ri and ro if not directly provided
     if χ === nothing
         if ri !== nothing && ro !== nothing
-            χ = ri / ro
+            computed_χ = ri / ro
         elseif ri !== nothing
-            χ = ri
+            computed_χ = ri
             ro = one(E)
         else
-            error("Must provide either χ or both ri and ro")
+            error("ShellParams: Must provide either χ or both ri and ro")
         end
+    else
+        computed_χ = χ
     end
 
-    # Set defaults for ri and ro if not provided
-    if ri === nothing
-        ri = χ
-    end
-    if ro === nothing
-        ro = one(E)
-    end
-
-    T = promote_type(typeof(E), typeof(Pr), typeof(Ra), typeof(χ), typeof(ri), typeof(ro))
-
-    return OnsetParams{T}(
-        T(E), T(Pr), T(Ra), T(χ), m, lmax, Nr, T(ri), T(ro), T(ro - ri),
-        mechanical_bc, thermal_bc, use_kore_weighting, equatorial_symmetry,
-        basic_state
-    )
+    # Use OnsetParams constructor
+    return OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=computed_χ, m=m, lmax=lmax, Nr=Nr,
+                      mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
+                      use_kore_weighting=use_kore_weighting,
+                      equatorial_symmetry=equatorial_symmetry,
+                      basic_state=basic_state)
 end
-
-# Backward compatibility alias
-const ShellParams = OnsetParams
 
 # -----------------------------------------------------------------------------
 #  Linear Stability Operator
@@ -463,6 +453,15 @@ function find_growth_rate(op::LinearStabilityOperator; kwargs...)
     σ = real(λ)
     ω = imag(λ)
     return σ, ω, eigenvectors[idx]
+end
+
+# Backward compatibility wrapper
+function leading_modes(params::OnsetParams; nθ=nothing, kwargs...)
+    # nθ is ignored for now - it's not used in the current eigenvalue solver
+    # but kept for API compatibility
+    op = LinearStabilityOperator(params)
+    eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op; kwargs...)
+    return eigenvalues, eigenvectors, op, info
 end
 
 function _krylov_eigensolve(A_full::Matrix{Complex{T}},

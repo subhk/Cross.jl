@@ -22,8 +22,7 @@ using .UltrasphericalSpectral
 
 export SparseOnsetParams,
        SparseStabilityOperator,
-       assemble_sparse_matrices,
-       
+       assemble_sparse_matrices
 
 # -----------------------------------------------------------------------------
 # Parameters for sparse onset calculations

@@ -331,19 +331,27 @@ end
 """
     operator_buoyancy(op, l, Ra, Pr)
 
-Buoyancy operator: (Ra * E² / Pr) * r² * θ for sparse spectral method.
+Buoyancy operator: beyonce * L * r⁴ * θ for sparse spectral method.
 Implements op.buoyancy(l, 'u', '', 0).
 
-This couples the temperature field to the velocity equation.
+This couples the temperature field to the poloidal velocity equation.
+
+Following Kore and Cross.jl:
+- beyonce = -Ra * E² / Pr (the negative sign is crucial!)
+- L = l(l+1)
+- r⁴ weighting matches the poloidal equation (2curl, weighted by r⁴)
 """
 function operator_buoyancy(op::SparseStabilityOperator{T},
                           l::Int, Ra::T, Pr::T) where {T}
-    # Reference: Beyonce * r^power * D^0
-    # where Beyonce = BV² = -Ra * E² / Pr
-    # For linear gravity g ∝ r, we have r² in the poloidal equation
+    # Beyonce factor = BV² = -Ra * E² / Pr
     E = op.params.E
+    beyonce = -Ra * E^2 / Pr
 
-    return (Ra * E^2 / Pr) * op.r2_D0_u  # Will be applied to temperature field
+    # L factor
+    L = l * (l + 1)
+
+    # Full buoyancy operator: beyonce * L * r⁴D⁰
+    return beyonce * L * op.r4_D0_u
 end
 
 # -----------------------------------------------------------------------------

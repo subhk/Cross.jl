@@ -330,7 +330,7 @@ end
 """
     operator_buoyancy(op, l, Ra, Pr)
 
-Buoyancy operator: (Ra/Pr) * r² * θ matching Kore's structure.
+Buoyancy operator: (Ra * E² / Pr) * r² * θ matching Kore's structure.
 Matches Kore's op.buoyancy(l, 'u', '', 0).
 
 This couples the temperature field to the velocity equation.
@@ -339,10 +339,10 @@ function operator_buoyancy(op::KoreSparseStabilityOperator{T},
                           l::Int, Ra::T, Pr::T) where {T}
     # In Kore: Beyonce * r^power * D^0
     # where Beyonce = BV² = -Ra * E² / Pr
-    # But in the velocity equation, buoyancy enters as (Ra/Pr) * r * θ
     # For linear gravity g ∝ r, we have r² in the poloidal equation
+    E = op.params.E
 
-    return (Ra / Pr) * op.r2_D0_u  # Will be applied to temperature field
+    return (Ra * E^2 / Pr) * op.r2_D0_u  # Will be applied to temperature field
 end
 
 # -----------------------------------------------------------------------------
@@ -530,17 +530,13 @@ function assemble_sparse_matrices(op::KoreSparseStabilityOperator{T}) where {T}
         col_base = (k - 1) * n_per_mode
 
         # -----------------------------------------------------------------
-        # A matrix: iω*u + Coriolis - viscous + coupling terms
+        # B matrix: Time derivative operator
+        # A matrix: RHS operators (Coriolis, viscous, buoyancy)
         # -----------------------------------------------------------------
 
-        # Time derivative term (goes to B matrix)
-        # B = identity for velocity
-        I_block = sparse(1.0I, n_per_mode, n_per_mode)
-        add_block!(B_rows, B_cols, B_vals, I_block, row_base, col_base)
-
-        # Velocity operator: -u
-        u_op = -operator_u(op, l)
-        add_block!(A_rows, A_cols, A_vals, u_op, row_base, col_base)
+        # Time derivative term: ∂u/∂t → operator_u in B matrix
+        u_op = operator_u(op, l)
+        add_block!(B_rows, B_cols, B_vals, u_op, row_base, col_base)
 
         # Coriolis force (diagonal)
         cori_op = operator_coriolis_diagonal(op, l, m)
@@ -581,19 +577,13 @@ function assemble_sparse_matrices(op::KoreSparseStabilityOperator{T}) where {T}
         col_base = (nb_top + k - 1) * n_per_mode
 
         # -----------------------------------------------------------------
-        # B matrix: Time derivative (identity)
-        # -----------------------------------------------------------------
-        I_block = sparse(1.0I, n_per_mode, n_per_mode)
-        add_block!(B_rows, B_cols, B_vals, I_block, row_base, col_base)
-
-        # -----------------------------------------------------------------
-        # A matrix: iω*v + Coriolis - viscous
+        # B matrix: Time derivative operator
+        # A matrix: RHS operators (Coriolis, viscous)
         # -----------------------------------------------------------------
 
-        # Toroidal velocity operator: -u_toroidal
-        # (For eigenvalue problem, this effectively contributes to iω term)
-        u_tor_op = -operator_u_toroidal(op, l)
-        add_block!(A_rows, A_cols, A_vals, u_tor_op, row_base, col_base)
+        # Time derivative term: ∂v/∂t → operator_u_toroidal in B matrix
+        u_tor_op = operator_u_toroidal(op, l)
+        add_block!(B_rows, B_cols, B_vals, u_tor_op, row_base, col_base)
 
         # Coriolis force acting on toroidal velocity
         cori_tor_op = operator_coriolis_toroidal(op, l, m)
@@ -624,13 +614,8 @@ function assemble_sparse_matrices(op::KoreSparseStabilityOperator{T}) where {T}
         add_block!(B_rows, B_cols, B_vals, theta_op, row_base, col_base)
 
         # -----------------------------------------------------------------
-        # A matrix: -iω*θ + thermal_diffusion - thermal_advection
+        # A matrix: RHS operators (thermal diffusion, advection)
         # -----------------------------------------------------------------
-
-        # Temperature identity operator (for eigenvalue problem)
-        # This combines with iω in the eigenvalue problem
-        temp_op = -operator_theta(op, l)
-        add_block!(A_rows, A_cols, A_vals, temp_op, row_base, col_base)
 
         # Thermal diffusion
         thermal_diff = operator_thermal_diffusion(op, l, params.Etherm)
@@ -662,8 +647,12 @@ function assemble_sparse_matrices(op::KoreSparseStabilityOperator{T}) where {T}
     println("  Final A sparsity: $(nnz(A)) / $(n^2)")
     println("  Final B sparsity: $(nnz(B)) / $(n^2)")
 
-    # All DOFs are interior (boundary conditions applied via row replacement)
-    interior_dofs = collect(1:n)
+    # Identify interior DOFs (those with nonzero B diagonal after BCs)
+    # Boundary conditions zero out rows in B, making it singular
+    # For eigenvalue solving, we need only the interior DOFs
+    B_diag = diag(B)
+    interior_dofs = findall(i -> abs(B_diag[i]) > 1e-14, 1:n)
+    println("  Interior DOFs: $(length(interior_dofs)) / $n")
 
     info = Dict(
         "method" => "Kore sparse ultraspherical",

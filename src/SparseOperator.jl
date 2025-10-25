@@ -324,10 +324,8 @@ Returns: E * L * (-L(l+2)(l-1)*r⁰D⁰ + 2L*r²D² - 4r³D³ - r⁴D⁴)
 function operator_viscous_diffusion(op::SparseStabilityOperator{T},
                                    l::Int, E::T) where {T}
     L = l * (l + 1)
-    # Note: Must be r²D², NOT r⁴D²! (Fixed critical typo)
-    r2_D2_u = sparse_radial_operator(2, 2, op.params.N, op.params.ricb, one(T))
     return E * L * (-L * (l + 2) * (l - 1) * op.r0_D0_u +
-                    2 * L * r2_D2_u -
+                    2 * L * op.r2_D2_u -
                     4 * op.r3_D3_u -
                     op.r4_D4_u)
 end

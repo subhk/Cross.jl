@@ -117,15 +117,20 @@ struct SparseStabilityOperator{T<:Real}
     r0_D0_u::SparseMatrixCSC{Float64,Int}
     r2_D0_u::SparseMatrixCSC{Float64,Int}
     r2_D2_u::SparseMatrixCSC{Float64,Int}  # For viscous diffusion
+    r3_D0_u::SparseMatrixCSC{Float64,Int}  # For Coriolis coupling
     r3_D1_u::SparseMatrixCSC{Float64,Int}
     r4_D0_u::SparseMatrixCSC{Float64,Int}  # For buoyancy coupling
+    r4_D1_u::SparseMatrixCSC{Float64,Int}  # For Coriolis coupling
     r4_D2_u::SparseMatrixCSC{Float64,Int}
     r3_D3_u::SparseMatrixCSC{Float64,Int}
     r4_D4_u::SparseMatrixCSC{Float64,Int}
 
     # Radial operators for toroidal velocity (section v, 1curl)
     r0_D0_v::SparseMatrixCSC{Float64,Int}
+    r1_D0_v::SparseMatrixCSC{Float64,Int}  # For toroidal-poloidal coupling
     r1_D1_v::SparseMatrixCSC{Float64,Int}
+    r2_D0_v::SparseMatrixCSC{Float64,Int}  # For Coriolis (toroidal diagonal)
+    r2_D1_v::SparseMatrixCSC{Float64,Int}  # For toroidal-poloidal coupling
     r2_D2_v::SparseMatrixCSC{Float64,Int}
 
     # Radial operators for temperature (section h)
@@ -159,8 +164,10 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     r0_D0_u = sparse_radial_operator(0, 0, N, ri, ro)
     r2_D0_u = sparse_radial_operator(2, 0, N, ri, ro)
     r2_D2_u = sparse_radial_operator(2, 2, N, ri, ro)  # For viscous diffusion
+    r3_D0_u = sparse_radial_operator(3, 0, N, ri, ro)  # For Coriolis coupling
     r3_D1_u = sparse_radial_operator(3, 1, N, ri, ro)
     r4_D0_u = sparse_radial_operator(4, 0, N, ri, ro)  # For buoyancy coupling
+    r4_D1_u = sparse_radial_operator(4, 1, N, ri, ro)  # For Coriolis coupling
     r4_D2_u = sparse_radial_operator(4, 2, N, ri, ro)
     r3_D3_u = sparse_radial_operator(3, 3, N, ri, ro)
     r4_D4_u = sparse_radial_operator(4, 4, N, ri, ro)
@@ -168,7 +175,10 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     # Pre-compute radial operators for toroidal velocity
     println("  Computing toroidal operators...")
     r0_D0_v = sparse_radial_operator(0, 0, N, ri, ro)
+    r1_D0_v = sparse_radial_operator(1, 0, N, ri, ro)  # For toroidal-poloidal coupling
     r1_D1_v = sparse_radial_operator(1, 1, N, ri, ro)
+    r2_D0_v = sparse_radial_operator(2, 0, N, ri, ro)  # For Coriolis (toroidal diagonal)
+    r2_D1_v = sparse_radial_operator(2, 1, N, ri, ro)  # For toroidal-poloidal coupling
     r2_D2_v = sparse_radial_operator(2, 2, N, ri, ro)
 
     # Pre-compute radial operators for temperature
@@ -194,8 +204,8 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
 
     return SparseStabilityOperator{T}(
         params,
-        r0_D0_u, r2_D0_u, r2_D2_u, r3_D1_u, r4_D0_u, r4_D2_u, r3_D3_u, r4_D4_u,
-        r0_D0_v, r1_D1_v, r2_D2_v,
+        r0_D0_u, r2_D0_u, r2_D2_u, r3_D0_u, r3_D1_u, r4_D0_u, r4_D1_u, r4_D2_u, r3_D3_u, r4_D4_u,
+        r0_D0_v, r1_D0_v, r1_D1_v, r2_D0_v, r2_D1_v, r2_D2_v,
         r0_D0_h, r1_D1_h, r2_D0_h, r2_D2_h,
         ll_top, ll_bot, nl_modes,
         matrix_size
@@ -291,21 +301,25 @@ Coriolis force operator for off-diagonal (l, l±1) coupling.
 Implements op.coriolis(l, 'u', 'utor', ±1).
 
 Returns: [operator, offset] where offset indicates which l-mode it couples to.
+
+Following Kore lines 68-86:
+- For l-1: C = (l²-1)*sqrt(l²-m²)/(2l-1)
+  out = 2*C*((l-1)*r³D⁰ - r⁴D¹)
+- For l+1: C = l*(l+2)*sqrt((l+m+1)*(l-m+1))/(2l+3)
+  out = 2*C*(-(l+2)*r³D⁰ - r⁴D¹)
 """
 function operator_coriolis_offdiag(op::SparseStabilityOperator{T},
                                   l::Int, m::Int, offset::Int) where {T}
-    L = l * (l + 1)
-
     if offset == -1
         # Coupling to l-1 mode
         C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-        mtx = 2 * C * ((l - 1) * op.r3_D1_u - op.r4_D2_u)
+        mtx = 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
         return mtx, -1
 
     elseif offset == 1
         # Coupling to l+1 mode
         C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-        mtx = 2 * C * (-(l + 2) * op.r3_D1_u - op.r4_D2_u)
+        mtx = 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
         return mtx, 1
 
     else
@@ -384,14 +398,12 @@ Note: In Kore, this is multiplied by Gaspard = 1.0 for time scale Tau = 1/Omega.
 """
 function operator_coriolis_toroidal(op::SparseStabilityOperator{T},
                                    l::Int, m::Int) where {T}
-    # From reference implementation line 122:
-    # section == 'u', component == 'utor', offdiag == 0
-    # out = -2j*par.m*r2_D0_v  (for non-magnetic case)
+    # Following Kore line 121:
+    # section == 'v', component == 'utor', offdiag == 0
+    # out = -2j*par.m*r2_D0_v  (NO L factor!)
     # Multiplied by par.Gaspard = 1.0
 
-    # Note: We use r0_D0_v here because in the radial formulation
-    # the r² factor is handled differently
-    return -2im * m * op.r0_D0_v
+    return -2im * m * op.r2_D0_v
 end
 
 """

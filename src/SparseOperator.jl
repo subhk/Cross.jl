@@ -11,7 +11,7 @@
 #  - Dormy et al. (2004), JFM
 # =============================================================================
 
-module KoreSparseOperator
+module SparseOperator
 
 using LinearAlgebra
 using SparseArrays
@@ -20,8 +20,8 @@ using Parameters
 include("UltrasphericalSpectral.jl")
 using .UltrasphericalSpectral
 
-export KoreOnsetParams,
-       KoreSparseStabilityOperator,
+export SparseOnsetParams,
+       SparseStabilityOperator,
        assemble_sparse_matrices,
        kore_solve_eigenvalue
 
@@ -30,7 +30,7 @@ export KoreOnsetParams,
 # -----------------------------------------------------------------------------
 
 """
-    KoreOnsetParams
+    SparseOnsetParams
 
 Parameters for onset of convection in rotating spherical shells.
 Matches Kore's parameter naming conventions.
@@ -49,7 +49,7 @@ Matches Kore's parameter naming conventions.
 - `bci_thermal::Int`: Inner thermal BC (0=fixed temp, 1=fixed flux)
 - `bco_thermal::Int`: Outer thermal BC (0=fixed temp, 1=fixed flux)
 """
-@with_kw struct KoreOnsetParams{T<:Real}
+@with_kw struct SparseOnsetParams{T<:Real}
     # Dimensionless parameters
     E::T                           # Ekman number
     Pr::T = one(T)                 # Prandtl number
@@ -74,7 +74,7 @@ Matches Kore's parameter naming conventions.
     L::T = one(T) - ricb           # Shell thickness
     Etherm::T = E / Pr             # Thermal Ekman number
 
-    function KoreOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
+    function SparseOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
                                 bci, bco, bci_thermal, bco_thermal,
                                 L, Etherm) where {T<:Real}
         @assert 0 < ricb < 1 "ricb must be in (0,1)"
@@ -91,13 +91,13 @@ Matches Kore's parameter naming conventions.
 end
 
 # Outer constructor to infer type
-function KoreOnsetParams(; E::T, Pr::T=one(T), Ra::T, ricb::T,
+function SparseOnsetParams(; E::T, Pr::T=one(T), Ra::T, ricb::T,
                           m::Int, lmax::Int, symm::Int=1, N::Int,
                           bci::Int=1, bco::Int=1,
                           bci_thermal::Int=0, bco_thermal::Int=0) where {T<:Real}
     L = one(T) - ricb
     Etherm = E / Pr
-    return KoreOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
+    return SparseOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
                              bci, bco, bci_thermal, bco_thermal, L, Etherm)
 end
 
@@ -106,12 +106,12 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    KoreSparseStabilityOperator
+    SparseStabilityOperator
 
 Stores pre-computed sparse radial operators and problem parameters.
 """
-struct KoreSparseStabilityOperator{T<:Real}
-    params::KoreOnsetParams{T}
+struct SparseStabilityOperator{T<:Real}
+    params::SparseOnsetParams{T}
 
     # Radial operators for poloidal velocity (section u, 2curl)
     # Naming: r{power}_D{deriv}_u
@@ -143,11 +143,11 @@ struct KoreSparseStabilityOperator{T<:Real}
 end
 
 """
-    KoreSparseStabilityOperator(params::KoreOnsetParams)
+    SparseStabilityOperator(params::SparseOnsetParams)
 
 Construct the sparse operator by pre-computing all radial operators.
 """
-function KoreSparseStabilityOperator(params::KoreOnsetParams{T}) where {T}
+function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     N = params.N
     ri, ro = params.ricb, one(T)
 
@@ -189,7 +189,7 @@ function KoreSparseStabilityOperator(params::KoreOnsetParams{T}) where {T}
     println("  Matrix size: $(matrix_size) × $(matrix_size)")
     println("  Estimated sparsity: ~$(estimate_sparsity(N, nl_modes))%")
 
-    return KoreSparseStabilityOperator{T}(
+    return SparseStabilityOperator{T}(
         params,
         r0_D0_u, r2_D0_u, r3_D1_u, r4_D2_u, r3_D3_u, r4_D4_u,
         r0_D0_v, r1_D1_v, r2_D2_v,
@@ -262,7 +262,7 @@ end
 Velocity operator: L(-L*r²D⁰ + 2r³D¹ + r⁴D²) for diagonal term.
 Matches Kore's op.u(l, 'u', 'upol', 0).
 """
-function operator_u(op::KoreSparseStabilityOperator{T}, l::Int) where {T}
+function operator_u(op::SparseStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
     return L * (-L * op.r2_D0_u + 2 * op.r3_D1_u + op.r4_D2_u)
 end
@@ -275,7 +275,7 @@ Matches Kore's op.coriolis(l, 'u', 'upol', 0).
 
 Returns: 2im * m * (-L*r²D⁰ + 2r³D¹ + r⁴D²)
 """
-function operator_coriolis_diagonal(op::KoreSparseStabilityOperator{T},
+function operator_coriolis_diagonal(op::SparseStabilityOperator{T},
                                    l::Int, m::Int) where {T}
     L = l * (l + 1)
     return 2im * m * (-L * op.r2_D0_u + 2 * op.r3_D1_u + op.r4_D2_u)
@@ -289,7 +289,7 @@ Matches Kore's op.coriolis(l, 'u', 'utor', ±1).
 
 Returns: [operator, offset] where offset indicates which l-mode it couples to.
 """
-function operator_coriolis_offdiag(op::KoreSparseStabilityOperator{T},
+function operator_coriolis_offdiag(op::SparseStabilityOperator{T},
                                   l::Int, m::Int, offset::Int) where {T}
     L = l * (l + 1)
 
@@ -318,7 +318,7 @@ Matches Kore's op.viscous_diffusion(l, 'u', 'upol', 0).
 
 Returns: E * L * (-L(l+2)(l-1)*r⁰D⁰ + 2L*r²D² - 4r³D³ - r⁴D⁴)
 """
-function operator_viscous_diffusion(op::KoreSparseStabilityOperator{T},
+function operator_viscous_diffusion(op::SparseStabilityOperator{T},
                                    l::Int, E::T) where {T}
     L = l * (l + 1)
     return E * L * (-L * (l + 2) * (l - 1) * op.r0_D0_u +
@@ -335,7 +335,7 @@ Matches Kore's op.buoyancy(l, 'u', '', 0).
 
 This couples the temperature field to the velocity equation.
 """
-function operator_buoyancy(op::KoreSparseStabilityOperator{T},
+function operator_buoyancy(op::SparseStabilityOperator{T},
                           l::Int, Ra::T, Pr::T) where {T}
     # In Kore: Beyonce * r^power * D^0
     # where Beyonce = BV² = -Ra * E² / Pr
@@ -356,7 +356,7 @@ Toroidal velocity operator (essentially identity for the mass matrix).
 For the 1curl (toroidal) equation, this is just r⁰D⁰ = I.
 Matches Kore's op.u(l, 'v', 'utor', 0) structure.
 """
-function operator_u_toroidal(op::KoreSparseStabilityOperator{T}, l::Int) where {T}
+function operator_u_toroidal(op::SparseStabilityOperator{T}, l::Int) where {T}
     # For toroidal velocity, the time derivative term is just the identity
     return op.r0_D0_v
 end
@@ -371,7 +371,7 @@ Returns: -2im * m * r²D⁰_v
 
 Note: In Kore, this is multiplied by Gaspard = 1.0 for time scale Tau = 1/Omega.
 """
-function operator_coriolis_toroidal(op::KoreSparseStabilityOperator{T},
+function operator_coriolis_toroidal(op::SparseStabilityOperator{T},
                                    l::Int, m::Int) where {T}
     # From Kore operators.py line 122:
     # section == 'u', component == 'utor', offdiag == 0
@@ -393,7 +393,7 @@ Returns: E * L * (-L*r⁰D⁰ + 2*r¹D¹ + r²D²)
 
 where L = l(l+1).
 """
-function operator_viscous_toroidal(op::KoreSparseStabilityOperator{T},
+function operator_viscous_toroidal(op::SparseStabilityOperator{T},
                                   l::Int, E::T) where {T}
     # From Kore operators.py line 192:
     # section == 'v', component == 'utor', offdiag == 0
@@ -416,7 +416,7 @@ Matches Kore's op.theta(l, 'h', '', 0).
 
 For non-anelastic, non-differential heating: returns r²D⁰
 """
-function operator_theta(op::KoreSparseStabilityOperator{T}, l::Int) where {T}
+function operator_theta(op::SparseStabilityOperator{T}, l::Int) where {T}
     # From Kore operators.py line 715:
     # section == 'h', non-anelastic, non-differential heating
     # out = r2_D0_h
@@ -433,7 +433,7 @@ Returns: Etherm * (-L*r⁰D⁰ + 2*r¹D¹ + r²D²)
 
 where Etherm = E/Pr and L = l(l+1).
 """
-function operator_thermal_diffusion(op::KoreSparseStabilityOperator{T},
+function operator_thermal_diffusion(op::SparseStabilityOperator{T},
                                    l::Int, Etherm::T) where {T}
     # From Kore operators.py line 761:
     # section == 'h', non-anelastic, non-differential heating
@@ -456,7 +456,7 @@ Returns: L * r²D⁰
 This couples the poloidal velocity to the temperature equation.
 For internal heating: dT/dr = -β*r, so the advection term is u_r * (-β*r)
 """
-function operator_thermal_advection(op::KoreSparseStabilityOperator{T},
+function operator_thermal_advection(op::SparseStabilityOperator{T},
                                    l::Int) where {T}
     # From Kore operators.py line 734:
     # section == 'h', component == 'upol', non-anelastic, internal heating
@@ -472,7 +472,7 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    assemble_sparse_matrices(op::KoreSparseStabilityOperator)
+    assemble_sparse_matrices(op::SparseStabilityOperator)
 
 Assemble the full sparse matrices A and B for the generalized eigenvalue problem:
     A * x = λ * B * x
@@ -481,7 +481,7 @@ Following Kore's assembly structure from assemble.py.
 
 Returns: (A, B, interior_dofs, info)
 """
-function assemble_sparse_matrices(op::KoreSparseStabilityOperator{T}) where {T}
+function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     params = op.params
     N = params.N
     m = params.m
@@ -530,12 +530,13 @@ function assemble_sparse_matrices(op::KoreSparseStabilityOperator{T}) where {T}
         col_base = (k - 1) * n_per_mode
 
         # -----------------------------------------------------------------
-        # B matrix: Time derivative operator
+        # B matrix: Time derivative operator (negative per Cross.jl convention)
         # A matrix: RHS operators (Coriolis, viscous, buoyancy)
         # -----------------------------------------------------------------
 
-        # Time derivative term: ∂u/∂t → operator_u in B matrix
-        u_op = operator_u(op, l)
+        # Time derivative term: ∂u/∂t → -operator_u in B matrix
+        # (Negative sign follows Cross.jl convention for eigenvalue problem)
+        u_op = -operator_u(op, l)
         add_block!(B_rows, B_cols, B_vals, u_op, row_base, col_base)
 
         # Coriolis force (diagonal)
@@ -577,12 +578,12 @@ function assemble_sparse_matrices(op::KoreSparseStabilityOperator{T}) where {T}
         col_base = (nb_top + k - 1) * n_per_mode
 
         # -----------------------------------------------------------------
-        # B matrix: Time derivative operator
+        # B matrix: Time derivative operator (negative per Cross.jl convention)
         # A matrix: RHS operators (Coriolis, viscous)
         # -----------------------------------------------------------------
 
-        # Time derivative term: ∂v/∂t → operator_u_toroidal in B matrix
-        u_tor_op = operator_u_toroidal(op, l)
+        # Time derivative term: ∂v/∂t → -operator_u_toroidal in B matrix
+        u_tor_op = -operator_u_toroidal(op, l)
         add_block!(B_rows, B_cols, B_vals, u_tor_op, row_base, col_base)
 
         # Coriolis force acting on toroidal velocity
@@ -674,7 +675,7 @@ Uses the tau method following Kore's approach.
 """
 function apply_kore_boundary_conditions!(A::SparseMatrixCSC,
                                         B::SparseMatrixCSC,
-                                        op::KoreSparseStabilityOperator{T}) where {T}
+                                        op::SparseStabilityOperator{T}) where {T}
     params = op.params
     N = params.N
     n_per_mode = N + 1
@@ -736,4 +737,4 @@ function apply_kore_boundary_conditions!(A::SparseMatrixCSC,
     return nothing
 end
 
-end  # module KoreSparseOperator
+end  # module SparseOperator

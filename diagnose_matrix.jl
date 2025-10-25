@@ -7,8 +7,8 @@ using LinearAlgebra
 using SparseArrays
 using Printf
 
-include("src/KoreSparseOperator.jl")
-using .KoreSparseOperator
+include("src/SparseOperator.jl")
+using .SparseOperator
 
 println("Diagnosing B matrix structure")
 println("="^80)
@@ -22,7 +22,7 @@ N = 16
 lmax = 10
 Ra = 1e5
 
-params = KoreOnsetParams(
+params = SparseOnsetParams(
     E = E,
     Pr = Pr,
     Ra = Ra,
@@ -34,7 +34,7 @@ params = KoreOnsetParams(
 )
 
 println("Building operator...")
-op = KoreSparseStabilityOperator(params)
+op = SparseStabilityOperator(params)
 
 println("Assembling matrices...")
 A_full, B_full, interior_dofs, info = assemble_sparse_matrices(op)

@@ -76,7 +76,7 @@ For onset of convection problems it is often helpful to use shift-invert with
 closest to neutral stability.
 """
 function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
-                                 nev::Int=20,
+                                 nev::Int=1,
                                  sigma::Union{Nothing,Number}=nothing,
                                  which::Symbol=:LR,
                                  selection::Symbol=:maxreal,
@@ -95,7 +95,9 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
     println("  Computing $nev eigenvalues with which=$which")
 
     # Determine Krylov subspace dimension
-    kdim = something(krylovdim, min(n, max(4 * nev, 30)))
+    #kdim = something(krylovdim, min(n, max(4 * nev, 30)))
+
+    kdim = 300
 
     σ_eff = sigma === nothing ? 0.0 : ComplexF64(sigma)
 
@@ -211,7 +213,7 @@ bisection fallback) to mirror the strategy used in Kore.
 function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Float64, m::Int;
                                Ra_min::Float64=1e4, Ra_max::Float64=1e10,
                                tol::Float64=1e-6, growth_tol::Float64=1e-6,
-                               max_iter::Int=50, nev::Int=10)
+                               max_iter::Int=50, nev::Int=1)
 
     println("\n" * "="^80)
     println("Finding Critical Rayleigh Number")

@@ -17,7 +17,8 @@ module OnsetEigenvalueSolver
 
 using LinearAlgebra
 using SparseArrays
-using Arpack
+using LinearMaps
+using KrylovKit
 using Printf
 
 export solve_eigenvalue_problem,
@@ -36,7 +37,7 @@ Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices.
 - `nev::Int=20`: Number of eigenvalues to compute
 - `sigma::Union{Nothing,Number}=nothing`: Shift for shift-invert mode (set to a
   numeric value to target eigenvalues near that shift)
-- `which::Symbol=:LR`: Which eigenvalues to compute (see `Arpack.eigs`)
+- `which::Symbol=:LR`: Which eigenvalues to compute (see `KrylovKit.eigsolve`)
 - `selection::Symbol=:maxreal`: How to order the returned eigenvalues:
   - `:maxreal`: sort by descending real part
   - `:minabs`: sort by ascending magnitude
@@ -59,76 +60,166 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                                  which::Symbol=:LR,
                                  selection::Symbol=:maxreal,
                                  tol::Float64=1e-10,
-                                 maxiter::Int=1000)
+                                 maxiter::Int=1000,
+                                 krylovdim::Union{Nothing,Int}=nothing,
+                                 verbosity::Int=0)
 
     n = size(A, 1)
     @assert size(A) == size(B) "A and B must have same dimensions"
     @assert size(A, 1) == size(A, 2) "Matrices must be square"
 
-    println("Solving eigenvalue problem...")
+    println("Solving eigenvalue problem (KrylovKit)...")
     println("  Matrix size: $n × $n")
     println("  A nnz: $(nnz(A)), B nnz: $(nnz(B))")
     println("  Computing $nev eigenvalues with which=$which")
 
-    try
-        # Use Arpack's eigs for sparse generalized eigenvalue problem
-        # We solve (A - σB)^{-1}·B·x = θ·x where σ = eigenvalue
-
-        n_eigs = clamp(nev, 1, max(n - 2, 1))
-        if sigma === nothing
-            eigenvalues, eigenvectors, nconv, niter, nmult, resid = eigs(
-                A, B;
-                nev = n_eigs,
-                which = which,
-                tol = tol,
-                maxiter = maxiter
-            )
-        else
-            eigenvalues, eigenvectors, nconv, niter, nmult, resid = eigs(
-                A, B;
-                nev = n_eigs,
-                which = which,
-                sigma = sigma,
-                tol = tol,
-                maxiter = maxiter
-            )
-        end
-
-        select_values = real.(eigenvalues)
-        perm = nothing
-
-        if selection == :maxreal
-            perm = sortperm(select_values, rev=true)
-        elseif selection == :minabs
-            perm = sortperm(abs.(eigenvalues))
-        elseif selection == :closest_real
-            perm = sortperm(abs.(select_values))
-        else
-            error("Unknown selection strategy $(selection)")
-        end
-
-        eigenvalues = eigenvalues[perm]
-        eigenvectors = eigenvectors[:, perm]
-
-        println("  ✓ Converged: $nconv eigenvalues in $niter iterations")
-        println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
-        println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
-        println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
-
-        info = Dict(
-            "nconv" => nconv,
-            "niter" => niter,
-            "nmult" => nmult,
-            "residual" => resid,
-            "selected" => eigenvalues[1],
-            "selection" => selection
+    # Helper for LinearMaps that wraps sparse matrix-vector multiply
+    function _sparse_linear_map(M::SparseMatrixCSC)
+        n, m = size(M)
+        LinearMap{ComplexF64}(
+            (y, x) -> begin
+                mul!(y, M, x)
+                y
+            end,
+            n, m;
+            ismutating = true
         )
+    end
 
-        return eigenvalues, eigenvectors, info
+    # Determine Krylov subspace dimension
+    kdim = something(krylovdim, min(n, max(4 * nev, 30)))
+
+    try
+        if sigma === nothing
+            A_map = _sparse_linear_map(A)
+            B_map = _sparse_linear_map(B)
+            values, vectors, history = eigsolve(
+                A_map, B_map, nev;
+                which = which,
+                tol = tol,
+                maxiter = maxiter,
+                krylovdim = kdim,
+                verbosity = verbosity
+            )
+
+            eigenvalues = ComplexF64.(values)
+            eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
+
+            select_values = real.(eigenvalues)
+            perm = if selection == :maxreal
+                sortperm(select_values, rev=true)
+            elseif selection == :minabs
+                sortperm(abs.(eigenvalues))
+            elseif selection == :closest_real
+                sortperm(abs.(select_values))
+            else
+                error("Unknown selection strategy $(selection)")
+            end
+
+            eigenvalues = eigenvalues[perm]
+            eigenvectors = eigenvectors[:, perm]
+
+            println("  ✓ Converged using generalized Krylov solver")
+            println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
+            println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
+            println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
+
+            info = Dict(
+                "solver" => :krylovkit,
+                "strategy" => :generalized,
+                "krylovdim" => kdim,
+                "iterations" => history.iters,
+                "converged" => history.converged,
+                "residuals" => history.realresnorm,
+                "selected" => eigenvalues[1],
+                "selection" => selection
+            )
+
+            return eigenvalues, eigenvectors, info
+        else
+            println("  Using shift-invert around σ = $(sigma)")
+
+            A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
+            B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
+            shift_matrix = A_complex - sigma * B_complex
+            factor = lu(shift_matrix)
+
+            # Linear map for (A - σB)^{-1} B
+            n_rows = size(A, 1)
+            shift_map = LinearMap{ComplexF64}(
+                (y, x) -> begin
+                    mul!(y, B_complex, x)
+                    ldiv!(y, factor, y)
+                    y
+                end,
+                n_rows, n_rows;
+                ismutating = true
+            )
+
+            values, vectors, history = eigsolve(
+                shift_map, nev;
+                which = :LM,
+                tol = tol,
+                maxiter = maxiter,
+                krylovdim = kdim,
+                verbosity = verbosity
+            )
+
+            eigenvalues = ComplexF64.(sigma .+ inv.(values))
+            eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
+
+            select_values = real.(eigenvalues)
+            perm = if selection == :maxreal
+                sortperm(select_values, rev=true)
+            elseif selection == :minabs
+                sortperm(abs.(eigenvalues))
+            elseif selection == :closest_real
+                sortperm(abs.(select_values))
+            else
+                error("Unknown selection strategy $(selection)")
+            end
+
+            eigenvalues = eigenvalues[perm]
+            eigenvectors = eigenvectors[:, perm]
+
+            println("  ✓ Converged using shift-invert Krylov solver")
+            println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
+            println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
+            println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
+
+            info = Dict(
+                "solver" => :krylovkit,
+                "strategy" => :shift_invert,
+                "shift" => sigma,
+                "krylovdim" => kdim,
+                "iterations" => history.iters,
+                "converged" => history.converged,
+                "residuals" => history.realresnorm,
+                "selected" => eigenvalues[1],
+                "selection" => selection
+            )
+
+            return eigenvalues, eigenvectors, info
+        end
 
     catch err
-        @error "Eigenvalue solver failed" exception=(err, catch_backtrace())
-        rethrow()
+        if sigma !== nothing && err isa KrylovKit.ConvergenceError
+            @warn "Shift-invert Krylov solver failed to converge; retrying without shift" exception=(err, catch_backtrace())
+            return solve_eigenvalue_problem(
+                A, B;
+                nev = nev,
+                sigma = nothing,
+                which = which,
+                selection = selection,
+                tol = tol,
+                maxiter = maxiter,
+                krylovdim = kdim,
+                verbosity = verbosity
+            )
+        else
+            @error "Eigenvalue solver failed" exception=(err, catch_backtrace())
+            rethrow()
+        end
     end
 end
 

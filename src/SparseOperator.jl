@@ -117,6 +117,7 @@ struct SparseStabilityOperator{T<:Real}
     r0_D0_u::SparseMatrixCSC{Float64,Int}
     r2_D0_u::SparseMatrixCSC{Float64,Int}
     r3_D1_u::SparseMatrixCSC{Float64,Int}
+    r4_D0_u::SparseMatrixCSC{Float64,Int}  # For buoyancy coupling
     r4_D2_u::SparseMatrixCSC{Float64,Int}
     r3_D3_u::SparseMatrixCSC{Float64,Int}
     r4_D4_u::SparseMatrixCSC{Float64,Int}
@@ -157,6 +158,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     r0_D0_u = sparse_radial_operator(0, 0, N, ri, ro)
     r2_D0_u = sparse_radial_operator(2, 0, N, ri, ro)
     r3_D1_u = sparse_radial_operator(3, 1, N, ri, ro)
+    r4_D0_u = sparse_radial_operator(4, 0, N, ri, ro)  # For buoyancy coupling
     r4_D2_u = sparse_radial_operator(4, 2, N, ri, ro)
     r3_D3_u = sparse_radial_operator(3, 3, N, ri, ro)
     r4_D4_u = sparse_radial_operator(4, 4, N, ri, ro)
@@ -190,7 +192,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
 
     return SparseStabilityOperator{T}(
         params,
-        r0_D0_u, r2_D0_u, r3_D1_u, r4_D2_u, r3_D3_u, r4_D4_u,
+        r0_D0_u, r2_D0_u, r3_D1_u, r4_D0_u, r4_D2_u, r3_D3_u, r4_D4_u,
         r0_D0_v, r1_D1_v, r2_D2_v,
         r0_D0_h, r1_D1_h, r2_D0_h, r2_D2_h,
         ll_top, ll_bot, nl_modes,

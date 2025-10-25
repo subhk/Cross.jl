@@ -120,11 +120,12 @@ end
 """
     find_critical_rayleigh(operator_builder, E, χ, m;
                           Ra_min=1e4, Ra_max=1e10,
-                          tol=1e-6, max_iter=50)
+                          tol=1e-6, growth_tol=1e-6, max_iter=50)
 
 Find the critical Rayleigh number Ra_c where the growth rate σ_r = 0.
 
-Uses bracketing and bisection to find the onset of convection.
+Uses a safeguarded Brent root finder (inverse quadratic interpolation with
+bisection fallback) to mirror the strategy used in Kore.
 
 # Arguments
 - `operator_builder::Function`: Function that takes Ra and returns (A, B)
@@ -133,7 +134,8 @@ Uses bracketing and bisection to find the onset of convection.
 - `m::Int`: Azimuthal wavenumber
 - `Ra_min::Float64`: Lower bracket for Ra
 - `Ra_max::Float64`: Upper bracket for Ra
-- `tol::Float64`: Tolerance for convergence (relative to Ra)
+- `tol::Float64`: Relative tolerance on Ra (controls absolute tolerance internally)
+- `growth_tol::Float64`: Absolute tolerance on the residual growth rate
 - `max_iter::Int`: Maximum number of iterations
 
 # Returns
@@ -144,15 +146,15 @@ Uses bracketing and bisection to find the onset of convection.
 """
 function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Float64, m::Int;
                                Ra_min::Float64=1e4, Ra_max::Float64=1e10,
-                               tol::Float64=1e-6, max_iter::Int=50,
-                               nev::Int=10)
+                               tol::Float64=1e-6, growth_tol::Float64=1e-6,
+                               max_iter::Int=50, nev::Int=10)
 
     println("\n" * "="^80)
     println("Finding Critical Rayleigh Number")
     println("="^80)
     println("Parameters: E = $E, χ = $χ, m = $m")
     println("Bracket: [$Ra_min, $Ra_max]")
-    println("Tolerance: $tol")
+    println("Tolerance: $tol (relative), growth_tol: $growth_tol (|σ_r|)")
     println()
 
     """Get growth rate for a given Ra"""
@@ -173,77 +175,157 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
     # Initial bracket check
     println("Checking initial bracket...")
     σ_r_min, σ_min = growth_rate(Ra_min)
+    if abs(σ_r_min) < growth_tol
+        println("Lower bracket already satisfies growth tolerance.")
+        return Ra_min, imag(σ_min), σ_min, 0
+    end
+
     σ_r_max, σ_max = growth_rate(Ra_max)
+    if abs(σ_r_max) < growth_tol
+        println("Upper bracket already satisfies growth tolerance.")
+        return Ra_max, imag(σ_max), σ_max, 0
+    end
 
     if σ_r_min * σ_r_max > 0
         @warn "Initial bracket may not contain critical Ra" σ_r_min σ_r_max
-        if σ_r_min > 0
-            # Both positive - need lower Ra
-            Ra_min = Ra_min / 10.0
-            println("Adjusting lower bound to $Ra_min...")
-            σ_r_min, σ_min = growth_rate(Ra_min)
-        else
-            # Both negative - need higher Ra
-            Ra_max = Ra_max * 10.0
-            println("Adjusting upper bound to $Ra_max...")
-            σ_r_max, σ_max = growth_rate(Ra_max)
+        max_bracket_expansions = 12
+        expansion_iter = 0
+        while σ_r_min * σ_r_max > 0 && expansion_iter < max_bracket_expansions
+            expansion_iter += 1
+            if σ_r_min > 0 && σ_r_max > 0
+                Ra_min /= 2.0
+                println("  Expansion $expansion_iter: lowering Ra_min → $Ra_min")
+                if Ra_min <= 0
+                    error("Lower Rayleigh bound reached non-positive value while trying to bracket root.")
+                end
+                σ_r_min, σ_min = growth_rate(Ra_min)
+            elseif σ_r_min < 0 && σ_r_max < 0
+                Ra_max *= 2.0
+                println("  Expansion $expansion_iter: raising Ra_max → $Ra_max")
+                σ_r_max, σ_max = growth_rate(Ra_max)
+            else
+                break
+            end
+        end
+        if σ_r_min * σ_r_max > 0
+            error("Unable to bracket the critical Rayleigh number: growth rate has same sign at bounds after $expansion_iter expansions.")
         end
     end
 
-    # Bisection search
-    println("\nStarting bisection search...")
-    Ra_a, Ra_b = Ra_min, Ra_max
-    σ_r_a, σ_a = σ_r_min, σ_min
-    σ_r_b, σ_b = σ_r_max, σ_max
+    # Safeguarded Brent search (closely follows implementations in literature)
+    println("\nStarting Brent search...")
+    Ra_a, Ra_b, Ra_c = Ra_min, Ra_max, Ra_min
+    σ_r_a, σ_r_b, σ_r_c = σ_r_min, σ_r_max, σ_r_min
+    σ_a, σ_b, σ_c = σ_min, σ_max, σ_min
+
+    if σ_r_a * σ_r_b >= 0
+        error("Brent search requires opposite signs at the bracket endpoints.")
+    end
+
+    abs_tol = tol * max(abs(Ra_a), abs(Ra_b), 1.0)
+    d = Ra_b - Ra_a
+    e = d
 
     for iter in 1:max_iter
-        # Midpoint
-        Ra_mid = (Ra_a + Ra_b) / 2.0
+        if (σ_r_b > 0 && σ_r_c > 0) || (σ_r_b < 0 && σ_r_c < 0)
+            Ra_c = Ra_a
+            σ_r_c = σ_r_a
+            σ_c = σ_a
+            d = Ra_b - Ra_a
+            e = d
+        end
+
+        if abs(σ_r_c) < abs(σ_r_b)
+            Ra_a, Ra_b, Ra_c = Ra_b, Ra_c, Ra_b
+            σ_r_a, σ_r_b, σ_r_c = σ_r_b, σ_r_c, σ_r_b
+            σ_a, σ_b, σ_c = σ_b, σ_c, σ_b
+        end
+
+        tol_act = 2 * eps(abs(Ra_b)) + abs_tol
+        m = 0.5 * (Ra_c - Ra_b)
 
         println("\nIteration $iter:")
-        println("  Bracket: [$(Ra_a), $(Ra_b)]")
-        println("  Testing Ra = $(Ra_mid)")
+        println("  Bracket: [$(Ra_a), $(Ra_c)] with current Ra = $(Ra_b)")
+        println("  Growth rates: f(a)=$(σ_r_a), f(b)=$(σ_r_b), f(c)=$(σ_r_c)")
 
-        σ_r_mid, σ_mid = growth_rate(Ra_mid)
-
-        # Check convergence
-        rel_error = abs(Ra_b - Ra_a) / Ra_mid
-        println("  Relative bracket size: $(rel_error)")
-
-        if rel_error < tol
+        if abs(m) <= tol_act || σ_r_b == 0
             println("\n" * "="^80)
             println("✓ CONVERGED")
             println("="^80)
-            Ra_c = Ra_mid
-            ω_c = imag(σ_mid)
-            println("Critical Rayleigh number: Ra_c = $(Ra_c)")
+            Ra_c_final = Ra_b
+            ω_c = imag(σ_b)
+            println("Critical Rayleigh number: Ra_c = $(Ra_c_final)")
             println("Drift frequency: ω_c = $(ω_c)")
-            println("Residual growth rate: σ_r = $(σ_r_mid)")
+            println("Residual growth rate: σ_r = $(σ_r_b)")
             println("Iterations: $iter")
             println("="^80)
-            return Ra_c, ω_c, σ_mid, iter
+            return Ra_c_final, ω_c, σ_b, iter
         end
 
-        # Update bracket
-        if σ_r_mid * σ_r_a > 0
-            # Same sign as a, replace a
-            Ra_a = Ra_mid
-            σ_r_a = σ_r_mid
-            σ_a = σ_mid
+        if abs(e) < tol_act || abs(σ_r_a) <= abs(σ_r_b)
+            d = m
+            e = m
+            println("  Using bisection step.")
         else
-            # Opposite sign, replace b
-            Ra_b = Ra_mid
-            σ_r_b = σ_r_mid
-            σ_b = σ_mid
+            s = σ_r_b / σ_r_a
+            if Ra_a == Ra_c
+                # Secant method
+                p = 2 * m * s
+                q = 1 - s
+            else
+                q = σ_r_a / σ_r_c
+                r = σ_r_b / σ_r_c
+                p = s * (2 * m * q * (q - r) - (Ra_b - Ra_a) * (r - 1))
+                q = (q - 1) * (r - 1) * (s - 1)
+            end
+
+            if p > 0
+                q = -q
+            else
+                p = -p
+            end
+
+            if (2p < 3m * q - abs(tol_act * q)) && (p < abs(0.5 * e * q))
+                e = d
+                d = p / q
+                println("  Using inverse interpolation step.")
+            else
+                d = m
+                e = m
+                println("  Interpolation rejected, falling back to bisection.")
+            end
+        end
+
+        Ra_a = Ra_b
+        σ_r_a = σ_r_b
+        σ_a = σ_b
+
+        if abs(d) > tol_act
+            Ra_b += d
+        else
+            Ra_b += m >= 0 ? tol_act : -tol_act
+        end
+
+        σ_r_b, σ_b = growth_rate(Ra_b)
+
+        if abs(σ_r_b) < growth_tol
+            println("\n" * "="^80)
+            println("✓ CONVERGED")
+            println("="^80)
+            ω_c = imag(σ_b)
+            println("Critical Rayleigh number: Ra_c = $(Ra_b)")
+            println("Drift frequency: ω_c = $(ω_c)")
+            println("Residual growth rate: σ_r = $(σ_r_b)")
+            println("Iterations: $iter")
+            println("="^80)
+            return Ra_b, ω_c, σ_b, iter
         end
     end
 
-    @warn "Maximum iterations reached without convergence" max_iter
-    Ra_c = (Ra_a + Ra_b) / 2.0
-    σ_r_mid, σ_mid = growth_rate(Ra_c)
-    ω_c = imag(σ_mid)
-
-    return Ra_c, ω_c, σ_mid, max_iter
+    @warn "Maximum iterations reached without convergence (Brent)"
+    println("Returning best current estimate.")
+    ω_c = imag(σ_b)
+    return Ra_b, ω_c, σ_b, max_iter
 end
 
 """

@@ -1,10 +1,10 @@
 # =============================================================================
-#  Kore Linear Stability Operator (chebyshev + KrylovKit)
+#  Linear Stability Operator (chebyshev + KrylovKit)
 #
-#  This rewrite mirrors the algebraic formulation used in the original Kore
+#  This implementation uses sparse spectral methods
 #  Fortran/C code: the matrices are assembled explicitly from Chebyshev
 #  differentiation operators with the same r-weighted combinations and tau
-#  boundary conditions (Dirichlet / stress-free) that Kore enforces.
+#  boundary conditions (Dirichlet / stress-free).
 # =============================================================================
 
 using LinearAlgebra
@@ -59,12 +59,12 @@ end
     L::T = ro - ri
     mechanical_bc::Symbol = :no_slip
     thermal_bc::Symbol = :fixed_temperature
-    use_kore_weighting::Bool = true
+    use_sparse_weighting::Bool = true
     equatorial_symmetry::Symbol = :both
     basic_state::Nothing = nothing
 
     function OnsetParams{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
-                           mechanical_bc, thermal_bc, use_kore_weighting,
+                           mechanical_bc, thermal_bc, use_sparse_weighting,
                            equatorial_symmetry,
                            basic_state) where {T}
         @assert 0 < χ < 1 "Radius ratio must satisfy 0 < χ < 1"
@@ -78,7 +78,7 @@ end
         @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
 
         new{T}(E, Pr, Ra, χ, m, lmax, Nr, ri, ro, L,
-               mechanical_bc, thermal_bc, use_kore_weighting, equatorial_symmetry,
+               mechanical_bc, thermal_bc, use_sparse_weighting, equatorial_symmetry,
                basic_state)
     end
 end
@@ -87,7 +87,7 @@ end
 function ShellParams(; E, Pr=one(E), Ra, m, lmax, Nr,
                      ri=nothing, ro=nothing, χ=nothing,
                      mechanical_bc=:no_slip, thermal_bc=:fixed_temperature,
-                     use_kore_weighting=true, equatorial_symmetry=:both,
+                     use_sparse_weighting=true, equatorial_symmetry=:both,
                      basic_state=nothing)
     # Compute χ from ri and ro if not directly provided
     if χ === nothing
@@ -106,7 +106,7 @@ function ShellParams(; E, Pr=one(E), Ra, m, lmax, Nr,
     # Use OnsetParams constructor
     return OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=computed_χ, m=m, lmax=lmax, Nr=Nr,
                       mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
-                      use_kore_weighting=use_kore_weighting,
+                      use_sparse_weighting=use_sparse_weighting,
                       equatorial_symmetry=equatorial_symmetry,
                       basic_state=basic_state)
 end
@@ -325,7 +325,7 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
 
         # Temperature equation blocks for matching Θ ℓ
         if Θ_idx !== nothing
-            if p.use_kore_weighting
+            if p.use_sparse_weighting
                 B[Θ_idx, Θ_idx] = Complex.(R3D0)
                 adv_factor = ri / gap
                 diffusion = -L * R1D0 + 2 * R2D1 + R3D2
@@ -334,7 +334,7 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
                 adv_factor = (ri * ro) / p.L
                 diffusion = -L * R0 + 2 * R1D1 + R2D2
             end
-            A[Θ_idx, P_idx] .+= Complex.(L * adv_factor * (p.use_kore_weighting ? R0 : Rneg2))
+            A[Θ_idx, P_idx] .+= Complex.(L * adv_factor * (p.use_sparse_weighting ? R0 : Rneg2))
             A[Θ_idx, Θ_idx] .+= Complex.(thermaD * diffusion)
         end
     end

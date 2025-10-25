@@ -252,7 +252,7 @@ end
 Find onset parameters (Ra_c, m_c, ω_c) by scanning over azimuthal wavenumbers.
 
 # Arguments
-- `params_template::KoreOnsetParams`: Template parameters (E, χ, Pr, etc.)
+- `params_template::SparseOnsetParams`: Template parameters (E, χ, Pr, etc.)
 - `m_range::AbstractVector{Int}`: Range of m values to test
 - `kwargs...`: Passed to find_critical_rayleigh
 

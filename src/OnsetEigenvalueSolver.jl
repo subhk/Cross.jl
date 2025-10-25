@@ -26,25 +26,25 @@ export solve_eigenvalue_problem,
        find_critical_rayleigh,
        find_onset_parameters
 
-struct ShiftInvertLinearMap{T,LUType,MatType,VecType}
+struct ShiftInvertLinearMap{LUType,MatType,VecType}
     lu::LUType
     B::MatType
-    tmp::VecType
+    temp::VecType
 end
 
-(M::ShiftInvertLinearMap{T})(y, x) where {T} = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
-
-ShiftInvertLinearMap(lu, B, tmp) = ShiftInvertLinearMap{eltype(tmp), typeof(lu), typeof(B), typeof(tmp)}(lu, B, tmp)
-
-struct MassInverseLinearMap{T,LUType,MatType,VecType}
-    lu::LUType
-    A::MatType
-    tmp::VecType
+function (M::ShiftInvertLinearMap)(y, x)
+    mul!(M.temp, M.B, x)
+    ldiv!(y, M.lu, M.temp)
+    return y
 end
 
-(M::MassInverseLinearMap{T})(y, x) where {T} = (mul!(M.tmp, M.A, x); ldiv!(y, M.lu, M.tmp); y)
-
-MassInverseLinearMap(lu, A, tmp) = MassInverseLinearMap{eltype(tmp), typeof(lu), typeof(A), typeof(tmp)}(lu, A, tmp)
+function construct_linear_map(A_shifted::SparseMatrixCSC{ComplexF64,Int},
+                              B::SparseMatrixCSC{ComplexF64,Int})
+    lu_factor = lu(A_shifted)
+    tmp = similar(B, ComplexF64, size(B, 1))
+    return LinearMap{ComplexF64}(ShiftInvertLinearMap(lu_factor, B, tmp),
+                                 size(B, 1); ismutating=true)
+end
 
 """
     solve_eigenvalue_problem(A, B; nev=20, sigma=nothing, which=:LR,
@@ -97,127 +97,68 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
     # Determine Krylov subspace dimension
     kdim = something(krylovdim, min(n, max(4 * nev, 30)))
 
+    σ_eff = sigma === nothing ? 0.0 : ComplexF64(sigma)
+
     try
-        if sigma === nothing
-            A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
-            B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
-            b_factor = lu(B_complex)
-            tmp = zeros(ComplexF64, n)
-            mass_map = LinearMap{ComplexF64}(MassInverseLinearMap(b_factor, A_complex, tmp), n; ismutating=true)
-            x0 = randn(ComplexF64, n)
+        println("  Using shift-invert around σ = $(σ_eff)")
 
-            values, vectors, history = eigsolve(
-                mass_map, x0, nev, which;
-                tol = tol,
-                maxiter = maxiter,
-                krylovdim = kdim,
-                verbosity = verbosity
-            )
+        A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
+        B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
+        shift_matrix = A_complex - σ_eff * B_complex
 
-            keep = [!iszero(val) for val in values]
-            any(keep) || error("No eigenvalues returned by Krylov solver")
-            values = values[keep]
-            vectors = vectors[keep]
+        linmap = construct_linear_map(shift_matrix, B_complex)
+        x0 = randn(ComplexF64, n)
 
-            eigenvalues = ComplexF64.(values)
-            eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
+        values, vectors, history = eigsolve(
+            linmap, x0, nev, which;
+            tol = tol,
+            maxiter = maxiter,
+            krylovdim = kdim,
+            verbosity = verbosity
+        )
 
-            select_values = real.(eigenvalues)
-            perm = if selection == :maxreal
-                sortperm(select_values, rev=true)
-            elseif selection == :minabs
-                sortperm(abs.(eigenvalues))
-            elseif selection == :closest_real
-                sortperm(abs.(select_values))
-            else
-                error("Unknown selection strategy $(selection)")
-            end
+        keep = [abs(val) > eps(Float64) for val in values]
+        any(keep) || error("No finite eigenvalues returned by Krylov solver")
+        values = values[keep]
+        vectors = vectors[keep]
 
-            eigenvalues = eigenvalues[perm]
-            eigenvectors = eigenvectors[:, perm]
+        eigenvalues = ComplexF64.(σ_eff .+ inv.(values))
+        eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
 
-            println("  ✓ Converged using generalized Krylov solver")
-            println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
-            println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
-            println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
-
-            info = Dict(
-                "solver" => :krylovkit,
-                "strategy" => :generalized,
-                "krylovdim" => kdim,
-                "iterations" => history.numiter,
-                "operator_applications" => history.numops,
-                "converged" => history.converged,
-                "residuals" => history.residual,
-                "residual_norms" => history.normres,
-                "selected" => eigenvalues[1],
-                "selection" => selection
-            )
-
-            return eigenvalues, eigenvectors, info
+        select_values = real.(eigenvalues)
+        perm = if selection == :maxreal
+            sortperm(select_values, rev=true)
+        elseif selection == :minabs
+            sortperm(abs.(eigenvalues))
+        elseif selection == :closest_real
+            sortperm(abs.(select_values))
         else
-            println("  Using shift-invert around σ = $(sigma)")
-
-            A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
-            B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
-            shift_matrix = A_complex - sigma * B_complex
-            factor = lu(shift_matrix)
-
-            tmp = zeros(ComplexF64, n)
-            shift_map = LinearMap{ComplexF64}(ShiftInvertLinearMap(factor, B_complex, tmp), n; ismutating=true)
-            x0 = randn(ComplexF64, n)
-
-            values, vectors, history = eigsolve(
-                shift_map, x0, nev, :LM;
-                tol = tol,
-                maxiter = maxiter,
-                krylovdim = kdim,
-                verbosity = verbosity
-            )
-
-            keep = [abs(val) > eps(Float64) for val in values]
-            any(keep) || error("No finite eigenvalues returned by shift-invert solver")
-            values = values[keep]
-            vectors = vectors[keep]
-
-            eigenvalues = ComplexF64.(sigma .+ inv.(values))
-            eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
-
-            select_values = real.(eigenvalues)
-            perm = if selection == :maxreal
-                sortperm(select_values, rev=true)
-            elseif selection == :minabs
-                sortperm(abs.(eigenvalues))
-            elseif selection == :closest_real
-                sortperm(abs.(select_values))
-            else
-                error("Unknown selection strategy $(selection)")
-            end
-
-            eigenvalues = eigenvalues[perm]
-            eigenvectors = eigenvectors[:, perm]
-
-            println("  ✓ Converged using shift-invert Krylov solver")
-            println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
-            println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
-            println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
-
-            info = Dict(
-                "solver" => :krylovkit,
-                "strategy" => :shift_invert,
-                "shift" => sigma,
-                "krylovdim" => kdim,
-                "iterations" => history.numiter,
-                "operator_applications" => history.numops,
-                "converged" => history.converged,
-                "residuals" => history.residual,
-                "residual_norms" => history.normres,
-                "selected" => eigenvalues[1],
-                "selection" => selection
-            )
-
-            return eigenvalues, eigenvectors, info
+            error("Unknown selection strategy $(selection)")
         end
+
+        eigenvalues = eigenvalues[perm]
+        eigenvectors = eigenvectors[:, perm]
+
+        println("  ✓ Converged using shift-invert Krylov solver")
+        println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
+        println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
+        println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
+
+        info = Dict(
+            "solver" => :krylovkit,
+            "strategy" => :shift_invert,
+            "shift" => σ_eff,
+            "krylovdim" => kdim,
+            "iterations" => history.numiter,
+            "operator_applications" => history.numops,
+            "converged" => history.converged,
+            "residuals" => history.residual,
+            "residual_norms" => history.normres,
+            "selected" => eigenvalues[1],
+            "selection" => selection
+        )
+
+        return eigenvalues, eigenvectors, info
 
     catch err
         if sigma !== nothing && err isa KrylovKit.ConvergenceError
@@ -291,7 +232,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             A, B;
             nev = solver_nev,
             sigma = 0.0,
-            which = :LM,
+            which = :LR,
             selection = :maxreal
         )
 

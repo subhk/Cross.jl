@@ -229,14 +229,15 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         A, B = operator_builder(Ra)
 
         # Find mode closest to neutral stability using shift-invert targeting σ≈0
-        #solver_nev = max(nev, 6)
+        # IMPORTANT: Use nev > 1 to ensure we find the mode closest to zero
+        # Use :closest_real to select the mode with smallest |Re(σ)|
+        solver_nev = max(nev, 10)
         eigenvalues, _, info = solve_eigenvalue_problem(
             A, B;
-            #nev = solver_nev,
-            nev = nev,
+            nev = solver_nev,
             sigma = 0.0,
             which = :LM,
-            selection = :maxreal
+            selection = :closest_real  # Find mode closest to σ_r = 0
         )
 
         σ = eigenvalues[1]

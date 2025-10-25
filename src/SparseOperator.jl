@@ -116,6 +116,7 @@ struct SparseStabilityOperator{T<:Real}
     # Naming: r{power}_D{deriv}_u
     r0_D0_u::SparseMatrixCSC{Float64,Int}
     r2_D0_u::SparseMatrixCSC{Float64,Int}
+    r2_D2_u::SparseMatrixCSC{Float64,Int}  # For viscous diffusion
     r3_D1_u::SparseMatrixCSC{Float64,Int}
     r4_D0_u::SparseMatrixCSC{Float64,Int}  # For buoyancy coupling
     r4_D2_u::SparseMatrixCSC{Float64,Int}
@@ -157,6 +158,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     println("  Computing poloidal operators...")
     r0_D0_u = sparse_radial_operator(0, 0, N, ri, ro)
     r2_D0_u = sparse_radial_operator(2, 0, N, ri, ro)
+    r2_D2_u = sparse_radial_operator(2, 2, N, ri, ro)  # For viscous diffusion
     r3_D1_u = sparse_radial_operator(3, 1, N, ri, ro)
     r4_D0_u = sparse_radial_operator(4, 0, N, ri, ro)  # For buoyancy coupling
     r4_D2_u = sparse_radial_operator(4, 2, N, ri, ro)
@@ -192,7 +194,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
 
     return SparseStabilityOperator{T}(
         params,
-        r0_D0_u, r2_D0_u, r3_D1_u, r4_D0_u, r4_D2_u, r3_D3_u, r4_D4_u,
+        r0_D0_u, r2_D0_u, r2_D2_u, r3_D1_u, r4_D0_u, r4_D2_u, r3_D3_u, r4_D4_u,
         r0_D0_v, r1_D1_v, r2_D2_v,
         r0_D0_h, r1_D1_h, r2_D0_h, r2_D2_h,
         ll_top, ll_bot, nl_modes,
@@ -322,8 +324,10 @@ Returns: E * L * (-L(l+2)(l-1)*r⁰D⁰ + 2L*r²D² - 4r³D³ - r⁴D⁴)
 function operator_viscous_diffusion(op::SparseStabilityOperator{T},
                                    l::Int, E::T) where {T}
     L = l * (l + 1)
+    # Note: Must be r²D², NOT r⁴D²! (Fixed critical typo)
+    r2_D2_u = sparse_radial_operator(2, 2, op.params.N, op.params.ricb, one(T))
     return E * L * (-L * (l + 2) * (l - 1) * op.r0_D0_u +
-                    2 * L * op.r4_D2_u -
+                    2 * L * r2_D2_u -
                     4 * op.r3_D3_u -
                     op.r4_D4_u)
 end

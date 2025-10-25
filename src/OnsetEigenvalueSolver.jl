@@ -25,7 +25,8 @@ export solve_eigenvalue_problem,
        find_onset_parameters
 
 """
-    solve_eigenvalue_problem(A, B; nev=20, sigma=0.0, which=:LM, tol=1e-10)
+    solve_eigenvalue_problem(A, B; nev=20, sigma=nothing, which=:LR,
+                             selection=:maxreal, tol=1e-10)
 
 Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices.
 
@@ -33,13 +34,13 @@ Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices.
 - `A::SparseMatrixCSC`: Operator matrix (physics terms)
 - `B::SparseMatrixCSC`: Mass matrix (time derivative weights)
 - `nev::Int=20`: Number of eigenvalues to compute
-- `sigma::Number=0.0`: Shift for shift-invert mode (targets eigenvalues near sigma)
-- `which::Symbol=:LM`: Which eigenvalues to compute
-  - `:LM`: Largest magnitude
-  - `:SM`: Smallest magnitude
-  - `:LR`: Largest real part
-  - `:SR`: Smallest real part
-  - `:LI`: Largest imaginary part
+- `sigma::Union{Nothing,Number}=nothing`: Shift for shift-invert mode (set to a
+  numeric value to target eigenvalues near that shift)
+- `which::Symbol=:LR`: Which eigenvalues to compute (see `Arpack.eigs`)
+- `selection::Symbol=:maxreal`: How to order the returned eigenvalues:
+  - `:maxreal`: sort by descending real part
+  - `:minabs`: sort by ascending magnitude
+  - `:closest_real`: sort by ascending |Re(σ)|
 - `tol::Float64=1e-10`: Convergence tolerance
 
 # Returns
@@ -48,13 +49,16 @@ Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices.
 - `info::Dict`: Information about the solve
 
 # Notes
-For onset of convection problems, we typically want:
-- `which=:LR` to find the most unstable mode (largest real part)
-- `sigma=0.0` to target eigenvalues near the neutral stability curve
+For onset of convection problems it is often helpful to use shift-invert with
+`sigma=0.0`, `which=:LM`, and `selection=:closest_real` to isolate the mode
+closest to neutral stability.
 """
 function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
-                                 nev::Int=20, sigma::Number=0.0,
-                                 which::Symbol=:LR, tol::Float64=1e-10,
+                                 nev::Int=20,
+                                 sigma::Union{Nothing,Number}=nothing,
+                                 which::Symbol=:LR,
+                                 selection::Symbol=:maxreal,
+                                 tol::Float64=1e-10,
                                  maxiter::Int=1000)
 
     n = size(A, 1)
@@ -70,20 +74,19 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
         # Use Arpack's eigs for sparse generalized eigenvalue problem
         # We solve (A - σB)^{-1}·B·x = θ·x where σ = eigenvalue
 
-        if sigma == 0.0
-            # Standard mode: find eigenvalues directly
+        n_eigs = clamp(nev, 1, max(n - 2, 1))
+        if sigma === nothing
             eigenvalues, eigenvectors, nconv, niter, nmult, resid = eigs(
                 A, B;
-                nev = min(nev, n-2),  # Need n-2 for Arpack
+                nev = n_eigs,
                 which = which,
                 tol = tol,
                 maxiter = maxiter
             )
         else
-            # Shift-invert mode: find eigenvalues near sigma
             eigenvalues, eigenvectors, nconv, niter, nmult, resid = eigs(
                 A, B;
-                nev = min(nev, n-2),
+                nev = n_eigs,
                 which = which,
                 sigma = sigma,
                 tol = tol,
@@ -91,13 +94,24 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
             )
         end
 
-        # Sort by real part (most unstable first)
-        perm = sortperm(real.(eigenvalues), rev=true)
+        select_values = real.(eigenvalues)
+        perm = nothing
+
+        if selection == :maxreal
+            perm = sortperm(select_values, rev=true)
+        elseif selection == :minabs
+            perm = sortperm(abs.(eigenvalues))
+        elseif selection == :closest_real
+            perm = sortperm(abs.(select_values))
+        else
+            error("Unknown selection strategy $(selection)")
+        end
+
         eigenvalues = eigenvalues[perm]
         eigenvectors = eigenvectors[:, perm]
 
         println("  ✓ Converged: $nconv eigenvalues in $niter iterations")
-        println("  Most unstable mode: σ = $(eigenvalues[1])")
+        println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
         println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
         println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
 
@@ -106,7 +120,8 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
             "niter" => niter,
             "nmult" => nmult,
             "residual" => resid,
-            "most_unstable" => eigenvalues[1]
+            "selected" => eigenvalues[1],
+            "selection" => selection
         )
 
         return eigenvalues, eigenvectors, info
@@ -162,8 +177,15 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         println("  Testing Ra = $(Ra)...")
         A, B = operator_builder(Ra)
 
-        # Find most unstable mode
-        eigenvalues, _, info = solve_eigenvalue_problem(A, B; nev=nev, which=:LR)
+        # Find mode closest to neutral stability using shift-invert targeting σ≈0
+        solver_nev = max(nev, 6)
+        eigenvalues, _, info = solve_eigenvalue_problem(
+            A, B;
+            nev = solver_nev,
+            sigma = 0.0,
+            which = :LM,
+            selection = :closest_real
+        )
 
         σ = eigenvalues[1]
         σ_r = real(σ)

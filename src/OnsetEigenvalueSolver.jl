@@ -78,7 +78,7 @@ closest to neutral stability.
 function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                                  nev::Int=1,
                                  sigma::Union{Nothing,Number}=nothing,
-                                 which::Symbol=:LR,
+                                 which::Symbol=:LM,
                                  selection::Symbol=:maxreal,
                                  tol::Float64=1e-10,
                                  maxiter::Int=1000,
@@ -229,12 +229,13 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         A, B = operator_builder(Ra)
 
         # Find mode closest to neutral stability using shift-invert targeting σ≈0
-        solver_nev = max(nev, 6)
+        #solver_nev = max(nev, 6)
         eigenvalues, _, info = solve_eigenvalue_problem(
             A, B;
-            nev = solver_nev,
+            #nev = solver_nev,
+            nev = nev,
             sigma = 0.0,
-            which = :LR,
+            which = :LM,
             selection = :maxreal
         )
 
@@ -515,8 +516,8 @@ function find_onset_parameters(operator_builder_factory::Function,
     println("\n" * "="^80)
     println("ONSET PARAMETERS FOUND")
     println("="^80)
+    println("Azimuthal wavenumber: m_c = $(m_c)")
     println("Critical Rayleigh number: Ra_c = $(Ra_c_min)")
-    println("Critical azimuthal wavenumber: m_c = $(m_c)")
     println("Critical drift frequency: ω_c = $(ω_c_best)")
     println("="^80)
 

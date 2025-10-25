@@ -29,6 +29,7 @@ module Cross
         temperature_field_from_coefficients,
         fields_from_coefficients,
         OnsetParams,
+        ShellParams,
         LinearStabilityOperator,
         solve_eigenvalue_problem,
         find_growth_rate,

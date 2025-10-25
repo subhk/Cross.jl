@@ -83,6 +83,44 @@ end
     end
 end
 
+# Convenience constructor: compute χ from ri and ro if χ is not provided
+function OnsetParams(; E, Pr=one(E), Ra, m, lmax, Nr,
+                     ri=nothing, ro=nothing, χ=nothing,
+                     mechanical_bc=:no_slip, thermal_bc=:fixed_temperature,
+                     use_kore_weighting=true, equatorial_symmetry=:both,
+                     basic_state=nothing)
+    # Compute χ from ri and ro if not directly provided
+    if χ === nothing
+        if ri !== nothing && ro !== nothing
+            χ = ri / ro
+        elseif ri !== nothing
+            χ = ri
+            ro = one(E)
+        else
+            error("Must provide either χ or both ri and ro")
+        end
+    end
+
+    # Set defaults for ri and ro if not provided
+    if ri === nothing
+        ri = χ
+    end
+    if ro === nothing
+        ro = one(E)
+    end
+
+    T = promote_type(typeof(E), typeof(Pr), typeof(Ra), typeof(χ), typeof(ri), typeof(ro))
+
+    return OnsetParams{T}(
+        T(E), T(Pr), T(Ra), T(χ), m, lmax, Nr, T(ri), T(ro), T(ro - ri),
+        mechanical_bc, thermal_bc, use_kore_weighting, equatorial_symmetry,
+        basic_state
+    )
+end
+
+# Backward compatibility alias
+const ShellParams = OnsetParams
+
 # -----------------------------------------------------------------------------
 #  Linear Stability Operator
 # -----------------------------------------------------------------------------

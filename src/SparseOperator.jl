@@ -69,6 +69,9 @@ Uses sparse ultraspherical spectral discretization.
     bci_thermal::Int = 0           # Inner thermal BC (0=fixed temp)
     bco_thermal::Int = 0           # Outer thermal BC (0=fixed temp)
 
+    # Heating type
+    heating::Symbol = :differential # :internal or :differential
+
     # Derived quantities
     L::T = one(T) - ricb           # Shell thickness
     Etherm::T = E / Pr             # Thermal Ekman number
@@ -135,9 +138,13 @@ struct SparseStabilityOperator{T<:Real}
 
     # Radial operators for temperature (section h)
     r0_D0_h::SparseMatrixCSC{Float64,Int}
+    r1_D0_h::SparseMatrixCSC{Float64,Int}  # For differential heating
     r1_D1_h::SparseMatrixCSC{Float64,Int}
     r2_D0_h::SparseMatrixCSC{Float64,Int}
+    r2_D1_h::SparseMatrixCSC{Float64,Int}  # For differential heating
     r2_D2_h::SparseMatrixCSC{Float64,Int}
+    r3_D0_h::SparseMatrixCSC{Float64,Int}  # For differential heating
+    r3_D2_h::SparseMatrixCSC{Float64,Int}  # For differential heating
 
     # l-mode information
     ll_top::Vector{Int}  # l values for poloidal (equatorially symmetric)
@@ -184,9 +191,13 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     # Pre-compute radial operators for temperature
     println("  Computing temperature operators...")
     r0_D0_h = sparse_radial_operator(0, 0, N, ri, ro)
+    r1_D0_h = sparse_radial_operator(1, 0, N, ri, ro)  # For differential heating
     r1_D1_h = sparse_radial_operator(1, 1, N, ri, ro)
     r2_D0_h = sparse_radial_operator(2, 0, N, ri, ro)
+    r2_D1_h = sparse_radial_operator(2, 1, N, ri, ro)  # For differential heating
     r2_D2_h = sparse_radial_operator(2, 2, N, ri, ro)
+    r3_D0_h = sparse_radial_operator(3, 0, N, ri, ro)  # For differential heating
+    r3_D2_h = sparse_radial_operator(3, 2, N, ri, ro)  # For differential heating
 
     # Determine l-mode structure based on equatorial symmetry
     ll_top, ll_bot = compute_l_modes(params.m, params.lmax, params.symm)
@@ -206,7 +217,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
         params,
         r0_D0_u, r2_D0_u, r2_D2_u, r3_D0_u, r3_D1_u, r4_D0_u, r4_D1_u, r4_D2_u, r3_D3_u, r4_D4_u,
         r0_D0_v, r1_D0_v, r1_D1_v, r2_D0_v, r2_D1_v, r2_D2_v,
-        r0_D0_h, r1_D1_h, r2_D0_h, r2_D2_h,
+        r0_D0_h, r1_D0_h, r1_D1_h, r2_D0_h, r2_D1_h, r2_D2_h, r3_D0_h, r3_D2_h,
         ll_top, ll_bot, nl_modes,
         matrix_size
     )
@@ -437,13 +448,16 @@ end
 Temperature operator for time derivative term.
 Implements op.theta(l, 'h', '', 0).
 
-For non-anelastic, non-differential heating: returns r²D⁰
+Following Kore lines 712-716:
+- For 'differential' heating: returns r³D⁰ (eq. times r³)
+- For 'internal' heating: returns r²D⁰ (eq. times r²)
 """
 function operator_theta(op::SparseStabilityOperator{T}, l::Int) where {T}
-    # From reference implementation line 715:
-    # section == 'h', non-anelastic, non-differential heating
-    # out = r2_D0_h
-    return op.r2_D0_h
+    if op.params.heating == :differential
+        return op.r3_D0_h  # eq. times r³
+    else  # :internal
+        return op.r2_D0_h  # eq. times r²
+    end
 end
 
 """
@@ -452,20 +466,23 @@ end
 Thermal diffusion operator: (E/Pr) * ∇²θ.
 Implements op.thermal_diffusion(l, 'h', '', 0).
 
-Returns: Etherm * (-L*r⁰D⁰ + 2*r¹D¹ + r²D²)
+Following Kore lines 758-761:
+- For 'differential' heating: Etherm * (-L*r¹D⁰ + 2*r²D¹ + r³D²) (eq. times r³)
+- For 'internal' heating: Etherm * (-L*r⁰D⁰ + 2*r¹D¹ + r²D²) (eq. times r²)
 
 where Etherm = E/Pr and L = l(l+1).
 """
 function operator_thermal_diffusion(op::SparseStabilityOperator{T},
                                    l::Int, Etherm::T) where {T}
-    # From reference implementation line 761:
-    # section == 'h', non-anelastic, non-differential heating
-    # difus = - L*r0_D0_h + 2*r1_D1_h + r2_D2_h  # eq. times r**2
-    # out = difus * par.ThermaD
-    # where par.ThermaD = Etherm = E/Pr
-
     L = l * (l + 1)
-    return Etherm * (-L * op.r0_D0_h + 2 * op.r1_D1_h + op.r2_D2_h)
+
+    if op.params.heating == :differential
+        # eq. times r³
+        return Etherm * (-L * op.r1_D0_h + 2 * op.r2_D1_h + op.r3_D2_h)
+    else  # :internal
+        # eq. times r²
+        return Etherm * (-L * op.r0_D0_h + 2 * op.r1_D1_h + op.r2_D2_h)
+    end
 end
 
 """
@@ -474,20 +491,25 @@ end
 Thermal advection operator: radial velocity advecting temperature.
 Implements op.thermal_advection(l, 'h', 'upol', 0).
 
-Returns: L * r²D⁰
+Following Kore lines 733-740:
+- For 'differential' heating: L * r⁰D⁰ * (ricb/gap), dT/dr = -β*r⁻², eq. times r³
+- For 'internal' heating: L * r²D⁰, dT/dr = -β*r, eq. times r²
 
 This couples the poloidal velocity to the temperature equation.
-For internal heating: dT/dr = -β*r, so the advection term is u_r * (-β*r)
 """
 function operator_thermal_advection(op::SparseStabilityOperator{T},
                                    l::Int) where {T}
-    # From reference implementation line 734:
-    # section == 'h', component == 'upol', non-anelastic, internal heating
-    # conv = r2_D0_h  # dT/dr = -beta*r. Heat equation is times r**2
-    # out = L * conv
-
     L = l * (l + 1)
-    return L * op.r2_D0_h
+
+    if op.params.heating == :differential
+        # dT/dr = -beta * r⁻², eq. times r³
+        ricb = op.params.ricb
+        gap = one(T) - ricb
+        return L * op.r0_D0_h * (ricb / gap)
+    else  # :internal
+        # dT/dr = -beta * r, eq. times r²
+        return L * op.r2_D0_h
+    end
 end
 
 # -----------------------------------------------------------------------------

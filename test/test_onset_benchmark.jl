@@ -20,13 +20,15 @@ function parse_solver_options(args)
                   --feast-M0=<int>                FEAST subspace size (default 48)
                   --feast-integration=<int>       FEAST integration points (default 8)
                   --feast-refine=<int>            FEAST max refinement loops (default 20)
+                  --feast-print=<int>             FEAST verbosity (default -1 for silence)
                   --help                          Show this message
                 """)
             exit(0)
         elseif startswith(arg, "--solver=")
-            opts[:solver] = Symbol(lowercase(split(arg, '=' )[2]))
+            val = strip(split(arg, "=", limit=2)[2])
+            opts[:solver] = Symbol(lowercase(val))
         elseif startswith(arg, "--feast-center=")
-            val = split(arg, '=' )[2]
+            val = strip(split(arg, "=", limit=2)[2])
             center_val = try
                 parse(ComplexF64, val)
             catch
@@ -34,41 +36,63 @@ function parse_solver_options(args)
             end
             opts[:feast_center] = center_val
         elseif startswith(arg, "--feast-radius=")
-            opts[:feast_radius] = parse(Float64, split(arg, '=' )[2])
+            val = strip(split(arg, "=", limit=2)[2])
+            opts[:feast_radius] = parse(Float64, val)
         elseif startswith(arg, "--feast-M0=")
-            opts[:feast_M0] = parse(Int, split(arg, '=' )[2])
+            val = strip(split(arg, "=", limit=2)[2])
+            opts[:feast_M0] = parse(Int, val)
         elseif startswith(arg, "--feast-integration=")
-            opts[:feast_integration] = parse(Int, split(arg, '=' )[2])
+            val = strip(split(arg, "=", limit=2)[2])
+            opts[:feast_integration] = parse(Int, val)
         elseif startswith(arg, "--feast-refine=")
-            opts[:feast_refine] = parse(Int, split(arg, '=' )[2])
+            val = strip(split(arg, "=", limit=2)[2])
+            opts[:feast_refine] = parse(Int, val)
+        elseif startswith(arg, "--feast-print=")
+            val = strip(split(arg, "=", limit=2)[2])
+            opts[:feast_print] = parse(Int, val)
         end
     end
     return opts
 end
 
-cli_opts = parse_solver_options(ARGS)
-solver = get(cli_opts, :solver, Symbol(lowercase(get(ENV, "CROSS_SOLVER", "krylov"))))
-solver = solver in (:feast, :krylov) ? solver : :krylov
-feast_center = get(cli_opts, :feast_center,
-                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_REAL", "0.0")) +
-                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_IMAG", "0.0")) * im)
+function solver_config_from_args(args)
+    cli_opts = parse_solver_options(args)
 
-feast_radius = get(cli_opts, :feast_radius, parse(Float64, get(ENV, "CROSS_FEAST_RADIUS", "1.0")))
+    # Only use CROSS_SOLVER if user did not supply a CLI flag. Otherwise prefer the CLI value.
+    solver_env_raw = get(ENV, "CROSS_SOLVER", "krylov")
+    solver_env = Symbol(lowercase(solver_env_raw))
+    solver = get(cli_opts, :solver, solver_env)
+    solver = solver in (:feast, :krylov) ? solver : :krylov
 
-feast_M0 = get(cli_opts, :feast_M0, parse(Int, get(ENV, "CROSS_FEAST_M0", "48")))
-feast_integration = get(cli_opts, :feast_integration, parse(Int, get(ENV, "CROSS_FEAST_INTEGRATION", "8")))
-feast_refine = get(cli_opts, :feast_refine, parse(Int, get(ENV, "CROSS_FEAST_REFINE", "20")))
+    center_env = parse(Float64, get(ENV, "CROSS_FEAST_CENTER_REAL", "0.0")) +
+                 parse(Float64, get(ENV, "CROSS_FEAST_CENTER_IMAG", "0.0")) * im
+    feast_center = get(cli_opts, :feast_center, center_env)
+
+    feast_radius = get(cli_opts, :feast_radius, parse(Float64, get(ENV, "CROSS_FEAST_RADIUS", "1.0")))
+    feast_M0 = get(cli_opts, :feast_M0, parse(Int, get(ENV, "CROSS_FEAST_M0", "48")))
+    feast_integration = get(cli_opts, :feast_integration, parse(Int, get(ENV, "CROSS_FEAST_INTEGRATION", "8")))
+    feast_refine = get(cli_opts, :feast_refine, parse(Int, get(ENV, "CROSS_FEAST_REFINE", "20")))
+    feast_print = get(cli_opts, :feast_print, parse(Int, get(ENV, "CROSS_FEAST_PRINT", "-1")))
+
+    return (; solver, feast_center, feast_radius, feast_M0, feast_integration, feast_refine, feast_print)
+end
 
 """
 Benchmark against Table 1 in docs/poloidal_toroidal_derivation.tex
 which comes from Dormy et al. (2004) Table 5.
 """
-function benchmark_dormy2004()
+function benchmark_dormy2004(; solver::Symbol,
+                               feast_center::Complex=0.0 + 0.0im,
+                               feast_radius::Float64=1.0,
+                               feast_M0::Int=48,
+                               feast_integration::Int=8,
+                               feast_refine::Int=20,
+                               feast_print::Int=-1)
     println("="^70)
     println("Benchmarking against Dormy et al. (2004)")
     println("Aspect ratio χ = 0.35, Pr = 1")
-    println(@sprintf("Solver: %s (center=%s, radius=%.3f, M0=%d, integration=%d, refine=%d)",
-                    String(solver), sprint(show, feast_center), feast_radius, feast_M0, feast_integration, feast_refine))
+    println(@sprintf("Solver: %s (center=%s, radius=%.3f, M0=%d, integration=%d, refine=%d, print=%d)",
+                    String(solver), sprint(show, feast_center), feast_radius, feast_M0, feast_integration, feast_refine, feast_print))
     println("="^70)
     println()
 
@@ -118,7 +142,8 @@ function benchmark_dormy2004()
                 feast_radius=feast_radius,
                 feast_M0=feast_M0,
                 feast_integration=feast_integration,
-                feast_refine=feast_refine
+                feast_refine=feast_refine,
+                feast_print_level=feast_print
             )
 
             # Calculate percentage difference
@@ -216,16 +241,16 @@ end
 # end
 
 # Run tests if executed as script
-if abspath(PROGRAM_FILE) == @__FILE__
-    println("Running onset of convection benchmark tests")
-    println()
+function run_benchmark_cli(args)
+    if abspath(PROGRAM_FILE) == @__FILE__
+        println("Running onset of convection benchmark tests")
+        println()
 
-    # println("Test 1: Quick test")
-    # quick_test()
+        opts = solver_config_from_args(args)
 
-    # println("\nTest 2: Growth rate vs Rayleigh number")
-    # test_growth_rate()
-
-    println("\nTest 3: Full benchmark against Dormy et al. (2004)")
-    benchmark_dormy2004()
+        println("\nTest 3: Full benchmark against Dormy et al. (2004)")
+        benchmark_dormy2004(; opts...)
+    end
 end
+
+run_benchmark_cli(ARGS)

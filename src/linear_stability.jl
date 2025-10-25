@@ -11,7 +11,6 @@ using LinearAlgebra
 using KrylovKit
 using LinearMaps
 using Parameters
-using NonlinearSolve
 using Random
 
 import ..Cross: ChebyshevDiffn
@@ -389,7 +388,10 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   solver::Symbol=:feast,
                                   feast_center::Complex{T}=Complex{T}(0),
                                   feast_radius::Float64=1.0,
-                                  feast_M0::Int=max(nev * 4, 32)) where {T<:Float64}
+                                  feast_M0::Int=max(nev * 4, 32),
+                                  feast_integration::Int=8,
+                                  feast_refine::Int=20,
+                                  feast_print_level::Int=0) where {T<:Float64}
 
     A_full, B_full, interior_dofs, _ = assemble_matrices(op)
 
@@ -400,9 +402,13 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                          tol=tol,
                                          center=feast_center,
                                          radius=feast_radius,
-                                         M0=feast_M0)
+                                         M0=feast_M0,
+                                         integration_points=feast_integration,
+                                         max_refine=feast_refine,
+                                         print_level=feast_print_level)
         if feast_result !== nothing
-            return feast_result...
+            eigenvalues, eigenvectors, info = feast_result
+            return eigenvalues, eigenvectors, info
         end
         @warn "Feast solver failed or returned insufficient eigenpairs; falling back to Krylov shift-invert."
     end
@@ -478,7 +484,10 @@ function _feast_eigensolve(A_full::Matrix{Complex{T}},
                            tol::Float64,
                            center::Complex{T},
                            radius::Float64,
-                           M0::Int) where {T<:Float64}
+                           M0::Int,
+                           integration_points::Int,
+                           max_refine::Int,
+                           print_level::Int) where {T<:Float64}
                            
     A = Matrix(A_full[interior_dofs, interior_dofs])
     B = Matrix(B_full[interior_dofs, interior_dofs])
@@ -491,13 +500,25 @@ function _feast_eigensolve(A_full::Matrix{Complex{T}},
     fpm = zeros(Int, 64)
     feastinit!(fpm)
     tol_exp = clamp(Int(round(-log10(tol))), 6, 12)
-    feast_set_defaults!(fpm; print_level=0, tolerance_exp=tol_exp)
+    
+    feast_set_defaults!(fpm; print_level=print_level,
+                             integration_points=integration_points,
+                             tolerance_exp=tol_exp,
+                             max_refinement=max_refine)
 
     for r in radii
         result = try
             FeastKit.feast_general(copy(A), copy(B), center, r; M0=M0_eff, fpm=fpm)
         catch
             continue
+        end
+
+        if print_level >= 0
+            eigen_preview = result.M == 0 ? Complex{T}[] : copy(result.lambda[1:result.M])
+            if length(eigen_preview) > 8
+                eigen_preview = vcat(eigen_preview[1:5], eigen_preview[end-2:end])
+            end
+            @info "FEAST iteration" radius=r found=result.M info=result.info eigenvalues=eigen_preview
         end
 
         if result.info != Feast_SUCCESS.value
@@ -522,6 +543,9 @@ function _feast_eigensolve(A_full::Matrix{Complex{T}},
                    collect(1:length(eigenvalues))
 
         if length(ordering) < nev
+            if print_level >= 0
+                @warn "FEAST returned fewer eigenpairs than requested; increasing contour radius may help." requested=nev found=length(ordering) radius=r
+            end
             continue
         end
 

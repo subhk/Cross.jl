@@ -172,15 +172,28 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         return σ_r, σ
     end
 
+    # Cache evaluations to avoid redundant solves when scanning
+    known_values = Dict{Float64, Tuple{Float64, ComplexF64}}()
+
+    function growth_rate_cached(Ra)
+        Ra_key = Float64(Ra)
+        if haskey(known_values, Ra_key)
+            return known_values[Ra_key]
+        end
+        σ_r, σ = growth_rate(Ra)
+        known_values[Ra_key] = (σ_r, σ)
+        return σ_r, σ
+    end
+
     # Initial bracket check
     println("Checking initial bracket...")
-    σ_r_min, σ_min = growth_rate(Ra_min)
+    σ_r_min, σ_min = growth_rate_cached(Ra_min)
     if abs(σ_r_min) < growth_tol
         println("Lower bracket already satisfies growth tolerance.")
         return Ra_min, imag(σ_min), σ_min, 0
     end
 
-    σ_r_max, σ_max = growth_rate(Ra_max)
+    σ_r_max, σ_max = growth_rate_cached(Ra_max)
     if abs(σ_r_max) < growth_tol
         println("Upper bracket already satisfies growth tolerance.")
         return Ra_max, imag(σ_max), σ_max, 0
@@ -198,17 +211,49 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
                 if Ra_min <= 0
                     error("Lower Rayleigh bound reached non-positive value while trying to bracket root.")
                 end
-                σ_r_min, σ_min = growth_rate(Ra_min)
+                σ_r_min, σ_min = growth_rate_cached(Ra_min)
             elseif σ_r_min < 0 && σ_r_max < 0
                 Ra_max *= 2.0
                 println("  Expansion $expansion_iter: raising Ra_max → $Ra_max")
-                σ_r_max, σ_max = growth_rate(Ra_max)
+                σ_r_max, σ_max = growth_rate_cached(Ra_max)
             else
                 break
             end
         end
         if σ_r_min * σ_r_max > 0
-            error("Unable to bracket the critical Rayleigh number: growth rate has same sign at bounds after $expansion_iter expansions.")
+            println("  Expansion attempts exhausted. Performing logarithmic scan for sign change...")
+            min_scan = max(Ra_min, 10.0) / 10.0
+            max_scan = Ra_max * 10.0
+            if min_scan <= 0
+                min_scan = tol
+            end
+            scan_points = 30
+            scan_values = exp10.(LinRange(log10(min_scan), log10(max_scan), scan_points))
+            scan_values = sort(unique(vcat(Ra_min, Ra_max, scan_values)))
+
+            bracket_found = false
+            last_ra = nothing
+            lastσ_r = 0.0
+            lastσ = 0.0 + 0.0im
+
+            for Ra in scan_values
+                σ_r, σ = growth_rate_cached(Ra)
+                if last_ra !== nothing && σ_r * lastσ_r <= 0
+                    println("  Found sign change between $(last_ra) and $(Ra) during scan.")
+                    Ra_min, Ra_max = last_ra, Ra
+                    σ_r_min, σ_min = lastσ_r, lastσ
+                    σ_r_max, σ_max = σ_r, σ
+                    bracket_found = true
+                    break
+                end
+                last_ra = Ra
+                lastσ_r = σ_r
+                lastσ = σ
+            end
+
+            if !bracket_found
+                error("Unable to bracket the critical Rayleigh number: growth rate has same sign across scanned range.")
+            end
         end
     end
 
@@ -306,7 +351,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             Ra_b += m >= 0 ? tol_act : -tol_act
         end
 
-        σ_r_b, σ_b = growth_rate(Ra_b)
+        σ_r_b, σ_b = growth_rate_cached(Ra_b)
 
         if abs(σ_r_b) < growth_tol
             println("\n" * "="^80)

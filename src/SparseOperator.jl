@@ -670,7 +670,15 @@ end
     apply_sparse_boundary_conditions!(A, B, op)
 
 Apply boundary conditions by replacing appropriate rows in A and B matrices.
-Uses the tau method using tau method.
+Uses the tau method.
+
+Mechanical BCs (controlled by bci/bco):
+- 0 = stress-free: u = 0, ∂²u/∂r² = 0 (poloidal); ∂v/∂r = 0 (toroidal)
+- 1 = no-slip: u = 0, ∂u/∂r = 0 (poloidal); v = 0 (toroidal)
+
+Thermal BCs (controlled by bci_thermal/bco_thermal):
+- 0 = fixed temperature: θ = 0
+- 1 = fixed flux: ∂θ/∂r = 0
 """
 function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
                                         B::SparseMatrixCSC,
@@ -683,54 +691,97 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
     nb_bot = length(op.ll_bot)
 
     # -------------------------------------------------------------------------
-    # Poloidal velocity BCs: No-slip (u = 0, du/dr = 0)
+    # Poloidal velocity BCs
     # -------------------------------------------------------------------------
     for (k, l) in enumerate(op.ll_top)
         row_base = (k - 1) * n_per_mode
 
-        # Outer boundary (r = ro): u = 0, du/dr = 0
-        bc_rows = [row_base + 1, row_base + 2]
-        apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                  params.ricb, one(T))
+        # Outer boundary (r = ro = 1.0)
+        if params.bco == 1
+            # No-slip: u = 0, du/dr = 0
+            bc_rows = [row_base + 1, row_base + 2]
+            apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
+                                      params.ricb, one(T))
+        else
+            # Stress-free: u = 0, d²u/dr² = 0
+            bc_rows = [row_base + 1, row_base + 2]
+            apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                      params.ricb, one(T))
+            apply_boundary_conditions!(A, B, [row_base + 2], :neumann2, N,
+                                      params.ricb, one(T))
+        end
 
-        # Inner boundary (r = ri): u = 0, du/dr = 0
-        bc_rows = [row_base + n_per_mode - 1, row_base + n_per_mode]
-        apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                  params.ricb, one(T))
+        # Inner boundary (r = ri = ricb)
+        if params.bci == 1
+            # No-slip: u = 0, du/dr = 0
+            bc_rows = [row_base + n_per_mode - 1, row_base + n_per_mode]
+            apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
+                                      params.ricb, one(T))
+        else
+            # Stress-free: u = 0, d²u/dr² = 0
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                      params.ricb, one(T))
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode - 1], :neumann2, N,
+                                      params.ricb, one(T))
+        end
     end
 
     # -------------------------------------------------------------------------
-    # Toroidal velocity BCs: No-slip (v = 0)
+    # Toroidal velocity BCs
     # -------------------------------------------------------------------------
     for (k, l) in enumerate(op.ll_bot)
         row_base = (nb_top + k - 1) * n_per_mode
 
-        # Outer boundary (r = ro): v = 0
-        bc_rows = [row_base + 1]
-        apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                  params.ricb, one(T))
+        # Outer boundary (r = ro = 1.0)
+        if params.bco == 1
+            # No-slip: v = 0
+            apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                      params.ricb, one(T))
+        else
+            # Stress-free: dv/dr = 0
+            apply_boundary_conditions!(A, B, [row_base + 1], :neumann, N,
+                                      params.ricb, one(T))
+        end
 
-        # Inner boundary (r = ri): v = 0
-        bc_rows = [row_base + n_per_mode]
-        apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                  params.ricb, one(T))
+        # Inner boundary (r = ri = ricb)
+        if params.bci == 1
+            # No-slip: v = 0
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                      params.ricb, one(T))
+        else
+            # Stress-free: dv/dr = 0
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode], :neumann, N,
+                                      params.ricb, one(T))
+        end
     end
 
     # -------------------------------------------------------------------------
-    # Temperature BCs: Fixed temperature (θ = 0)
+    # Temperature BCs
     # -------------------------------------------------------------------------
     for (k, l) in enumerate(op.ll_top)
         row_base = (nb_top + nb_bot + k - 1) * n_per_mode
 
-        # Outer boundary (r = ro): θ = 0
-        bc_rows = [row_base + 1]
-        apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                  params.ricb, one(T))
+        # Outer boundary (r = ro = 1.0)
+        if params.bco_thermal == 0
+            # Fixed temperature: θ = 0
+            apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                      params.ricb, one(T))
+        else
+            # Fixed flux: dθ/dr = 0
+            apply_boundary_conditions!(A, B, [row_base + 1], :neumann, N,
+                                      params.ricb, one(T))
+        end
 
-        # Inner boundary (r = ri): θ = 0
-        bc_rows = [row_base + n_per_mode]
-        apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                  params.ricb, one(T))
+        # Inner boundary (r = ri = ricb)
+        if params.bci_thermal == 0
+            # Fixed temperature: θ = 0
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                      params.ricb, one(T))
+        else
+            # Fixed flux: dθ/dr = 0
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode], :neumann, N,
+                                      params.ricb, one(T))
+        end
     end
 
     return nothing

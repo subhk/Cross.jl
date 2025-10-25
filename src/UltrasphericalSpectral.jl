@@ -233,6 +233,7 @@ Apply boundary conditions by replacing rows in the matrices A and B.
 bc_type can be:
   - :dirichlet → u = 0
   - :neumann → du/dr = 0
+  - :neumann2 → d²u/dr² = 0 (for stress-free)
   - :no_slip → u = du/dr = 0 (for poloidal)
   - :stress_free → u = d²u/dr² - 2u/r² = 0
 """
@@ -249,12 +250,12 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
         if bc_type == :dirichlet
             # u(r_boundary) = 0
             # Set row to evaluation at boundary point
-            if row == 1  # Outer boundary (x = 1, r = ro)
+            if row == 1 || row == 2  # Outer boundary (x = 1, r = ro)
                 for n in 0:N
                     Tn = cos(n * 0.0)  # T_n(1) = 1 for all n
                     A[row, n+1] = Tn
                 end
-            elseif row == N+1  # Inner boundary (x = -1, r = ri)
+            elseif row == N || row == N+1  # Inner boundary (x = -1, r = ri)
                 for n in 0:N
                     Tn = cos(n * π)  # T_n(-1) = (-1)^n
                     A[row, n+1] = Tn
@@ -265,7 +266,23 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
             # du/dr(r_boundary) = 0
             # Use first derivative operator
             D1 = sparse_radial_operator(0, 1, N, ri, ro)
-            A[row, :] = D1[row, :]
+            # Extract the appropriate boundary row
+            if row == 1 || row == 2  # Outer boundary
+                A[row, 1:(N+1)] = D1[1, :]
+            elseif row == N || row == N+1  # Inner boundary
+                A[row, 1:(N+1)] = D1[N+1, :]
+            end
+
+        elseif bc_type == :neumann2
+            # d²u/dr²(r_boundary) = 0
+            # Use second derivative operator
+            D2 = sparse_radial_operator(0, 2, N, ri, ro)
+            # Extract the appropriate boundary row
+            if row == 1 || row == 2  # Outer boundary
+                A[row, 1:(N+1)] = D2[1, :]
+            elseif row == N || row == N+1  # Inner boundary
+                A[row, 1:(N+1)] = D2[N+1, :]
+            end
 
         # Additional BC types can be added here
         end

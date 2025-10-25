@@ -292,7 +292,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             nev = solver_nev,
             sigma = 0.0,
             which = :LM,
-            selection = :closest_real
+            selection = :maxreal
         )
 
         σ = eigenvalues[1]
@@ -423,7 +423,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         println("  Bracket: [$(Ra_a), $(Ra_c)] with current Ra = $(Ra_b)")
         println("  Growth rates: f(a)=$(σ_r_a), f(b)=$(σ_r_b), f(c)=$(σ_r_c)")
 
-        if abs(m) <= tol_act || σ_r_b == 0
+        if abs(σ_r_b) < growth_tol
             println("\n" * "="^80)
             println("✓ CONVERGED")
             println("="^80)
@@ -435,6 +435,8 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             println("Iterations: $iter")
             println("="^80)
             return Ra_c_final, ω_c, σ_b, iter
+        elseif abs(m) <= tol_act
+            println("  Bracket tolerance met but growth rate |σ_r| = $(abs(σ_r_b)) exceeds growth_tol=$(growth_tol). Continuing...")
         end
 
         if abs(e) < tol_act || abs(σ_r_a) <= abs(σ_r_b)

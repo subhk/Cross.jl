@@ -77,7 +77,7 @@ Uses sparse ultraspherical spectral discretization.
     Etherm::T = E / Pr             # Thermal Ekman number
 
     function SparseOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
-                                bci, bco, bci_thermal, bco_thermal,
+                                bci, bco, bci_thermal, bco_thermal, heating,
                                 L, Etherm) where {T<:Real}
         @assert 0 < ricb < 1 "ricb must be in (0,1)"
         @assert E > 0 "Ekman number must be positive"
@@ -86,9 +86,10 @@ Uses sparse ultraspherical spectral discretization.
         @assert lmax >= m "lmax must be >= m"
         @assert N >= 4 && iseven(N) "N must be even and >= 4"
         @assert symm in (-1, 1) "symm must be ±1"
+        @assert heating in (:internal, :differential) "heating must be :internal or :differential"
 
         new{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
-               bci, bco, bci_thermal, bco_thermal, L, Etherm)
+               bci, bco, bci_thermal, bco_thermal, heating, L, Etherm)
     end
 end
 
@@ -96,11 +97,12 @@ end
 function SparseOnsetParams(; E::T, Pr::T=one(T), Ra::T, ricb::T,
                           m::Int, lmax::Int, symm::Int=1, N::Int,
                           bci::Int=1, bco::Int=1,
-                          bci_thermal::Int=0, bco_thermal::Int=0) where {T<:Real}
+                          bci_thermal::Int=0, bco_thermal::Int=0,
+                          heating::Symbol=:differential) where {T<:Real}
     L = one(T) - ricb
     Etherm = E / Pr
     return SparseOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
-                             bci, bco, bci_thermal, bco_thermal, L, Etherm)
+                             bci, bco, bci_thermal, bco_thermal, heating, L, Etherm)
 end
 
 # -----------------------------------------------------------------------------

@@ -606,6 +606,9 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # =========================================================================
     println("  Assembling section u (poloidal)...")
 
+    # DEBUG: Track u→v Coriolis coupling
+    u_to_v_coupling_count = 0
+
     for (k, l) in enumerate(op.ll_top)
         row_base = (k - 1) * n_per_mode
         col_base = (k - 1) * n_per_mode
@@ -638,6 +641,9 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
                 cori_off, _ = operator_coriolis_offdiag(op, l, m, offset)
                 add_block!(A_rows, A_cols, A_vals, cori_off,
                           row_base, col_coupled)
+
+                # DEBUG
+                u_to_v_coupling_count += 1
             end
         end
 
@@ -649,10 +655,16 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
                   row_base, temp_col_base)
     end
 
+    # DEBUG: Print coupling summary
+    println("  ✓ Added $u_to_v_coupling_count u→v Coriolis coupling blocks")
+
     # =========================================================================
     # Section v (toroidal velocity, 1curl equation)
     # =========================================================================
     println("  Assembling section v (toroidal)...")
+
+    # DEBUG: Track v→u Coriolis coupling
+    v_to_u_coupling_count = 0
 
     for (k, l) in enumerate(op.ll_bot)
         row_base = (nb_top + k - 1) * n_per_mode
@@ -676,23 +688,34 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         add_block!(A_rows, A_cols, A_vals, visc_tor_op, row_base, col_base)
 
         # Coriolis coupling from toroidal to poloidal velocity (v → u, l±1)
-        # This is the REVERSE coupling - essential for rotating convection!
+        # This coupling goes in the TOROIDAL equation (v-rows), coupling to POLOIDAL variable (u-columns)
+        # Physical meaning: Coriolis force in toroidal equation depends on poloidal velocity
         for offset in [-1, 1]
             l_coupled = l + offset
             if l_coupled in op.ll_top
                 k_coupled = findfirst(==(l_coupled), op.ll_top)
-                row_coupled = (k_coupled - 1) * n_per_mode
+                col_coupled = (k_coupled - 1) * n_per_mode  # Column for u at l_coupled
 
                 # Compute Coriolis v→u coupling operator
                 cori_v_to_u = operator_coriolis_v_to_u(op, l, m, offset)
                 add_block!(A_rows, A_cols, A_vals, cori_v_to_u,
-                          row_coupled, col_base)  # Note: writes to Section u rows!
+                          row_base, col_coupled)  # FIXED: v-rows (this equation), u-columns (coupled variable)
+
+                # DEBUG
+                v_to_u_coupling_count += 1
+                if v_to_u_coupling_count <= 3  # Only print first few
+                    println("    DEBUG: v→u coupling: v-eq at l=$l → u-var at l=$l_coupled (offset=$offset)")
+                    println("           row_base=$row_base, col_coupled=$col_coupled, nnz=$(length(cori_v_to_u.nzval))")
+                end
             end
         end
 
         # Note: No direct buoyancy coupling for toroidal velocity
         # (Buoyancy forces poloidal flow, which then couples to toroidal via Coriolis)
     end
+
+    # DEBUG: Print coupling summary
+    println("  ✓ Added $v_to_u_coupling_count v→u Coriolis coupling blocks")
 
     # =========================================================================
     # Temperature equation (section h)

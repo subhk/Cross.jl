@@ -14,6 +14,7 @@ module CompleteMHD
 using LinearAlgebra
 using SparseArrays
 using Printf
+using SpecialFunctions
 
 # Load ultraspherical spectral methods
 push!(LOAD_PATH, @__DIR__)
@@ -54,7 +55,8 @@ export MHDParams,
        operator_induction_toroidal_from_u,
        operator_induction_toroidal_from_v,
        operator_magnetic_diffusion_poloidal,
-       operator_magnetic_diffusion_toroidal
+       operator_magnetic_diffusion_toroidal,
+       spherical_bessel_j_logderiv
 
 println("CompleteMHD module loaded successfully")
 println("  - MHD parameters and operators")

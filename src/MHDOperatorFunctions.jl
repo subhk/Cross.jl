@@ -36,8 +36,6 @@ conducting inner core boundary conditions with Bessel wavenumber k = (1-i)√(ω
 Following Kore's utils.py dlogjl function (lines 487-526).
 """
 function spherical_bessel_j_logderiv(l::Int, x::Complex{T}) where {T<:Real}
-    using SpecialFunctions
-
     # For very small |x|, use series expansion: j_l(x) ≈ x^l / (2l+1)!!
     # so d/dx[log(j_l)] ≈ l/x
     if abs(x) < 1e-10

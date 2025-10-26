@@ -20,6 +20,7 @@ module MHDOperator
 using LinearAlgebra
 using SparseArrays
 using Printf
+using SpecialFunctions
 
 # Import from other modules
 push!(LOAD_PATH, @__DIR__)

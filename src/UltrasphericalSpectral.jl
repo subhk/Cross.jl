@@ -19,7 +19,9 @@ export ultraspherical_derivative,
        sparse_radial_operator,
        chebyshev_grid,
        chebyshev_transform,
-       apply_boundary_conditions!
+       apply_boundary_conditions!,
+       chebyshev_coefficients,
+       multiplication_matrix
 
 # -----------------------------------------------------------------------------
 # Chebyshev-Gauss-Lobatto grid and transforms
@@ -152,6 +154,263 @@ function ultraspherical_derivative(λ::Real, N::Int)
 end
 
 # -----------------------------------------------------------------------------
+# Spectral multiplication (Chebyshev coefficients and Mlam)
+# -----------------------------------------------------------------------------
+
+"""
+    chebyshev_coefficients(power::Int, N::Int, ri::Real, ro::Real;
+                          tol::Real=1e-9) -> Vector{Float64}
+
+Compute the first N Chebyshev coefficients (from 0 to N-1) of the function
+    r(x)^power where r(x) = ri + (ro-ri)*(x+1)/2
+for x ∈ [-1,1].
+
+This follows Kore's chebco function (utils.py:251-269).
+
+For ricb=0, the Chebyshev domain [-1,1] is mapped to [-rcmb, rcmb].
+For ricb>0, the Chebyshev domain [-1,1] is mapped to [ricb, rcmb].
+"""
+function chebyshev_coefficients(power::Int, N::Int, ri::Real, ro::Real;
+                                tol::Real=1e-9)
+    # Evaluate function at Chebyshev-Gauss points
+    # x_i = cos(π(i+0.5)/N) for i = 0,...,N-1
+    x = [cos(π * (i + 0.5) / N) for i in 0:N-1]
+
+    # Map to physical domain
+    if ri == 0
+        # No inner core: map [-1,1] → [-ro, ro]
+        r = ro .* x
+    else
+        # With inner core: map [-1,1] → [ri, ro]
+        r = @. ri + (ro - ri) * (x + 1) / 2
+    end
+
+    # Evaluate r^power
+    f_vals = r .^ power
+
+    # Compute Chebyshev coefficients using DCT
+    # This is the discrete cosine transform (DCT-II)
+    # Using the definition: a_k = (2/N) * Σ f_i * cos(πk(i+0.5)/N)
+    coeffs = zeros(N)
+    for k in 0:N-1
+        s = sum(f_vals[i+1] * cos(π * k * (i + 0.5) / N) for i in 0:N-1)
+        coeffs[k+1] = (2.0 / N) * s
+    end
+
+    # First coefficient gets factor of 1/2
+    coeffs[1] /= 2.0
+
+    # Truncate small coefficients
+    coeffs[abs.(coeffs) .<= tol] .= 0.0
+
+    return coeffs
+end
+
+"""
+    csl0(s, λ, j, k) -> Float64
+
+Compute c_s^λ(j,k) using the formula from Kore (utils.py:920-940).
+This is used in the Gegenbauer multiplication recurrence relation.
+"""
+function csl0(s::Int, λ::Real, j::Int, k::Int)
+    if s > min(j, k)
+        return 0.0
+    end
+
+    # Compute product using logarithms to avoid overflow
+    p1 = 1.0
+    p2 = 1.0
+    p3 = (j + k + λ - 2s) / (j + k + λ - s)
+    p4 = 1.0
+
+    # Product from t=0 to λ-1
+    for t in 0:(Int(λ)-1)
+        p1 *= (k - s + λ - t) / (k - s + 1 + t)
+        p2 *= (λ + t) / (1 + t)
+    end
+
+    # Product from t=0 to s-1
+    for t in 0:(s-1)
+        p3 *= (j - t) / (1 + t)
+        p4 *= (k - s + 1 + t) / (k - s + λ + t)
+    end
+
+    return p1 * p2 * p3 * p4
+end
+
+"""
+    csl(svec, λ, j, k) -> Vector{Float64}
+
+Recursion for c_s^λ starting from c_svec[1]^λ(j,k).
+Following Kore utils.py:944-958.
+"""
+function csl(svec::AbstractVector{Int}, λ::Real, j::Int, k::Int)
+    out = zeros(length(svec))
+    out[1] = csl0(svec[1], λ, j, k)
+
+    k_running = k
+    for i in 2:length(svec)
+        s = svec[i-1]
+        tmp1 = (j + k_running + λ - s) * (λ + s) * (j - s) *
+               (2λ + j + k_running - s) * (k_running - s + λ)
+        tmp2 = (j + k_running + λ - s + 1) * (s + 1) * (λ + j - s - 1) *
+               (λ + j + k_running - s) * (k_running - s + 1)
+        out[i] = out[i-1] * tmp1 / tmp2
+        k_running += 2
+    end
+
+    return out
+end
+
+"""
+    multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
+                         vector_parity::Int=0) -> SparseMatrixCSC
+
+Construct the multiplication matrix M such that if u = Σ a_n C_n^(λ)(x)
+and we want to compute w = f(x) * u where f(x) = Σ b_k C_k^(λ)(x),
+then the coefficients of w in the C^(λ) basis are given by M * a.
+
+This implements Kore's Mlam function (utils.py:962-1059).
+
+Parameters:
+- a0: Chebyshev coefficients of the function to multiply by (in C^(λ) basis)
+- λ: Gegenbauer order
+- N: Size of the operator
+- vector_parity: 0 for inner core (no parity optimization),
+                 ±1 for no inner core (parity optimization)
+"""
+function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
+                              vector_parity::Int=0)
+    # Check if coefficients are non-zero
+    if sum(abs.(a0)) == 0
+        return sparse(zeros(N, N))
+    end
+
+    # Find bandwidth
+    nonzero_idx = findall(x -> x != 0, a0)
+    bw = maximum(nonzero_idx) - 1  # 0-indexed
+
+    # Extend coefficient vector
+    a1 = zeros(2 * N)
+    a1[1:N] = a0
+
+    # Determine row and column ranges based on parity
+    if vector_parity != 0
+        # Determine parities
+        last_nonzero = nonzero_idx[end] - 1  # 0-indexed
+        rpower_parity = 1 - 2 * (last_nonzero % 2)
+        lamb_parity = 1 - 2 * (Int(λ) % 2)
+        operator_parity = rpower_parity * lamb_parity
+        overall_parity = vector_parity * operator_parity
+
+        # Row parity: j even when overall_parity = 1
+        # Col parity: k even when vector_parity * lamb_parity = 1
+        idj = (1 - overall_parity) ÷ 2
+        idk = (1 - vector_parity * lamb_parity) ÷ 2
+        jrange = idj:2:N-1  # 0-indexed
+    else
+        jrange = 0:N-1  # 0-indexed
+        idk = 0
+    end
+
+    # Build multiplication matrix
+    if λ > 0
+        # Gegenbauer case: use recurrence relations
+        rows = Int[]
+        cols = Int[]
+        vals = Float64[]
+
+        for j in jrange
+            k1 = max(0, j - bw - 1)
+            k2 = min(N - 1, j + bw + 1)
+            ka = k1:k2
+
+            if vector_parity != 0
+                # Filter columns by parity
+                krange = [k for k in ka if k % 2 == idk]
+            else
+                krange = collect(ka)
+            end
+
+            for k in krange
+                s0 = max(0, k - j)
+                s = s0:k
+                idx = 2 .* s .+ j .- k .+ 1  # Convert to 1-indexed
+                a = a1[idx]
+
+                # Compute Gegenbauer coefficients
+                if s0 == 0
+                    cvec = csl(collect(s), λ, k, j - k)
+                elseif s0 == k - j
+                    cvec = csl(collect(s), λ, k, k - j)
+                else
+                    cvec = csl(collect(s), λ, k, abs(j - k))
+                end
+
+                val = dot(a, cvec)
+                if abs(val) > 1e-14
+                    push!(rows, j + 1)  # Convert to 1-indexed
+                    push!(cols, k + 1)
+                    push!(vals, val)
+                end
+            end
+        end
+
+        return sparse(rows, cols, vals, N, N)
+
+    else
+        # Chebyshev case (λ = 0): use Toeplitz + Hankel
+        # Following Kore utils.py lines 1036-1052
+        a2 = copy(a0)
+        a2[1] *= 2  # Double the first coefficient
+
+        # Build Toeplitz matrix: T[i,j] = a2[|i-j|]
+        # In 0-indexed: T[i,j] = a2[abs(i-j)]
+        T = zeros(N, N)
+        for i in 0:N-1
+            for j in 0:N-1
+                idx = abs(i - j) + 1  # Convert to 1-indexed
+                if idx <= N
+                    T[i+1, j+1] = a2[idx]
+                end
+            end
+        end
+
+        # Build Hankel matrix: H[i,j] = a2[i+j]
+        # In 0-indexed: H[i,j] = a2[i+j]
+        H = zeros(N, N)
+        for i in 0:N-1
+            for j in 0:N-1
+                idx = i + j + 1  # Convert to 1-indexed
+                if idx <= N
+                    H[i+1, j+1] = a2[idx]
+                end
+            end
+        end
+
+        # Set first row of Hankel to zero (Kore line 1040)
+        H[1, :] .= 0.0
+
+        # Combine: out = 0.5 * (Toeplitz + Hankel)
+        tmp = 0.5 * (T + H)
+
+        # Apply parity constraints
+        if vector_parity != 0
+            idj0 = (1 + overall_parity) ÷ 2
+            idk0 = (1 + vector_parity * lamb_parity) ÷ 2
+            for j in idj0:2:N-1
+                tmp[j+1, :] .= 0.0
+            end
+            for k in idk0:2:N-1
+                tmp[:, k+1] .= 0.0
+            end
+        end
+
+        return sparse(tmp)
+    end
+end
+
+# -----------------------------------------------------------------------------
 # Sparse radial operators
 # -----------------------------------------------------------------------------
 
@@ -203,22 +462,28 @@ function sparse_radial_operator(power::Int, deriv_order::Int, N::Int,
         D = sparse(S_inv \ Matrix(D))
     end
 
-    # Apply r^power multiplication
+    # Apply r^power multiplication using SPECTRAL multiplication (not physical!)
     if power != 0
-        # r(x) = ((ro-ri)*x + (ro+ri))/2
-        # Multiplication by r^k in physical space corresponds to
-        # a multiplication operator in spectral space
-        # For now, use a simplified diagonal operator
-        # TODO: Implement proper spectral multiplication using Clenshaw
+        # Step 1: Get Chebyshev coefficients of r^power
+        # Need N+1 coefficients to match matrix size
+        r_coeffs = chebyshev_coefficients(power, N+1, ri, ro)
 
-        # Convert to dense for r-multiplication, then back to sparse
-        x = chebyshev_grid(N)
-        r_vals = @. ((ro - ri) * x + (ro + ri)) / 2.0
-        R = spdiagm(0 => r_vals .^ power)
+        # Step 2: Convert r^power coefficients to current Gegenbauer basis C^(λ)
+        # If λ = 0, r_coeffs are already in the right basis
+        # If λ > 0, we need to convert through the ultraspherical chain
+        r_coeffs_lambda = r_coeffs
+        for lam in 0:(Int(λ)-1)
+            S = ultraspherical_conversion(lam, N)
+            r_coeffs_lambda = S * r_coeffs_lambda
+        end
 
-        # Keep sparse structure
-        D_dense = Matrix(D)
-        D = sparse(R * D_dense)
+        # Step 3: Build multiplication matrix in C^(λ) basis
+        # vector_parity = 0 for inner core case (ricb > 0)
+        # This is the proper spectral multiplication operator
+        M = multiplication_matrix(r_coeffs_lambda, λ, N+1; vector_parity=0)
+
+        # Step 4: Apply multiplication: D_new = M * D
+        D = M * D
     end
 
     return D

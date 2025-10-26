@@ -18,6 +18,50 @@ Must be included after MHDOperator.jl
 # All functions are in the MHDOperator module scope
 
 # -----------------------------------------------------------------------------
+# Bessel Function Utilities for Conducting Inner Core BCs
+# -----------------------------------------------------------------------------
+
+"""
+    spherical_bessel_j_logderiv(l, x)
+
+Compute the logarithmic derivative of the spherical Bessel function of the first kind:
+    d/dx[log(j_l(x))] = j'_l(x) / j_l(x)
+
+Uses the recurrence relation: j'_l(x) = l/x * j_l(x) - j_{l+1}(x)
+Therefore: j'_l(x) / j_l(x) = l/x - j_{l+1}(x) / j_l(x)
+
+This is numerically stable for complex arguments, which is needed for
+conducting inner core boundary conditions with Bessel wavenumber k = (1-i)√(ω/(2Em)).
+
+Following Kore's utils.py dlogjl function (lines 487-526).
+"""
+function spherical_bessel_j_logderiv(l::Int, x::Complex{T}) where {T<:Real}
+    using SpecialFunctions
+
+    # For very small |x|, use series expansion: j_l(x) ≈ x^l / (2l+1)!!
+    # so d/dx[log(j_l)] ≈ l/x
+    if abs(x) < 1e-10
+        return complex(T(l)) / x
+    end
+
+    # Use recurrence relation: d/dx[log(j_l)] = l/x - j_{l+1}/j_l
+    jl = sphericalbesselj(l, x)
+    jl_plus_1 = sphericalbesselj(l + 1, x)
+
+    # Check for numerical issues
+    if abs(jl) < 1e-30
+        # If j_l is very small, fall back to asymptotic form
+        return complex(T(l)) / x
+    end
+
+    return T(l) / x - jl_plus_1 / jl
+end
+
+# Overload for real arguments (though we primarily use complex)
+spherical_bessel_j_logderiv(l::Int, x::T) where {T<:Real} =
+    spherical_bessel_j_logderiv(l, complex(x))
+
+# -----------------------------------------------------------------------------
 # Lorentz Force Operators (magnetic field → velocity)
 # -----------------------------------------------------------------------------
 
@@ -254,14 +298,22 @@ Apply boundary conditions to magnetic field sections.
 
 Following Kore's implementation (kore-main/bin/assemble.py:1472-1786):
 
+Boundary condition options (controlled by bci_magnetic/bco_magnetic):
+- 0 = insulating
+- 1 = conducting (finite conductivity, uses Bessel functions)
+- 2 = perfect conductor
+
 For POLOIDAL field (section f):
 - Insulating CMB: (l+1)·f(ro) + ro·f'(ro) = 0
 - Insulating ICB: l·f(ri) - ri·f'(ri) = 0
-- Conducting: f = 0 (no penetration)
+- Conducting ICB: f - k·dlogjl(l, k·ri)·f' = 0, where k = (1-i)√(ω/(2Em))
+- Perfect conductor ICB: f = 0 and Em·(-f'' - 2/ri·f' + L/ri²·f) = 0 (2 rows)
+- Conducting/Perfect CMB: f = 0 (no penetration)
 
 For TOROIDAL field (section g):
 - Insulating: g = 0 (no toroidal field outside)
 - Conducting: g = 0 (different physics, same condition)
+- Perfect conductor ICB: Em·(-g' - 1/ri·g) = 0
 """
 function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                                             B::SparseMatrixCSC,
@@ -354,8 +406,65 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                     A[row_icb, col] -= ri * D1[N+1, n+1]  # Last row = inner boundary
                 end
 
+            elseif params.bci_magnetic == 1
+                # Conducting ICB (finite conductivity): f - k·dlogjl(l, k·ri)·f' = 0
+                # where k = (1-i)√(forcing_frequency/(2Em))
+                # Following Kore: kore-main/bin/assemble.py:1575-1612
+                # NOTE: This creates a nonlinear eigenvalue problem when frequency = eigenvalue σ
+                # For now, requires forcing_frequency parameter to be set
+
+                error("Conducting ICB with finite conductivity not yet fully implemented. " *
+                      "Use bci_magnetic=0 (insulating) or bci_magnetic=2 (perfect conductor)")
+
+            elseif params.bci_magnetic == 2
+                # Perfect conductor ICB: 2-row boundary condition
+                # Row 1: f = 0
+                # Row 2: Em·(-f'' - 2/ri·f' + L/ri²·f) = 0
+                # Following Kore: kore-main/bin/assemble.py:1614-1630
+
+                L = l * (l + 1)
+
+                # Row 1: f(ri) = 0
+                A[row_icb, :] .= 0.0
+                B[row_icb, :] .= 0.0
+                for n in 0:N
+                    col = row_base + n + 1
+                    Tn_at_minus1 = (-1.0)^n  # T_n(-1) = (-1)^n
+                    A[row_icb, col] = Tn_at_minus1
+                end
+
+                # Row 2: Em·(-f'' - (2/ri)·f' + (L/ri²)·f) = 0
+                # We need to use the row BEFORE row_icb (row_icb-1) for the second BC
+                # This replaces the last interior point
+                row_icb2 = row_icb - 1
+
+                # Zero out row
+                A[row_icb2, :] .= 0.0
+                B[row_icb2, :] .= 0.0
+
+                # Get derivative operators
+                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
+                D2 = UltrasphericalSpectral.sparse_radial_operator(0, 2, N, ri, ro)
+
+                # Em·(-f'' - (2/ri)·f' + (L/ri²)·f) at ICB
+                for n in 0:N
+                    col = row_base + n + 1
+                    Tn_at_minus1 = (-1.0)^n
+
+                    # Value term: (L/ri²)·f
+                    value_term = (L / ri^2) * Tn_at_minus1
+
+                    # First derivative term: -(2/ri)·f'
+                    deriv1_term = -(2.0 / ri) * D1[N+1, n+1]
+
+                    # Second derivative term: -f''
+                    deriv2_term = -D2[N+1, n+1]
+
+                    A[row_icb2, col] = params.Em * (value_term + deriv1_term + deriv2_term)
+                end
+
             else
-                # Perfectly conducting: f = 0 (no penetration)
+                # Simple conducting: f = 0 (no penetration)
                 A[row_icb, :] .= 0.0
                 B[row_icb, :] .= 0.0
                 for n in 0:N
@@ -370,7 +479,9 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
             # Offset to g section: after u, v, f sections
             row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
 
-            # Outer boundary: g = 0 (for both insulating and conducting)
+            # ----------------------------------------------------------------
+            # Outer boundary (CMB): g = 0 (for all BC types)
+            # ----------------------------------------------------------------
             # Following Kore: kore-main/bin/assemble.py:1511-1522
             row_cmb = row_base + 1
             A[row_cmb, :] .= 0.0
@@ -380,13 +491,53 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 A[row_cmb, col] = 1.0  # T_n(1) = 1
             end
 
-            # Inner boundary: g = 0 (for both insulating and conducting)
+            # ----------------------------------------------------------------
+            # Inner boundary (ICB)
+            # ----------------------------------------------------------------
             row_icb = row_base + n_per_mode
-            A[row_icb, :] .= 0.0
-            B[row_icb, :] .= 0.0
-            for n in 0:N
-                col = row_base + n + 1
-                A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
+
+            if params.bci_magnetic == 0 || params.bci_magnetic == 1
+                # Insulating or conducting: g = 0
+                A[row_icb, :] .= 0.0
+                B[row_icb, :] .= 0.0
+                for n in 0:N
+                    col = row_base + n + 1
+                    A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
+                end
+
+            elseif params.bci_magnetic == 2
+                # Perfect conductor: Em·(-g' - 1/ri·g) = 0
+                # Following Kore: kore-main/bin/assemble.py:1631-1641
+
+                # Zero out row
+                A[row_icb, :] .= 0.0
+                B[row_icb, :] .= 0.0
+
+                # Get first derivative operator
+                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
+
+                # Em·(-g' - (1/ri)·g) at ICB
+                for n in 0:N
+                    col = row_base + n + 1
+                    Tn_at_minus1 = (-1.0)^n
+
+                    # Value term: -(1/ri)·g
+                    value_term = -(1.0 / ri) * Tn_at_minus1
+
+                    # First derivative term: -g'
+                    deriv1_term = -D1[N+1, n+1]
+
+                    A[row_icb, col] = params.Em * (value_term + deriv1_term)
+                end
+
+            else
+                # Default: g = 0
+                A[row_icb, :] .= 0.0
+                B[row_icb, :] .= 0.0
+                for n in 0:N
+                    col = row_base + n + 1
+                    A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
+                end
             end
         end
     end

@@ -1,6 +1,9 @@
 site_name: Cross.jl Documentation
 site_description: "Spectral stability analysis tools for rotating convection and dynamos."
-site_url: ""
+site_url: "https://subhk.github.io/Cross.jl"
+
+repo_url: https://github.com/subhk/Cross.jl
+repo_name: subhk/Cross.jl
 
 theme:
   name: material

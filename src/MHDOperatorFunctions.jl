@@ -252,9 +252,16 @@ end
 
 Apply boundary conditions to magnetic field sections.
 
-Options:
-- Insulating: B_r continuous, B_θ = 0 (potential field in exterior)
-- Perfectly conducting: B_r = 0 (no penetration)
+Following Kore's implementation (kore-main/bin/assemble.py:1472-1786):
+
+For POLOIDAL field (section f):
+- Insulating CMB: (l+1)·f(ro) + ro·f'(ro) = 0
+- Insulating ICB: l·f(ri) - ri·f'(ri) = 0
+- Conducting: f = 0 (no penetration)
+
+For TOROIDAL field (section g):
+- Insulating: g = 0 (no toroidal field outside)
+- Conducting: g = 0 (different physics, same condition)
 """
 function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                                             B::SparseMatrixCSC,
@@ -263,6 +270,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
     params = op.params
     N = params.N
     n_per_mode = N + 1
+    ri = params.ricb
+    ro = one(T)  # Outer radius normalized to 1
 
     nb_u = length(op.ll_u)
     nb_v = length(op.ll_v)
@@ -274,28 +283,85 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
             # Offset to f section: after u and v sections
             row_base = (nb_u + nb_v + k - 1) * n_per_mode
 
-            # Outer boundary
+            # ----------------------------------------------------------------
+            # Outer boundary (CMB, r = ro = 1)
+            # ----------------------------------------------------------------
+            row_cmb = row_base + 1
+
             if params.bco_magnetic == 0
-                # Insulating: f and df/dr matched to potential field
-                # Simplified: f = 0 at boundary
-                apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
-                                          params.ricb, one(T))
+                # Insulating CMB: (l+1)·f(ro) + ro·f'(ro) = 0
+                # Following Kore: kore-main/bin/assemble.py:1494-1509
+
+                # Zero out row
+                A[row_cmb, :] .= 0.0
+                B[row_cmb, :] .= 0.0
+
+                # Build constraint: (l+1)·f + ro·f'
+                # f evaluated at boundary (Chebyshev at x=1)
+                for n in 0:N
+                    col = row_base + n + 1
+                    Tn_at_1 = 1.0  # T_n(1) = 1 for all n
+                    A[row_cmb, col] = (l + 1) * Tn_at_1
+                end
+
+                # f' at boundary: use derivative operator
+                # Get first derivative operator (from UltrasphericalSpectral module)
+                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
+
+                # Add ro·f' term (ro = 1)
+                for n in 0:N
+                    col = row_base + n + 1
+                    A[row_cmb, col] += ro * D1[1, n+1]  # First row = outer boundary
+                end
+
             else
-                # Conducting: perfect conductor B_r = 0
-                apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
-                                          params.ricb, one(T))
+                # Perfectly conducting: f = 0 (no penetration)
+                A[row_cmb, :] .= 0.0
+                B[row_cmb, :] .= 0.0
+                for n in 0:N
+                    col = row_base + n + 1
+                    A[row_cmb, col] = 1.0  # T_n(1) = 1
+                end
             end
 
-            # Inner boundary
+            # ----------------------------------------------------------------
+            # Inner boundary (ICB, r = ri)
+            # ----------------------------------------------------------------
+            row_icb = row_base + n_per_mode
+
             if params.bci_magnetic == 0
-                # Insulating ICB
-                apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
-                                          params.ricb, one(T))
+                # Insulating ICB: l·f(ri) - ri·f'(ri) = 0
+                # Following Kore: kore-main/bin/assemble.py:1548-1572
+
+                # Zero out row
+                A[row_icb, :] .= 0.0
+                B[row_icb, :] .= 0.0
+
+                # Build constraint: l·f - ri·f'
+                # f evaluated at ICB (Chebyshev at x=-1)
+                for n in 0:N
+                    col = row_base + n + 1
+                    Tn_at_minus1 = (-1.0)^n  # T_n(-1) = (-1)^n
+                    A[row_icb, col] = l * Tn_at_minus1
+                end
+
+                # f' at boundary: use derivative operator (from UltrasphericalSpectral module)
+                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
+
+                # Subtract ri·f' term (note the MINUS sign, different from CMB!)
+                for n in 0:N
+                    col = row_base + n + 1
+                    A[row_icb, col] -= ri * D1[N+1, n+1]  # Last row = inner boundary
+                end
+
             else
-                # Conducting inner core
-                # More complex matching condition
-                apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
-                                          params.ricb, one(T))
+                # Perfectly conducting: f = 0 (no penetration)
+                A[row_icb, :] .= 0.0
+                B[row_icb, :] .= 0.0
+                for n in 0:N
+                    col = row_base + n + 1
+                    A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
+                end
             end
         end
 
@@ -304,26 +370,23 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
             # Offset to g section: after u, v, f sections
             row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
 
-            # Outer boundary
-            if params.bco_magnetic == 0
-                # Insulating: g = 0 (no toroidal field outside)
-                apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
-                                          params.ricb, one(T))
-            else
-                # Conducting: g continuous
-                apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
-                                          params.ricb, one(T))
+            # Outer boundary: g = 0 (for both insulating and conducting)
+            # Following Kore: kore-main/bin/assemble.py:1511-1522
+            row_cmb = row_base + 1
+            A[row_cmb, :] .= 0.0
+            B[row_cmb, :] .= 0.0
+            for n in 0:N
+                col = row_base + n + 1
+                A[row_cmb, col] = 1.0  # T_n(1) = 1
             end
 
-            # Inner boundary
-            if params.bci_magnetic == 0
-                # Insulating: g = 0
-                apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
-                                          params.ricb, one(T))
-            else
-                # Conducting: g continuous with inner core field
-                apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
-                                          params.ricb, one(T))
+            # Inner boundary: g = 0 (for both insulating and conducting)
+            row_icb = row_base + n_per_mode
+            A[row_icb, :] .= 0.0
+            B[row_icb, :] .= 0.0
+            for n in 0:N
+                col = row_base + n + 1
+                A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
             end
         end
     end

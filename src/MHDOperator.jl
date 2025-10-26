@@ -56,43 +56,159 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    MHDParams
+    MHDParams{T<:Real}
 
-Parameters for MHD dynamo simulations in rotating spherical shells.
+Parameters for magnetohydrodynamic (MHD) dynamo simulations in rotating spherical shells.
 
-# Physical Parameters
-- `E::Float64`: Ekman number ν/(ΩL²)
-- `Pr::Float64`: Prandtl number ν/κ
-- `Pm::Float64`: Magnetic Prandtl number ν/η
-- `Ra::Float64`: Rayleigh number
-- `Le::Float64`: Lehnert number B₀/(√(μρ)ΩL) (for background field)
+This structure contains all physical, geometric, and numerical parameters needed for
+MHD linear stability analysis or dynamo onset calculations.
+
+# Physical Parameters (Dimensionless)
+
+- `E::T`: **Ekman number** = ν/(ΩL²)
+  - Ratio of viscous to Coriolis forces
+  - Typical values: 10⁻³ (lab) to 10⁻¹⁵ (Earth's core)
+
+- `Pr::T`: **Prandtl number** = ν/κ
+  - Ratio of momentum to thermal diffusivity
+  - Typical values: 0.1-10 for liquid metals, ~1 for Earth's core
+
+- `Pm::T`: **Magnetic Prandtl number** = ν/η
+  - Ratio of momentum to magnetic diffusivity
+  - Earth's core: Pm ~ 10⁻⁶, Lab experiments: Pm ~ 10⁻⁵
+
+- `Ra::T`: **Rayleigh number** = αgΔTL³/(νκ)
+  - Measure of buoyancy forcing strength
+  - Critical value Raᶜ determines onset of convection
+
+- `Le::T`: **Lehnert number** = B₀/(√(μρ)ΩL)
+  - Measure of background magnetic field strength
+  - Le = 0: Pure hydrodynamic case
+  - Typical values: 10⁻⁴ to 10⁻² for planetary dynamos
 
 # Geometry
-- `ricb::Float64`: Inner core radius (0 < ricb < 1)
-- `m::Int`: Azimuthal wavenumber
-- `lmax::Int`: Maximum spherical harmonic degree
-- `symm::Int`: Equatorial symmetry (1=symmetric, -1=antisymmetric)
-- `N::Int`: Number of radial collocation points
 
-# Background Field
-- `B0_type::BackgroundField`: Type of imposed background field
-- `B0_amplitude::Float64`: Amplitude of background field
+- `ricb::T`: **Inner core radius** (normalized, outer radius = 1)
+  - Must satisfy 0 < ricb < 1
+  - Earth's core: χ ≈ 0.35
+  - ricb = 0: Full sphere (no inner core)
+
+- `m::Int`: **Azimuthal wavenumber**
+  - Fourier mode number in longitude (φ-direction)
+  - m = 0: Axisymmetric
+  - Typical range: m = 0 to ~10 for onset studies
+
+- `lmax::Int`: **Maximum spherical harmonic degree**
+  - Controls spectral truncation in θ-direction
+  - Must satisfy lmax ≥ m
+  - Typical values: 10-50 (onset), 100+ (turbulence)
+
+- `symm::Int`: **Equatorial symmetry**
+  - symm = +1: Equatorially symmetric modes
+  - symm = -1: Equatorially antisymmetric modes
+  - Affects mode parity selection
+
+- `N::Int`: **Number of radial collocation points**
+  - Must be even and ≥ 4
+  - Determines radial resolution
+  - Typical values: 24-64 for onset, 128+ for turbulence
+
+# Background Magnetic Field
+
+- `B0_type::BackgroundField`: Type of imposed field
+  - `no_field`: Pure hydrodynamic (kinematic dynamo)
+  - `axial`: Uniform B₀ = B₀ẑ (simplest MHD case)
+  - `dipole`: Dipolar field (requires ricb > 0)
+
+- `B0_amplitude::T`: Dimensionless field strength
+  - Scales the background field
+  - Related to Lehnert number: Le ~ B0_amplitude
 
 # Boundary Conditions
-- `bci::Int`: Inner mechanical BC (0=stress-free, 1=no-slip)
-- `bco::Int`: Outer mechanical BC (0=stress-free, 1=no-slip)
-- `bci_thermal::Int`: Inner thermal BC (0=fixed temp, 1=fixed flux)
-- `bco_thermal::Int`: Outer thermal BC (0=fixed temp, 1=fixed flux)
-- `bci_magnetic::Int`: Inner magnetic BC (0=insulating, 1=conducting)
-- `bco_magnetic::Int`: Outer magnetic BC (0=insulating, 1=conducting)
 
-# Heating
-- `heating::Symbol`: Heating mode (:internal or :differential)
+## Mechanical (Velocity)
+- `bci::Int`: Inner core mechanical BC
+  - 0 = **stress-free**: u = 0, ∂²u/∂r² = 0 (poloidal); ∂v/∂r = 0 (toroidal)
+  - 1 = **no-slip**: u = 0, ∂u/∂r = 0 (poloidal); v = 0 (toroidal)
 
-# Derived quantities
-- `L::Float64`: Shell thickness L = 1 - ricb
-- `Etherm::Float64`: Thermal Ekman number E/Pr
-- `Em::Float64`: Magnetic Ekman number E/Pm = η/(ΩL²)
+- `bco::Int`: Outer boundary (CMB) mechanical BC
+  - Same options as bci
+  - Most common: no-slip at both boundaries (bci=bco=1)
+
+## Thermal
+- `bci_thermal::Int`: Inner core thermal BC
+  - 0 = **fixed temperature**: T = 0
+  - 1 = **fixed flux**: ∂T/∂r = 0
+
+- `bco_thermal::Int`: Outer boundary (CMB) thermal BC
+  - Same options as bci_thermal
+  - Common choice: fixed temperature at both (bci_thermal=bco_thermal=0)
+
+## Magnetic
+- `bci_magnetic::Int`: Inner core magnetic BC
+  - 0 = **insulating**: B·n̂ continuous, no currents
+  - 1 = **conducting** (finite conductivity): uses Bessel functions
+  - 2 = **perfect conductor**: tangential E = 0
+
+- `bco_magnetic::Int`: Outer boundary (CMB) magnetic BC
+  - 0 = **insulating**: Most common (electrically insulating mantle)
+  - 1,2 = conducting/perfect (rarely used at CMB)
+
+# Heating Mode
+
+- `heating::Symbol`: Thermal forcing configuration
+  - `:differential`: Bottom heated, top cooled (classical Rayleigh-Bénard)
+  - `:internal`: Volumetric heat sources (radioactive heating)
+
+# Derived Quantities (Automatically Computed)
+
+- `L::T`: **Shell thickness** = 1 - ricb
+- `Etherm::T`: **Thermal Ekman number** = E/Pr = κ/(ΩL²)
+- `Em::T`: **Magnetic Ekman number** = E/Pm = η/(ΩL²)
+
+# Examples
+
+```julia
+# Basic hydrodynamic onset (Christensen & Wicht 2015, Table 1)
+params_hydro = MHDParams(
+    E=4.734e-5, Pr=1.0, Pm=1.0, Ra=1.6e6, Le=0.0,
+    ricb=0.35, m=9, lmax=20, N=24,
+    bci=1, bco=1,  # no-slip boundaries
+    bci_thermal=0, bco_thermal=0,  # fixed temperature
+    bci_magnetic=0, bco_magnetic=0  # insulating (irrelevant for Le=0)
+)
+
+# MHD dynamo with axial background field
+params_mhd = MHDParams(
+    E=1e-3, Pr=1.0, Pm=5.0, Ra=1e5, Le=1e-3,
+    ricb=0.35, m=2, lmax=15, N=32,
+    B0_type=axial,
+    bci=1, bco=1,
+    bci_thermal=0, bco_thermal=0,
+    bci_magnetic=0, bco_magnetic=0  # insulating boundaries
+)
+
+# Perfect conductor inner core
+params_conductor = MHDParams(
+    E=1e-3, Pr=1.0, Pm=5.0, Ra=1e5, Le=1e-3,
+    ricb=0.35, m=2, lmax=15, N=32,
+    B0_type=axial,
+    bci=1, bco=1,
+    bci_thermal=0, bco_thermal=0,
+    bci_magnetic=2, bco_magnetic=0  # perfect conductor ICB
+)
+```
+
+# References
+
+- Christensen & Wicht (2015), "Numerical Dynamo Simulations", Treatise on Geophysics
+- Jones (2011), "Planetary Magnetic Fields and Fluid Dynamos", Ann. Rev. Fluid Mech.
+- Kore implementation: Rekier et al. (2019)
+
+# See Also
+
+- [`MHDStabilityOperator`](@ref): Build operators from these parameters
+- [`assemble_mhd_matrices`](@ref): Assemble eigenvalue problem matrices
 """
 struct MHDParams{T<:Real}
     # Physical parameters

@@ -285,12 +285,19 @@ end
 """
     operator_u(op, l)
 
-Velocity operator: L(-L*r²D⁰ + 2r³D¹ + r⁴D²) for diagonal term.
-Implements op.u(l, 'u', 'upol', 0).
+Poloidal velocity time derivative operator for the B matrix.
+Returns L(L*r²D⁰ - 2r³D¹ - r⁴D²) where L = l(l+1).
+Implements op.u(l, 'u', 'upol', 0) from Kore.
+
+This represents r⁴·r̂·∇×∇×u (the 2curl operator weighted by r⁴).
+Note: Signs are opposite to the Coriolis operator.
 """
 function operator_u(op::SparseStabilityOperator{T}, l::Int) where {T}
+    # From Kore line 35: out = L*( L*r2_D0_u - 2*r3_D1_u - r4_D2_u )
+    # Note: Signs are OPPOSITE to Coriolis operator (line 63)
+    # This represents r⁴·r̂·∇×∇×u (2curl of u, weighted by r⁴)
     L = l * (l + 1)
-    return L * (-L * op.r2_D0_u + 2 * op.r3_D1_u + op.r4_D2_u)
+    return L * (L * op.r2_D0_u - 2 * op.r3_D1_u - op.r4_D2_u)
 end
 
 """
@@ -424,13 +431,19 @@ end
 """
     operator_u_toroidal(op, l)
 
-Toroidal velocity operator (essentially identity for the mass matrix).
-For the 1curl (toroidal) equation, this is just r⁰D⁰ = I.
-Implements op.u(l, 'v', 'utor', 0) structure.
+Toroidal velocity time derivative operator for the B matrix.
+Returns L * r²D⁰_v where L = l(l+1).
+Implements op.u(l, 'v', 'utor', 0) from Kore.
+
+The toroidal equation is weighted by r² (1curl equation), so all terms
+including the time derivative must use r² weighting to maintain consistency.
 """
 function operator_u_toroidal(op::SparseStabilityOperator{T}, l::Int) where {T}
-    # For toroidal velocity, the time derivative term is just the identity
-    return op.r0_D0_v
+    # For toroidal velocity time derivative operator
+    # From Kore line 42: out = L*r2_D0_v  (section='v', component='utor', offdiag=0)
+    # Comment: "r2* r.1curl(u)" - equation weighted by r²
+    L = l * (l + 1)
+    return L * op.r2_D0_v
 end
 
 """

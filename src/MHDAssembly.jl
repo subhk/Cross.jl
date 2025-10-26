@@ -19,7 +19,111 @@ Module for MHD matrix assembly.
 Must be included after MHDOperator.jl and MHDOperatorFunctions.jl
 """
 
-# This file is meant to be included in MHDOperator.jl
+# This file is meant to be included in CompleteMHD.jl
+
+# Import operator functions from SparseOperator so we can extend them
+import .SparseOperator: operator_u, operator_coriolis_diagonal, operator_coriolis_offdiag,
+                        operator_viscous_diffusion, operator_buoyancy, operator_coriolis_v_to_u,
+                        operator_u_toroidal, operator_coriolis_toroidal, operator_viscous_toroidal,
+                        operator_theta, operator_thermal_diffusion, operator_thermal_advection
+
+# -----------------------------------------------------------------------------
+# Inline operator construction for MHDStabilityOperator
+# These extend the functions from SparseOperator.jl to work with MHDStabilityOperator
+# -----------------------------------------------------------------------------
+
+function operator_u(op::MHDStabilityOperator{T}, l::Int) where {T}
+    L = l * (l + 1)
+    return L * (L * op.r2_D0_u - 2 * op.r3_D1_u - op.r4_D2_u)
+end
+
+function operator_coriolis_diagonal(op::MHDStabilityOperator{T}, l::Int, m::Int) where {T}
+    L = l * (l + 1)
+    return 2im * m * (-L * op.r2_D0_u + 2 * op.r3_D1_u + op.r4_D2_u)
+end
+
+function operator_coriolis_offdiag(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
+    if offset == -1
+        C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
+        mtx = 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
+        return mtx, -1
+    elseif offset == 1
+        C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
+        mtx = 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
+        return mtx, 1
+    else
+        error("offset must be ±1 for Coriolis off-diagonal")
+    end
+end
+
+function operator_viscous_diffusion(op::MHDStabilityOperator{T}, l::Int, E::T) where {T}
+    L = l * (l + 1)
+    return E * L * (-L * (l + 2) * (l - 1) * op.r0_D0_u +
+                    2 * L * op.r2_D2_u -
+                    4 * op.r3_D3_u -
+                    op.r4_D4_u)
+end
+
+function operator_buoyancy(op::MHDStabilityOperator{T}, l::Int, Ra::T, Pr::T) where {T}
+    E = op.params.E
+    beyonce = -Ra * E^2 / Pr
+    L = l * (l + 1)
+    return beyonce * L * op.r4_D0_u
+end
+
+function operator_coriolis_v_to_u(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
+    if offset == -1
+        C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
+        mtx = 2im * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
+        return mtx
+    elseif offset == 1
+        C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
+        mtx = 2im * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
+        return mtx
+    else
+        error("offset must be ±1")
+    end
+end
+
+function operator_u_toroidal(op::MHDStabilityOperator{T}, l::Int) where {T}
+    L = l * (l + 1)
+    return L * op.r2_D0_v
+end
+
+function operator_coriolis_toroidal(op::MHDStabilityOperator{T}, l::Int, m::Int) where {T}
+    return -2im * m * op.r2_D0_v
+end
+
+function operator_viscous_toroidal(op::MHDStabilityOperator{T}, l::Int, E::T) where {T}
+    L = l * (l + 1)
+    return E * L * (-L * op.r0_D0_v + 2 * op.r1_D1_v + op.r2_D2_v)
+end
+
+function operator_theta(op::MHDStabilityOperator{T}, l::Int) where {T}
+    if op.params.heating == :differential
+        return op.r3_D0_h
+    else  # :internal
+        return op.r2_D0_h
+    end
+end
+
+function operator_thermal_diffusion(op::MHDStabilityOperator{T}, l::Int, Etherm::T) where {T}
+    L = l * (l + 1)
+    if op.params.heating == :differential
+        return Etherm * (-L * op.r1_D0_h + 2 * op.r2_D1_h + op.r3_D2_h)
+    else  # :internal
+        return Etherm * L * (-op.r0_D0_h + 2 * op.r1_D1_h + op.r2_D2_h)
+    end
+end
+
+function operator_thermal_advection(op::MHDStabilityOperator{T}, l::Int) where {T}
+    L = l * (l + 1)
+    if op.params.heating == :differential
+        return L * (op.r3_D0_h - 3 * op.r2_D0_h)
+    else  # :internal
+        return L * (op.r2_D0_h - op.r3_D0_h)
+    end
+end
 
 """
     assemble_mhd_matrices(op::MHDStabilityOperator)
@@ -73,12 +177,13 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     println("  Sections: u($nb_u modes), v($nb_v modes), f($nb_f modes), g($nb_g modes), h($nb_h modes)")
 
     # Use COO format for efficient assembly
+    # Use ComplexF64 because Coriolis operator has imaginary terms
     A_rows = Int[]
     A_cols = Int[]
-    A_vals = Float64[]
+    A_vals = ComplexF64[]
     B_rows = Int[]
     B_cols = Int[]
-    B_vals = Float64[]
+    B_vals = ComplexF64[]
 
     # Helper function to add block to sparse matrix
     function add_block!(rows, cols, vals, block, row_offset, col_offset)
@@ -371,11 +476,50 @@ end
 # -----------------------------------------------------------------------------
 
 function apply_velocity_boundary_conditions!(A, B, op)
-    # Same as hydrodynamic case - reuse from SparseOperator
-    # (implementation omitted for brevity - copy from SparseOperator.jl)
+    # Apply boundary conditions to velocity fields (poloidal and toroidal)
+    # For now, use simple zero boundary conditions
+    # TODO: Implement proper velocity BCs following Kore
+    N = op.params.N
+    n_per_mode = N + 1
+
+    # For each poloidal velocity mode
+    for (k, l) in enumerate(op.ll_u)
+        row_base = (k - 1) * n_per_mode
+        # First row (r=ricb) and last row (r=1)
+        for boundary_row in [row_base + 1, row_base + N + 1]
+            A[boundary_row, :] .= 0.0
+            B[boundary_row, :] .= 0.0
+            B[boundary_row, boundary_row] = 1.0
+        end
+    end
+
+    # For each toroidal velocity mode
+    nb_u = length(op.ll_u)
+    for (k, l) in enumerate(op.ll_v)
+        row_base = (nb_u + k - 1) * n_per_mode
+        for boundary_row in [row_base + 1, row_base + N + 1]
+            A[boundary_row, :] .= 0.0
+            B[boundary_row, :] .= 0.0
+            B[boundary_row, boundary_row] = 1.0
+        end
+    end
 end
 
 function apply_temperature_boundary_conditions!(A, B, op)
-    # Same as hydrodynamic case - reuse from SparseOperator
-    # (implementation omitted for brevity - copy from SparseOperator.jl)
+    # Apply boundary conditions to temperature field
+    N = op.params.N
+    n_per_mode = N + 1
+    nb_u = length(op.ll_u)
+    nb_v = length(op.ll_v)
+    nb_f = length(op.ll_f)
+    nb_g = length(op.ll_g)
+
+    for (k, l) in enumerate(op.ll_h)
+        row_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
+        for boundary_row in [row_base + 1, row_base + N + 1]
+            A[boundary_row, :] .= 0.0
+            B[boundary_row, :] .= 0.0
+            B[boundary_row, boundary_row] = 1.0
+        end
+    end
 end

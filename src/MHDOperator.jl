@@ -29,7 +29,8 @@ using .UltrasphericalSpectral
 export MHDParams,
        MHDStabilityOperator,
        assemble_mhd_matrices,
-       BackgroundField
+       BackgroundField,
+       no_field, axial, dipole
 
 # -----------------------------------------------------------------------------
 # Background magnetic field types
@@ -151,20 +152,30 @@ struct MHDParams{T<:Real}
 end
 
 # Constructor with keyword arguments
-function MHDParams(; E::T, Pr::T=one(T), Pm::T=one(T), Ra::T, ricb::T,
-                   Le::T=zero(T),
+function MHDParams(; E, Pr=1.0, Pm=1.0, Ra, ricb,
+                   Le=0.0,
                    m::Int, lmax::Int, symm::Int=1, N::Int,
                    B0_type::BackgroundField=no_field,
-                   B0_amplitude::T=zero(T),
+                   B0_amplitude=0.0,
                    bci::Int=1, bco::Int=1,
                    bci_thermal::Int=0, bco_thermal::Int=0,
                    bci_magnetic::Int=0, bco_magnetic::Int=0,
-                   heating::Symbol=:differential) where {T<:Real}
-    L = one(T) - ricb
-    Etherm = E / Pr
-    Em = E / Pm
-    return MHDParams{T}(E, Pr, Pm, Ra, Le, ricb, m, lmax, symm, N,
-                       B0_type, B0_amplitude,
+                   heating::Symbol=:differential)
+    # Promote all numeric parameters to common type
+    T = promote_type(typeof(E), typeof(Pr), typeof(Pm), typeof(Ra), typeof(ricb), typeof(Le), typeof(B0_amplitude))
+    E_T = T(E)
+    Pr_T = T(Pr)
+    Pm_T = T(Pm)
+    Ra_T = T(Ra)
+    ricb_T = T(ricb)
+    Le_T = T(Le)
+    B0_amplitude_T = T(B0_amplitude)
+
+    L = one(T) - ricb_T
+    Etherm = E_T / Pr_T
+    Em = E_T / Pm_T
+    return MHDParams{T}(E_T, Pr_T, Pm_T, Ra_T, Le_T, ricb_T, m, lmax, symm, N,
+                       B0_type, B0_amplitude_T,
                        bci, bco, bci_thermal, bco_thermal,
                        bci_magnetic, bco_magnetic,
                        heating, L, Etherm, Em)

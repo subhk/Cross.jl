@@ -477,49 +477,114 @@ end
 
 function apply_velocity_boundary_conditions!(A, B, op)
     # Apply boundary conditions to velocity fields (poloidal and toroidal)
-    # For now, use simple zero boundary conditions
-    # TODO: Implement proper velocity BCs following Kore
-    N = op.params.N
+    # Following the correct implementation from SparseOperator.jl
+    params = op.params
+    N = params.N
     n_per_mode = N + 1
+    nb_u = length(op.ll_u)
 
-    # For each poloidal velocity mode
+    # -------------------------------------------------------------------------
+    # Poloidal velocity BCs (section u)
+    # -------------------------------------------------------------------------
     for (k, l) in enumerate(op.ll_u)
         row_base = (k - 1) * n_per_mode
-        # First row (r=ricb) and last row (r=1)
-        for boundary_row in [row_base + 1, row_base + N + 1]
-            A[boundary_row, :] .= 0.0
-            B[boundary_row, :] .= 0.0
-            B[boundary_row, boundary_row] = 1.0
+
+        # Outer boundary (r = ro = 1.0)
+        if params.bco == 1
+            # No-slip: u = 0, du/dr = 0 (2 rows)
+            bc_rows = [row_base + 1, row_base + 2]
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
+                                                             params.ricb, 1.0)
+        else
+            # Stress-free: u = 0, d²u/dr² = 0 (2 rows)
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                                             params.ricb, 1.0)
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 2], :neumann2, N,
+                                                             params.ricb, 1.0)
+        end
+
+        # Inner boundary (r = ri = ricb)
+        if params.bci == 1
+            # No-slip: u = 0, du/dr = 0 (2 rows)
+            bc_rows = [row_base + n_per_mode - 1, row_base + n_per_mode]
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
+                                                             params.ricb, 1.0)
+        else
+            # Stress-free: u = 0, d²u/dr² = 0 (2 rows)
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                                             params.ricb, 1.0)
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode - 1], :neumann2, N,
+                                                             params.ricb, 1.0)
         end
     end
 
-    # For each toroidal velocity mode
-    nb_u = length(op.ll_u)
+    # -------------------------------------------------------------------------
+    # Toroidal velocity BCs (section v)
+    # -------------------------------------------------------------------------
     for (k, l) in enumerate(op.ll_v)
         row_base = (nb_u + k - 1) * n_per_mode
-        for boundary_row in [row_base + 1, row_base + N + 1]
-            A[boundary_row, :] .= 0.0
-            B[boundary_row, :] .= 0.0
-            B[boundary_row, boundary_row] = 1.0
+
+        # Outer boundary (r = ro = 1.0)
+        if params.bco == 1
+            # No-slip: v = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                                             params.ricb, 1.0)
+        else
+            # Stress-free: dv/dr = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :neumann, N,
+                                                             params.ricb, 1.0)
+        end
+
+        # Inner boundary (r = ri = ricb)
+        if params.bci == 1
+            # No-slip: v = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                                             params.ricb, 1.0)
+        else
+            # Stress-free: dv/dr = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :neumann, N,
+                                                             params.ricb, 1.0)
         end
     end
 end
 
 function apply_temperature_boundary_conditions!(A, B, op)
     # Apply boundary conditions to temperature field
-    N = op.params.N
+    # Following the correct implementation from SparseOperator.jl
+    params = op.params
+    N = params.N
     n_per_mode = N + 1
     nb_u = length(op.ll_u)
     nb_v = length(op.ll_v)
     nb_f = length(op.ll_f)
     nb_g = length(op.ll_g)
 
+    # -------------------------------------------------------------------------
+    # Temperature BCs (section h)
+    # -------------------------------------------------------------------------
     for (k, l) in enumerate(op.ll_h)
         row_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
-        for boundary_row in [row_base + 1, row_base + N + 1]
-            A[boundary_row, :] .= 0.0
-            B[boundary_row, :] .= 0.0
-            B[boundary_row, boundary_row] = 1.0
+
+        # Outer boundary (r = ro = 1.0)
+        if params.bco_thermal == 0
+            # Fixed temperature: θ = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                                             params.ricb, 1.0)
+        else
+            # Fixed flux: dθ/dr = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :neumann, N,
+                                                             params.ricb, 1.0)
+        end
+
+        # Inner boundary (r = ri = ricb)
+        if params.bci_thermal == 0
+            # Fixed temperature: θ = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                                             params.ricb, 1.0)
+        else
+            # Fixed flux: dθ/dr = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :neumann, N,
+                                                             params.ricb, 1.0)
         end
     end
 end

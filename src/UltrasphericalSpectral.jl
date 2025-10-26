@@ -454,6 +454,14 @@ function sparse_radial_operator(power::Int, deriv_order::Int, N::Int,
         λ += 1.0
     end
 
+    # Kore's Dlam includes factorial scaling: (deriv_order-1)! * 2^(deriv_order-1)
+    # This is the TOTAL scaling for a deriv_order-th derivative
+    # Apply it once after composition (utils.py:893-904, line 901)
+    if deriv_order > 0
+        factorial_scale = factorial(deriv_order - 1) * 2.0^(deriv_order - 1)
+        D = factorial_scale * D
+    end
+
     # If λ > 0, convert back to Chebyshev basis
     if λ > 0
         # Need inverse conversion

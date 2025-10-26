@@ -6,7 +6,6 @@ theme:
   name: material
   language: en
   logo: assets/cross-banner.svg
-  favicon: assets/cross-favicon.png
   features:
     - navigation.tracking
     - navigation.tabs

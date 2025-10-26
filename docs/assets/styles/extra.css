@@ -1,0 +1,14 @@
+:root {
+  --md-primary-fg-color: #3f51b5;
+  --md-accent-fg-color: #ffb300;
+}
+
+.md-typeset h1,
+.md-typeset h2 {
+  font-weight: 600;
+}
+
+.md-banner {
+  background: linear-gradient(90deg, rgba(63,81,181,0.95), rgba(255,179,0,0.95));
+  color: #fff;
+}

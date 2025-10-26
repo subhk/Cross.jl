@@ -3,8 +3,25 @@ name: CI
 on:
   push:
     branches: [ main ]
+    paths:
+      - "src/**"
+      - "test/**"
+      - "example/**"
+      - "Project.toml"
+      - "Manifest.toml"
+      - "**/*.jl"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [ main ]
+    paths:
+      - "src/**"
+      - "test/**"
+      - "example/**"
+      - "Project.toml"
+      - "Manifest.toml"
+      - "**/*.jl"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
 
 jobs:
   test:

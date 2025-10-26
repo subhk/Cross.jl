@@ -238,23 +238,45 @@ Returns (ll_top, ll_bot) where:
 - ll_bot: l-modes for toroidal velocity (equatorially antisymmetric if symm=-1)
 """
 function compute_l_modes(m::Int, lmax::Int, symm::Int)
-    if symm == 1
-        # Equatorially symmetric flow
-        # Poloidal: l = m, m+2, m+4, ...
-        # Toroidal: l = m+1, m+3, m+5, ...
-        ll_top = collect(m:2:lmax)
-        ll_bot = collect((m+1):2:lmax)
-    elseif symm == -1
-        # Equatorially antisymmetric flow
-        # Poloidal: l = m+1, m+3, m+5, ...
-        # Toroidal: l = m, m+2, m+4, ...
-        ll_top = collect((m+1):2:lmax)
-        ll_bot = collect(m:2:lmax)
-    else
+    @assert m >= 0 "m must be non-negative"
+    @assert lmax >= m "lmax must be >= m"
+    @assert symm in (-1, 0, 1) "symm must be -1, 0, or 1"
+
+    # Following Kore's algorithm (bin/utils.py:174-183, function ell())
+    # Key insight: For m=0, l-range is 1:(lmax+1) for spectral completeness
+    #              For m>0, l-range is m:lmax as usual
+    # This uses sign(m) to handle m=0 correctly
+
+    if symm == 0
         # Both symmetries (full problem)
-        ll_top = collect(m:lmax)
-        ll_bot = collect(m:lmax)
+        if m == 0
+            ll = collect(1:(lmax+1))
+        else
+            ll = collect(m:lmax)
+        end
+        return ll, ll
     end
+
+    # Symmetric parameter: s=0 for antisymmetric, s=1 for symmetric
+    s = div(symm + 1, 2)
+
+    # Generate full l-range
+    if m == 0
+        ll = collect(1:(lmax+1))  # For m=0: l ∈ [1, lmax+1]
+        sign_m = 0
+    else
+        ll = collect(m:lmax)      # For m>0: l ∈ [m, lmax]
+        sign_m = 1
+    end
+
+    # Select modes based on parity (following Kore's indexing)
+    # idp: indices for poloidal modes
+    # idt: indices for toroidal modes
+    idp_start = (sign_m + s) % 2 + 1      # Convert to 1-based indexing
+    idt_start = (sign_m + s + 1) % 2 + 1
+
+    ll_top = ll[idp_start:2:end]
+    ll_bot = ll[idt_start:2:end]
 
     return ll_top, ll_bot
 end

@@ -23,13 +23,14 @@ Must be included after MHDOperator.jl
 
 const SparseF64 = SparseMatrixCSC{Float64,Int}
 
-function combine_terms(terms::Vector{Tuple{Float64,SparseF64}})
+function combine_terms(terms::AbstractVector{<:Tuple{T,SparseF64}}) where {T<:Real}
     isempty(terms) && return spzeros(Float64, 0, 0)
     rows, cols = size(terms[1][2])
     out = spzeros(Float64, rows, cols)
     for (coef, mat) in terms
-        if coef != 0.0
-            out += coef * mat
+        c = Float64(coef)
+        if c != 0.0
+            out += c * mat
         end
     end
     return out

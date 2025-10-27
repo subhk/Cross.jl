@@ -24,6 +24,7 @@ using .UltrasphericalSpectral
 # Include MHD operator definitions
 include("MHDOperator.jl")
 using .MHDOperator
+using .MHDOperator: background_operator
 
 # Include hydrodynamic operators from SparseOperator (needed for velocity and temperature)
 include("SparseOperator.jl")

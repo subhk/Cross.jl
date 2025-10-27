@@ -145,48 +145,87 @@ Returns operator for diagonal (l) and off-diagonal (l±1) couplings.
 function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
                                             l::Int, Le::T) where {T}
     L = l * (l + 1)
+    m = op.params.m
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_poloidal(is_dipole)
 
-    # Lorentz force from background field
-    # For axial field: involves h(r) = r and derivatives
-    # Following Kore operators.py lines 240-250
+    term1 = background_operator(op, 1 + shift, 0, 0)
+    term2 = background_operator(op, 2 + shift, 1, 0)
+    term3 = background_operator(op, 2 + shift, 0, 1)
+    term4 = background_operator(op, 3 + shift, 1, 1)
+    term5 = background_operator(op, 3 + shift, 0, 2)
 
-    # Diagonal term: couples g at same l to u
-    # Le² * L * (operators involving h(r))
-    return Le^2 * L * (background_operator(op, 1, 0, 0) + background_operator(op, 2, 0, 1))
+    combo = -term1 - (L - 1) * term2 + term3 + term4 + term5
+
+    return (Le^2) * (2im * m) * combo
 end
 
 function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
                                            l::Int, m::Int, offset::Int,
                                            Le::T) where {T}
-    # Off-diagonal Lorentz coupling (l±1)
-    # Similar structure to Coriolis off-diagonal terms
-    L = l * (l + 1)
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_poloidal(is_dipole)
 
     if offset == -1
-        # Coupling from g at l to u at l-1
-        C = sqrt((l^2 - m^2) * (l^2 - 1)) / (2l - 1)
-        return Le^2 * C * (background_operator(op, 2, 0, 0) - (l-1) * background_operator(op, 1, 0, 0))
+        denom = 2l - 1
+        denom == 0 && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        coef = 6im * m * sqrt(max(l^2 - m^2, 0)) / denom
+
+        term1 = background_operator(op, 1 + shift, 0, 0)
+        term2 = background_operator(op, 2 + shift, 0, 1)
+        term3 = background_operator(op, 2 + shift, 1, 0)
+        term4 = background_operator(op, 3 + shift, 0, 2)
+        term5 = background_operator(op, 3 + shift, 1, 1)
+        term6 = background_operator(op, 3 + shift, 2, 0)
+
+        combo = -(3 - 3l - 2l^2) * term1
+        combo += -(l - 3) * term2
+        combo += (3 - 2l - l^2) * term3
+        combo += 3 * term4
+        combo += -(l - 3) * term5
+        combo += -l * term6
+
+        return (Le^2) * coef * combo
+
     elseif offset == 1
-        # Coupling from g at l to u at l+1
-        C = sqrt((l + m + 1) * (l - m + 1) * l * (l + 2)) / (2l + 3)
-        return Le^2 * C * (background_operator(op, 2, 0, 0) + (l+2) * background_operator(op, 1, 0, 0))
+        denom = 2l + 3
+        coef = 6im * m * sqrt(max((l + 1)^2 - m^2, 0)) / denom
+
+        term1 = background_operator(op, 1 + shift, 0, 0)
+        term2 = background_operator(op, 2 + shift, 0, 1)
+        term3 = background_operator(op, 2 + shift, 1, 0)
+        term4 = background_operator(op, 3 + shift, 0, 2)
+        term5 = background_operator(op, 3 + shift, 2, 0)
+        term6 = background_operator(op, 3 + shift, 1, 1)
+
+        combo = (-4 + l + 2l^2) * term1
+        combo += (4 + l) * term2
+        combo += (4 - l^2) * term3
+        combo += 3 * term4
+        combo += (1 + l) * term5
+        combo += (4 + l) * term6
+
+        return (Le^2) * coef * combo
     else
         error("offset must be ±1 for Lorentz off-diagonal")
     end
 end
 
-"""
-    operator_lorentz_toroidal(op, l, Le)
-
-Lorentz force acting on toroidal velocity from background magnetic field.
-"""
 function operator_lorentz_toroidal(op::MHDStabilityOperator{T},
                                    l::Int, Le::T) where {T}
     L = l * (l + 1)
+    m = op.params.m
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_toroidal(is_dipole)
 
-    # Toroidal Lorentz force
-    # Couples poloidal magnetic perturbation f to toroidal velocity v
-    return Le^2 * L * background_operator(op, 1, 0, 0)
+    term1 = background_operator(op, 0 + shift, 0, 1)
+    term2 = background_operator(op, 0 + shift, 1, 0)
+    term3 = background_operator(op, 1 + shift, 2, 0)
+    term4 = background_operator(op, 1 + shift, 0, 2)
+
+    combo = 4 * term1 - L * (2 * term2 + term3) + 2 * term4
+
+    return (Le^2) * (1im * m) * combo
 end
 
 # -----------------------------------------------------------------------------
@@ -208,18 +247,34 @@ For poloidal field (no-curl equation):
 """
 function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
                                             l::Int) where {T}
+    m = op.params.m
     L = l * (l + 1)
+    denom = -3 + 4l * (l + 1)
+    denom == 0 && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
 
-    # Poloidal velocity advecting poloidal magnetic field
-    # Following Kore operators.py lines 313-315
-    return L * (background_operator(op, 1, 0, 1) - background_operator(op, 0, 0, 0))
+    coef = 3 * (l + l^2 - 3 * m^2) / denom
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_magnetic_poloidal(is_dipole)
+
+    term1 = background_operator(op, 0 + shift, 0, 0)
+    term2 = background_operator(op, 1 + shift, 1, 0)
+    term3 = background_operator(op, 1 + shift, 0, 1)
+
+    combo = (6 - l - l^2) * term1
+    combo += l * (l + 1) * term2
+    combo += 2 * (3 - l - l^2) * term3
+
+    return coef * combo
 end
 
 function operator_induction_poloidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int) where {T}
-    # Toroidal velocity shearing background field
-    # Creates poloidal magnetic field
-    return -background_operator(op, 1, 0, 0)
+    m = op.params.m
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_magnetic_poloidal(is_dipole)
+
+    term = background_operator(op, 1 + shift, 0, 0)
+    return -2im * m * term
 end
 
 """
@@ -230,15 +285,49 @@ Implements Kore's induction equation for section g.
 """
 function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
                                            l::Int, m::Int, offset::Int) where {T}
-    # Poloidal velocity shearing background field
-    # Creates toroidal magnetic field at l±1
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_magnetic_toroidal(is_dipole)
 
     if offset == -1
-        C = sqrt((l^2 - m^2) * (l^2 - 1)) / (2l - 1)
-        return -C * ((l - 1) * background_operator(op, 0, 0, 0) + background_operator(op, 1, 0, 1))
+        denom = 2l - 1
+        denom == 0 && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        coef = (3im * m * sqrt(max(l^2 - m^2, 0))) / denom
+
+        term1 = background_operator(op, 0 + shift, 1, 0)
+        term2 = background_operator(op, 0 + shift, 0, 1)
+        term3 = background_operator(op, -1 + shift, 0, 0)
+        term4 = background_operator(op, 1 + shift, 0, 2)
+        term5 = background_operator(op, 1 + shift, 1, 1)
+        term6 = background_operator(op, 1 + shift, 2, 0)
+
+        combo = -2 * ( -3 + l) * term1
+        combo += -2 * (-3 + l) * term2
+        combo += -2 * (3 + l^2) * term3
+        combo += 6 * term4
+        combo += -2 * (-3 + l) * term5
+        combo += ( -1 + l) * l * term6
+
+        return coef * combo
+
     elseif offset == 1
-        C = sqrt((l + m + 1) * (l - m + 1) * l * (l + 2)) / (2l + 3)
-        return C * ((l + 2) * background_operator(op, 0, 0, 0) - background_operator(op, 1, 0, 1))
+        denom = 2l + 3
+        coef = (3im * m * sqrt(max((l + 1)^2 - m^2, 0))) / denom
+
+        term1 = background_operator(op, 0 + shift, 1, 0)
+        term2 = background_operator(op, 0 + shift, 0, 1)
+        term3 = background_operator(op, -1 + shift, 0, 0)
+        term4 = background_operator(op, 1 + shift, 0, 2)
+        term5 = background_operator(op, 1 + shift, 2, 0)
+        term6 = background_operator(op, 1 + shift, 1, 1)
+
+        combo = 2 * (4 + l) * term1
+        combo += 2 * (4 + l) * term2
+        combo += -2 * (4 + 2l + l^2) * term3
+        combo += 6 * term4
+        combo += (2 + 3l + l^2) * term5
+        combo += 2 * (4 + l) * term6
+
+        return coef * combo
     else
         error("offset must be ±1 for induction off-diagonal")
     end
@@ -246,10 +335,24 @@ end
 
 function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int) where {T}
+    m = op.params.m
     L = l * (l + 1)
+    denom = -3 + 4l * (l + 1)
+    denom == 0 && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
 
-    # Toroidal velocity advecting toroidal field (diagonal)
-    return L * background_operator(op, 1, 0, 0)
+    coef = 3 * (l + l^2 - 3 * m^2) / denom
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_magnetic_toroidal(is_dipole)
+
+    term1 = background_operator(op, 0 + shift, 0, 0)
+    term2 = background_operator(op, 1 + shift, 0, 1)
+    term3 = background_operator(op, 1 + shift, 1, 0)
+
+    combo = -L * term1
+    combo += -2 * (-3 + l + l^2) * term2
+    combo += -3 * (-2 + l + l^2) * term3
+
+    return coef * combo
 end
 
 # -----------------------------------------------------------------------------

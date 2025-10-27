@@ -303,6 +303,41 @@ function chebyshev_coefficients(power::Int, N::Int, ri::Real, ro::Real;
     return coeffs
 end
 
+function chebyshev_coefficients(f::Function, N::Int, ri::Real, ro::Real;
+                                tol::Real=1e-9)
+    # Evaluate function at Chebyshev-Gauss points
+    x = [cos(π * (i + 0.5) / N) for i in 0:N-1]
+
+    r = similar(x)
+    if ri == 0
+        @inbounds for i in eachindex(x)
+            r[i] = ro * x[i]
+        end
+    else
+        scale = (ro - ri) / 2
+        shift = (ro + ri) / 2
+        @inbounds for i in eachindex(x)
+            r[i] = scale * x[i] + shift
+        end
+    end
+
+    f_vals = map(f, r)
+    T = eltype(f_vals)
+    coeffs = zeros(T, N)
+
+    for k in 0:N-1
+        s = zero(T)
+        for (i, xi) in enumerate(x)
+            s += f_vals[i] * cos(π * k * (i - 0.5) / N)
+        end
+        coeffs[k+1] = (2 / N) * s
+    end
+
+    coeffs[1] /= 2
+    coeffs[abs.(coeffs) .<= tol] .= zero(T)
+    return coeffs
+end
+
 """
     csl0(s, λ, j, k) -> Float64
 

@@ -242,12 +242,8 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
                                              l::Int, m::Int, offset::Int,
                                              Le::T) where {T}
     params = op.params
-    if HAVE_KORE && params.B0_type == axial
-        kf = ensure_kore_loaded()
-        mats = get_kore_mats(op)
-        Le2 = Le^2
-        py_mat = Le2 * Array(kf.lorentz_upol_bpol_axial(l, m, offset, mats))
-        return kore_to_sparse(py_mat)
+    if params.B0_type == axial
+        return lorentz_upol_bpol_axial(op, l, m, offset, Le)
     end
 
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)

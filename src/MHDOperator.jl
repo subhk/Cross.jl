@@ -27,8 +27,6 @@ push!(LOAD_PATH, @__DIR__)
 include("UltrasphericalSpectral.jl")
 using .UltrasphericalSpectral
 
-include("DipoleOperators.jl")
-
 export MHDParams,
        MHDStabilityOperator,
        assemble_mhd_matrices,
@@ -57,6 +55,9 @@ Options:
     axial = 1
     dipole = 2
 end
+
+# Import dipole helper functions (must be after BackgroundField definition)
+include("DipoleOperators.jl")
 
 # -----------------------------------------------------------------------------
 # MHD Parameters
@@ -345,6 +346,22 @@ struct MHDStabilityOperator{T<:Real}
     r2_D1_v::SparseMatrixCSC{Float64,Int}
     r2_D2_v::SparseMatrixCSC{Float64,Int}
 
+    # Dipole field operators for poloidal velocity (u) - shift +2
+    # These are conditionally populated when B0_type == dipole && ricb > 0
+    r5_D1_u::SparseMatrixCSC{Float64,Int}  # Replaces r³D¹ → r⁵D¹
+    r6_D2_u::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D² → r⁶D²
+    r5_D3_u::SparseMatrixCSC{Float64,Int}  # Replaces r³D³ → r⁵D³
+    r6_D4_u::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D⁴ → r⁶D⁴
+    r6_D0_u::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D⁰ → r⁶D⁰ (buoyancy)
+
+    # Dipole field operators for toroidal velocity (v) - shift +3
+    r3_D0_v::SparseMatrixCSC{Float64,Int}  # Replaces r⁰D⁰ → r³D⁰ (viscous)
+    r4_D0_v::SparseMatrixCSC{Float64,Int}  # Replaces r¹D⁰ → r⁴D⁰ (Coriolis coupling)
+    r4_D1_v::SparseMatrixCSC{Float64,Int}  # Replaces r¹D¹ → r⁴D¹ (viscous)
+    r5_D0_v::SparseMatrixCSC{Float64,Int}  # Replaces r²D⁰ → r⁵D⁰ (time deriv, Coriolis)
+    r5_D1_v::SparseMatrixCSC{Float64,Int}  # Replaces r²D¹ → r⁵D¹ (Coriolis coupling)
+    r5_D2_v::SparseMatrixCSC{Float64,Int}  # Replaces r²D² → r⁵D² (viscous)
+
     # Magnetic field operators for poloidal field (f)
     r0_D0_f::SparseMatrixCSC{Float64,Int}
     r1_D0_f::SparseMatrixCSC{Float64,Int}
@@ -353,6 +370,12 @@ struct MHDStabilityOperator{T<:Real}
     r2_D1_f::SparseMatrixCSC{Float64,Int}
     r2_D2_f::SparseMatrixCSC{Float64,Int}
 
+    # Dipole field operators for magnetic poloidal (f) - shift +2
+    r4_D0_f::SparseMatrixCSC{Float64,Int}  # Replaces r²D⁰ → r⁴D⁰ (time deriv)
+    r4_D2_f::SparseMatrixCSC{Float64,Int}  # Replaces r²D² → r⁴D² (diffusion)
+    r5_D3_f::SparseMatrixCSC{Float64,Int}  # Replaces r³D³ → r⁵D³ (diffusion)
+    r6_D4_f::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D⁴ → r⁶D⁴ (diffusion)
+
     # Magnetic field operators for toroidal field (g)
     r0_D0_g::SparseMatrixCSC{Float64,Int}
     r1_D0_g::SparseMatrixCSC{Float64,Int}
@@ -360,6 +383,13 @@ struct MHDStabilityOperator{T<:Real}
     r2_D0_g::SparseMatrixCSC{Float64,Int}
     r2_D1_g::SparseMatrixCSC{Float64,Int}
     r2_D2_g::SparseMatrixCSC{Float64,Int}
+
+    # Dipole field operators for magnetic toroidal (g) - shift +3
+    r3_D0_g::SparseMatrixCSC{Float64,Int}  # Replaces r⁰D⁰ → r³D⁰ (diffusion)
+    r4_D0_g::SparseMatrixCSC{Float64,Int}  # Replaces r¹D⁰ → r⁴D⁰ (coupling)
+    r4_D1_g::SparseMatrixCSC{Float64,Int}  # Replaces r¹D¹ → r⁴D¹ (diffusion)
+    r5_D0_g::SparseMatrixCSC{Float64,Int}  # Replaces r²D⁰ → r⁵D⁰ (time deriv)
+    r5_D2_g::SparseMatrixCSC{Float64,Int}  # Replaces r²D² → r⁵D² (diffusion)
 
     # Temperature operators
     r0_D0_h::SparseMatrixCSC{Float64,Int}
@@ -444,6 +474,56 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
     r3_D0_h = sparse_radial_operator(3, 0, N, ri, ro)
     r3_D2_h = sparse_radial_operator(3, 2, N, ri, ro)
 
+    # Conditionally build dipole operators
+    # Check if dipole case is active (B0_type == dipole && ricb > 0)
+    is_dipole = is_dipole_case(params.B0_type, params.ricb)
+
+    if is_dipole
+        println("  Computing dipole-shifted operators (dipole field detected)...")
+
+        # Poloidal velocity (u) - shift +2
+        println("    Poloidal velocity (shift +2)...")
+        r5_D1_u = sparse_radial_operator(5, 1, N, ri, ro)
+        r6_D2_u = sparse_radial_operator(6, 2, N, ri, ro)
+        r5_D3_u = sparse_radial_operator(5, 3, N, ri, ro)
+        r6_D4_u = sparse_radial_operator(6, 4, N, ri, ro)
+        r6_D0_u = sparse_radial_operator(6, 0, N, ri, ro)
+
+        # Toroidal velocity (v) - shift +3
+        println("    Toroidal velocity (shift +3)...")
+        r3_D0_v = sparse_radial_operator(3, 0, N, ri, ro)
+        r4_D0_v = sparse_radial_operator(4, 0, N, ri, ro)
+        r4_D1_v = sparse_radial_operator(4, 1, N, ri, ro)
+        r5_D0_v = sparse_radial_operator(5, 0, N, ri, ro)
+        r5_D1_v = sparse_radial_operator(5, 1, N, ri, ro)
+        r5_D2_v = sparse_radial_operator(5, 2, N, ri, ro)
+
+        # Magnetic poloidal (f) - shift +2
+        println("    Magnetic poloidal (shift +2)...")
+        r4_D0_f = sparse_radial_operator(4, 0, N, ri, ro)
+        r4_D2_f = sparse_radial_operator(4, 2, N, ri, ro)
+        r5_D3_f = sparse_radial_operator(5, 3, N, ri, ro)
+        r6_D4_f = sparse_radial_operator(6, 4, N, ri, ro)
+
+        # Magnetic toroidal (g) - shift +3
+        println("    Magnetic toroidal (shift +3)...")
+        r3_D0_g = sparse_radial_operator(3, 0, N, ri, ro)
+        r4_D0_g = sparse_radial_operator(4, 0, N, ri, ro)
+        r4_D1_g = sparse_radial_operator(4, 1, N, ri, ro)
+        r5_D0_g = sparse_radial_operator(5, 0, N, ri, ro)
+        r5_D2_g = sparse_radial_operator(5, 2, N, ri, ro)
+    else
+        # For non-dipole case, use dummy operators (sparse identity matrices)
+        # These won't be used in practice, but Julia structs need all fields initialized
+        println("  Skipping dipole operators (axial or no field case)...")
+        dummy = sparse_radial_operator(0, 0, N, ri, ro)  # Create once, reuse
+
+        r5_D1_u = dummy; r6_D2_u = dummy; r5_D3_u = dummy; r6_D4_u = dummy; r6_D0_u = dummy
+        r3_D0_v = dummy; r4_D0_v = dummy; r4_D1_v = dummy; r5_D0_v = dummy; r5_D1_v = dummy; r5_D2_v = dummy
+        r4_D0_f = dummy; r4_D2_f = dummy; r5_D3_f = dummy; r6_D4_f = dummy
+        r3_D0_g = dummy; r4_D0_g = dummy; r4_D1_g = dummy; r5_D0_g = dummy; r5_D2_g = dummy
+    end
+
     println("  Computing background field operators...")
     # For axial field: h(r) = r, so these are just r^k operators
     # For dipole field: h(r) would be more complex (implemented separately)
@@ -475,12 +555,25 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
 
     return MHDStabilityOperator{T}(
         params,
+        # Standard velocity operators
         r0_D0_u, r2_D0_u, r2_D2_u, r3_D0_u, r3_D1_u, r4_D0_u, r4_D1_u, r4_D2_u, r3_D3_u, r4_D4_u,
         r0_D0_v, r1_D0_v, r1_D1_v, r2_D0_v, r2_D1_v, r2_D2_v,
+        # Dipole velocity operators
+        r5_D1_u, r6_D2_u, r5_D3_u, r6_D4_u, r6_D0_u,
+        r3_D0_v, r4_D0_v, r4_D1_v, r5_D0_v, r5_D1_v, r5_D2_v,
+        # Standard magnetic operators
         r0_D0_f, r1_D0_f, r1_D1_f, r2_D0_f, r2_D1_f, r2_D2_f,
+        # Dipole magnetic poloidal operators
+        r4_D0_f, r4_D2_f, r5_D3_f, r6_D4_f,
+        # Standard magnetic toroidal operators
         r0_D0_g, r1_D0_g, r1_D1_g, r2_D0_g, r2_D1_g, r2_D2_g,
+        # Dipole magnetic toroidal operators
+        r3_D0_g, r4_D0_g, r4_D1_g, r5_D0_g, r5_D2_g,
+        # Temperature operators
         r0_D0_h, r1_D0_h, r1_D1_h, r2_D0_h, r2_D1_h, r2_D2_h, r3_D0_h, r3_D2_h,
+        # Background field operators
         r0_h0_D0, r1_h0_D0, r1_h0_D1, r2_h0_D0, r2_h0_D1, r2_h0_D2,
+        # Mode structure
         ll_u, ll_v, ll_f, ll_g, ll_h,
         nl_modes, matrix_size
     )

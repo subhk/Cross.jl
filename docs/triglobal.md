@@ -58,7 +58,7 @@ Use this report to choose solver settings and HPC resources. Tri-global problems
 solution = solve_triglobal_eigenvalue_problem(
     problem;
     nev = 12,
-    solver = :krylovkit,
+    solver = :arpack,
     which = :LR,   # largest real part
 )
 
@@ -90,7 +90,7 @@ mode0 = extract_mode(problem, solution.vectors[:, 1], 0)
 
 - Start with a narrow `m_range` (e.g., `-1:1`) and increase gradually.
 - Use sparse storage for the base state dictionaries to keep the coupling graph tight.
-- When using FEAST, supply a contour that encloses the eigenvalues of interest; otherwise the solve may return an empty set.
+- If ARPACK stalls, retry with `solver=:krylov` to fall back to the shift-invert Krylov solver.
 
 ## Checklist
 

@@ -884,11 +884,9 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             A[row, :] .= 0.0
             B[row, :] .= 0.0
             block_start = row_base + 1
-            block_range = block_start:(block_start + N)
-            A[row, block_range] .= -outer_deriv_row
-            # +v term
             for n in 0:N
                 idx = block_start + n
+                A[row, idx] = -outer_deriv_row[n+1]
                 A[row, idx] += 1.0
             end
         end
@@ -904,10 +902,9 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             A[row, :] .= 0.0
             B[row, :] .= 0.0
             block_start = row_base + 1
-            block_range = block_start:(block_start + N)
-            A[row, block_range] .= -params.ricb * inner_deriv_row
             for n in 0:N
                 idx = block_start + n
+                A[row, idx] = -params.ricb * inner_deriv_row[n+1]
                 A[row, idx] += (-1.0)^n
             end
         end

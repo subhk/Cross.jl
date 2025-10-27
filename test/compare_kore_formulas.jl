@@ -124,10 +124,14 @@ function compare_with_reference(params)
     A2, B2 = assemble_reference(op)
     # Apply BCs to reference matrices
     SO.apply_sparse_boundary_conditions!(A2, B2, op)
-    maxA = maximum(abs.(A1 .- A2))
-    maxB = maximum(abs.(B1 .- B2))
+    diffA = A1 - A2
+    diffB = B1 - B2
+    maxA, idxA = findmax(abs.(diffA))
+    maxB, idxB = findmax(abs.(diffB))
     println("max |A_cross - A_ref| = ", maxA)
+    println("  location: (", idxA[1], ", ", idxA[2], ") value = ", diffA[idxA])
     println("max |B_cross - B_ref| = ", maxB)
+    println("  location: (", idxB[1], ", ", idxB[2], ") value = ", diffB[idxB])
 end
 
 params_list = [

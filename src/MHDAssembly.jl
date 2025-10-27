@@ -296,11 +296,27 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         visc_tor = operator_viscous_toroidal(op, l, E)
         add_block!(A_rows, A_cols, A_vals, -visc_tor, row_base, col_base)
 
-        # Lorentz force from poloidal B (if Le > 0)
+        # Lorentz force from magnetic field (if Le > 0)
         if Le > 0
-            lorentz_tor = operator_lorentz_toroidal(op, l, Le)
-            f_col_base = (nb_u + nb_v + k - 1) * n_per_mode
-            add_block!(A_rows, A_cols, A_vals, lorentz_tor, row_base, f_col_base)
+            # Coupling from poloidal magnetic field (section f, offsets l-1:l+1)
+            for offset in -1:1
+                l_src = l + offset
+                idx_f = findfirst(==(l_src), op.ll_f)
+                idx_f === nothing && continue
+                f_col_base = (nb_u + nb_v + idx_f - 1) * n_per_mode
+                lorentz_from_bpol = operator_lorentz_toroidal_from_bpol(op, l, m, offset, Le)
+                add_block!(A_rows, A_cols, A_vals, lorentz_from_bpol, row_base, f_col_base)
+            end
+
+            # Coupling from toroidal magnetic field (section g, offsets l-2:l+2)
+            for offset in -2:2
+                l_src = l + offset
+                idx_g = findfirst(==(l_src), op.ll_g)
+                idx_g === nothing && continue
+                g_col_base = (nb_u + nb_v + nb_f + idx_g - 1) * n_per_mode
+                lorentz_from_btor = operator_lorentz_toroidal_from_btor(op, l, m, offset, Le)
+                add_block!(A_rows, A_cols, A_vals, lorentz_from_btor, row_base, g_col_base)
+            end
         end
 
         # Coriolis reverse coupling: v → u at l±1

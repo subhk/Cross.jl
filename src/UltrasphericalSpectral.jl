@@ -855,9 +855,9 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
             D2 = sparse_radial_operator(0, 2, N, ri, ro)
             # Extract the appropriate boundary row
             if local_idx == 1 || local_idx == 2  # Outer boundary
-                A[row, block_range] = D2[1, :]
+                A[row, block_range] = ro * D2[1, :]
             elseif local_idx == N || local_idx == N + 1  # Inner boundary
-                A[row, block_range] = D2[N+1, :]
+                A[row, block_range] = ri * D2[N+1, :]
             end
 
         # Additional BC types can be added here

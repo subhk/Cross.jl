@@ -818,18 +818,23 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
         A[row, :] .= 0.0
         B[row, :] .= 0.0
 
+        # Determine local index within the (N+1) block
+        local_idx = (row - 1) % (N + 1) + 1
+        block_start = (row - local_idx) + 1
+        block_range = block_start:(block_start + N)
+
         if bc_type == :dirichlet
             # u(r_boundary) = 0
             # Set row to evaluation at boundary point
-            if row == 1 || row == 2  # Outer boundary (x = 1, r = ro)
+            if local_idx == 1 || local_idx == 2  # Outer boundary (x = 1, r = ro)
                 for n in 0:N
                     Tn = cos(n * 0.0)  # T_n(1) = 1 for all n
-                    A[row, n+1] = Tn
+                    A[row, block_start + n] = Tn
                 end
-            elseif row == N || row == N+1  # Inner boundary (x = -1, r = ri)
+            elseif local_idx == N || local_idx == N + 1  # Inner boundary (x = -1, r = ri)
                 for n in 0:N
                     Tn = cos(n * π)  # T_n(-1) = (-1)^n
-                    A[row, n+1] = Tn
+                    A[row, block_start + n] = Tn
                 end
             end
 
@@ -838,10 +843,10 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
             # Use first derivative operator
             D1 = sparse_radial_operator(0, 1, N, ri, ro)
             # Extract the appropriate boundary row
-            if row == 1 || row == 2  # Outer boundary
-                A[row, 1:(N+1)] = D1[1, :]
-            elseif row == N || row == N+1  # Inner boundary
-                A[row, 1:(N+1)] = D1[N+1, :]
+            if local_idx == 1 || local_idx == 2  # Outer boundary
+                A[row, block_range] = D1[1, :]
+            elseif local_idx == N || local_idx == N + 1  # Inner boundary
+                A[row, block_range] = D1[N+1, :]
             end
 
         elseif bc_type == :neumann2
@@ -849,10 +854,10 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
             # Use second derivative operator
             D2 = sparse_radial_operator(0, 2, N, ri, ro)
             # Extract the appropriate boundary row
-            if row == 1 || row == 2  # Outer boundary
-                A[row, 1:(N+1)] = D2[1, :]
-            elseif row == N || row == N+1  # Inner boundary
-                A[row, 1:(N+1)] = D2[N+1, :]
+            if local_idx == 1 || local_idx == 2  # Outer boundary
+                A[row, block_range] = D2[1, :]
+            elseif local_idx == N || local_idx == N + 1  # Inner boundary
+                A[row, block_range] = D2[N+1, :]
             end
 
         # Additional BC types can be added here

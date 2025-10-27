@@ -854,8 +854,9 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
         # Outer boundary (r = ro = 1.0)
         if params.bco == 1
             # No-slip: u = 0, du/dr = 0
-            bc_rows = [row_base + 1, row_base + 2]
-            apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
+            apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                      params.ricb, one(T))
+            apply_boundary_conditions!(A, B, [row_base + 2], :neumann, N,
                                       params.ricb, one(T))
         else
             # Stress-free: u = 0, d²u/dr² = 0
@@ -869,8 +870,9 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
         # Inner boundary (r = ri = ricb)
         if params.bci == 1
             # No-slip: u = 0, du/dr = 0
-            bc_rows = [row_base + n_per_mode - 1, row_base + n_per_mode]
-            apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                      params.ricb, one(T))
+            apply_boundary_conditions!(A, B, [row_base + n_per_mode - 1], :neumann, N,
                                       params.ricb, one(T))
         else
             # Stress-free: u = 0, d²u/dr² = 0

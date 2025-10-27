@@ -60,6 +60,135 @@ end
 include("DipoleOperators.jl")
 
 # -----------------------------------------------------------------------------
+# Background magnetic field utilities
+# -----------------------------------------------------------------------------
+
+const MAX_BACKGROUND_H_ORDER = 3
+
+"""
+    background_profile_value(r, B0_type, h_order, r_power)
+
+Evaluate r^r_power * h^{(h_order)}(r) for the imposed background magnetic field.
+This mirrors Kore's h0/h1/h2/h3 definitions for axial and dipole fields.
+"""
+function background_profile_value(r::Real, B0_type::BackgroundField,
+                                  h_order::Int, r_power::Int)
+    if B0_type == no_field
+        return 0.0
+    elseif B0_type == axial
+        if h_order == 0
+            return 0.5 * r^(r_power + 1)
+        elseif h_order == 1
+            return 0.5 * r^(r_power)
+        elseif h_order in (2, 3)
+            return 0.0
+        else
+            error("Unsupported h-order $h_order for axial background field")
+        end
+    elseif B0_type == dipole
+        exponent = r_power - 2  # base for h0
+        coeff = 0.5
+
+        if h_order == 0
+            exponent = r_power - 2
+            coeff = 0.5
+        elseif h_order == 1
+            exponent = r_power - 3
+            coeff = -1.0
+        elseif h_order == 2
+            exponent = r_power - 4
+            coeff = 3.0
+        elseif h_order == 3
+            exponent = r_power - 5
+            coeff = -12.0
+        else
+            error("Unsupported h-order $h_order for dipole background field")
+        end
+
+        return coeff * r^exponent
+    else
+        error("Background field $(B0_type) not implemented")
+    end
+end
+
+"""
+    sparse_background_operator(r_power, h_order, deriv_order, params)
+
+Build the sparse operator corresponding to r^r_power * h^{(h_order)}(r) * D^{deriv_order}
+in the same ultraspherical framework as sparse_radial_operator.
+"""
+function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int,
+                                    params::MHDParams{T}) where {T<:Real}
+    B0_type = params.B0_type
+    N = params.N
+    ri = params.ricb
+    ro = one(T)
+
+    if B0_type == no_field
+        return spzeros(Float64, N + 1, N + 1)
+    end
+
+    if B0_type == dipole && ri == 0
+        error("Dipole background field requires non-zero inner radius (ricb > 0)")
+    end
+
+    if h_order < 0 || h_order > MAX_BACKGROUND_H_ORDER
+        error("Unsupported background field derivative order h^($h_order)")
+    end
+
+    if B0_type == axial && h_order ≥ 2
+        return spzeros(Float64, N + 1, N + 1)
+    end
+
+    L = ro - ri
+    scale = 2.0 / L
+
+    D = sparse(1.0I, N + 1, N + 1)
+    λ = 0.0
+    for _ in 1:deriv_order
+        S = ultraspherical_conversion(λ, N)
+        Dλ = ultraspherical_derivative(λ, N)
+        D = (scale * Dλ) * S * D
+        λ += 1.0
+    end
+
+    if deriv_order > 0
+        factorial_scale = factorial(deriv_order - 1) * 2.0^(deriv_order - 1)
+        D = factorial_scale * D
+    end
+
+    if λ > 0
+        S_inv = ultraspherical_conversion(λ, N)
+        D = sparse(S_inv \ Matrix(D))
+    end
+
+    coeffs = chebyshev_coefficients(r -> background_profile_value(r, B0_type, h_order, r_power),
+                                    N + 1, ri, ro)
+
+    coeffs_lambda = coeffs
+    for lam in 0:(Int(λ) - 1)
+        S = ultraspherical_conversion(lam, N)
+        coeffs_lambda = S * coeffs_lambda
+    end
+
+    M = multiplication_matrix(coeffs_lambda, λ, N + 1; vector_parity=0)
+    return sparse(M * D)
+end
+
+"""
+    background_operator(op, r_power, h_order, deriv_order)
+
+Return (and cache) the background-field multiplication operator.
+"""
+function background_operator(op::MHDStabilityOperator,
+                             r_power::Int, h_order::Int, deriv_order::Int)
+    key = (r_power, h_order, deriv_order)
+    get!(op.background_ops, key) do
+        sparse_background_operator(r_power, h_order, deriv_order, op.params)
+    end
+end
+
+# -----------------------------------------------------------------------------
 # MHD Parameters
 # -----------------------------------------------------------------------------
 
@@ -403,14 +532,8 @@ struct MHDStabilityOperator{T<:Real}
     r3_D0_h::SparseMatrixCSC{Float64,Int}
     r3_D2_h::SparseMatrixCSC{Float64,Int}
 
-    # Background field operators (for Lorentz force and induction)
-    # h(r) represents the background magnetic field structure function
-    r0_h0_D0::SparseMatrixCSC{Float64,Int}  # For axial: h(r) = r
-    r1_h0_D0::SparseMatrixCSC{Float64,Int}
-    r1_h0_D1::SparseMatrixCSC{Float64,Int}
-    r2_h0_D0::SparseMatrixCSC{Float64,Int}
-    r2_h0_D1::SparseMatrixCSC{Float64,Int}
-    r2_h0_D2::SparseMatrixCSC{Float64,Int}
+    # Background field operators cache (r_power, h_order, derivative)
+    background_ops::Dict{Tuple{Int,Int,Int}, SparseMatrixCSC{Float64,Int}}
 
     # Mode structure
     ll_u::Vector{Int}  # l-modes for poloidal velocity
@@ -529,15 +652,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
         r3_D0_g = dummy; r4_D0_g = dummy; r4_D1_g = dummy; r5_D0_g = dummy; r5_D2_g = dummy
     end
 
-    println("  Computing background field operators...")
-    # For axial field: h(r) = r, so these are just r^k operators
-    # For dipole field: h(r) would be more complex (implemented separately)
-    r0_h0_D0 = sparse_radial_operator(1, 0, N, ri, ro)  # r^1 * D^0
-    r1_h0_D0 = sparse_radial_operator(2, 0, N, ri, ro)  # r^2 * D^0
-    r1_h0_D1 = sparse_radial_operator(2, 1, N, ri, ro)  # r^2 * D^1
-    r2_h0_D0 = sparse_radial_operator(3, 0, N, ri, ro)  # r^3 * D^0
-    r2_h0_D1 = sparse_radial_operator(3, 1, N, ri, ro)  # r^3 * D^1
-    r2_h0_D2 = sparse_radial_operator(3, 2, N, ri, ro)  # r^3 * D^2
+    background_ops = Dict{Tuple{Int,Int,Int}, SparseMatrixCSC{Float64,Int}}()
 
     # Determine l-mode structure
     ll_u, ll_v = compute_mhd_l_modes(params.m, params.lmax, params.symm, params.B0_type)
@@ -577,8 +692,8 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
         r3_D0_g, r4_D0_g, r4_D1_g, r5_D0_g, r5_D2_g,
         # Temperature operators
         r0_D0_h, r1_D0_h, r1_D1_h, r2_D0_h, r2_D1_h, r2_D2_h, r3_D0_h, r3_D2_h,
-        # Background field operators
-        r0_h0_D0, r1_h0_D0, r1_h0_D1, r2_h0_D0, r2_h0_D1, r2_h0_D2,
+        # Background field operator cache
+        background_ops,
         # Mode structure
         ll_u, ll_v, ll_f, ll_g, ll_h,
         nl_modes, matrix_size

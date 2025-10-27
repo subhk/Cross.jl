@@ -152,7 +152,7 @@ function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
 
     # Diagonal term: couples g at same l to u
     # Le² * L * (operators involving h(r))
-    return Le^2 * L * (op.r1_h0_D0 + op.r2_h0_D1)
+    return Le^2 * L * (background_operator(op, 1, 0, 0) + background_operator(op, 2, 0, 1))
 end
 
 function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
@@ -165,11 +165,11 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
     if offset == -1
         # Coupling from g at l to u at l-1
         C = sqrt((l^2 - m^2) * (l^2 - 1)) / (2l - 1)
-        return Le^2 * C * (op.r2_h0_D0 - (l-1) * op.r1_h0_D0)
+        return Le^2 * C * (background_operator(op, 2, 0, 0) - (l-1) * background_operator(op, 1, 0, 0))
     elseif offset == 1
         # Coupling from g at l to u at l+1
         C = sqrt((l + m + 1) * (l - m + 1) * l * (l + 2)) / (2l + 3)
-        return Le^2 * C * (op.r2_h0_D0 + (l+2) * op.r1_h0_D0)
+        return Le^2 * C * (background_operator(op, 2, 0, 0) + (l+2) * background_operator(op, 1, 0, 0))
     else
         error("offset must be ±1 for Lorentz off-diagonal")
     end
@@ -186,7 +186,7 @@ function operator_lorentz_toroidal(op::MHDStabilityOperator{T},
 
     # Toroidal Lorentz force
     # Couples poloidal magnetic perturbation f to toroidal velocity v
-    return Le^2 * L * op.r1_h0_D0
+    return Le^2 * L * background_operator(op, 1, 0, 0)
 end
 
 # -----------------------------------------------------------------------------
@@ -212,14 +212,14 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
 
     # Poloidal velocity advecting poloidal magnetic field
     # Following Kore operators.py lines 313-315
-    return L * (op.r1_h0_D1 - op.r0_h0_D0)
+    return L * (background_operator(op, 1, 0, 1) - background_operator(op, 0, 0, 0))
 end
 
 function operator_induction_poloidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int) where {T}
     # Toroidal velocity shearing background field
     # Creates poloidal magnetic field
-    return -op.r1_h0_D0
+    return -background_operator(op, 1, 0, 0)
 end
 
 """
@@ -235,10 +235,10 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
 
     if offset == -1
         C = sqrt((l^2 - m^2) * (l^2 - 1)) / (2l - 1)
-        return -C * ((l - 1) * op.r0_h0_D0 + op.r1_h0_D1)
+        return -C * ((l - 1) * background_operator(op, 0, 0, 0) + background_operator(op, 1, 0, 1))
     elseif offset == 1
         C = sqrt((l + m + 1) * (l - m + 1) * l * (l + 2)) / (2l + 3)
-        return C * ((l + 2) * op.r0_h0_D0 - op.r1_h0_D1)
+        return C * ((l + 2) * background_operator(op, 0, 0, 0) - background_operator(op, 1, 0, 1))
     else
         error("offset must be ±1 for induction off-diagonal")
     end
@@ -249,7 +249,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
     L = l * (l + 1)
 
     # Toroidal velocity advecting toroidal field (diagonal)
-    return L * op.r1_h0_D0
+    return L * background_operator(op, 1, 0, 0)
 end
 
 # -----------------------------------------------------------------------------

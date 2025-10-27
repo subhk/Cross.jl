@@ -388,9 +388,9 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
         sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
         C = 3 * (l - 2) * (l + 1) * sqrt_factor / denom
         terms = [
-            (-(4 - l), bo(0, 0, 0)),
+            (l - 4, bo(0, 0, 0)),
             (-3.0, bo(1, 0, 1)),
-            (-(1 - l), bo(1, 1, 0))
+            (l - 1, bo(1, 1, 0))
         ]
         return C * combine_terms(terms)
 
@@ -448,22 +448,23 @@ function operator_induction_poloidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int, m::Int, offset::Int) where {T}
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_magnetic_poloidal(is_dipole)
-    term = background_operator(op, 1 + shift, 0, 0)
+    term = SparseMatrixCSC{ComplexF64, Int}(background_operator(op, 1 + shift, 0, 0))
+    zero_block = spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
 
     if offset == -1
         denom = 1 - 2l
-        abs(denom) < eps() && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps() && return zero_block
         coef = 18im * m * sqrt(max(l^2 - m^2, 0)) / denom
         return coef * term
     elseif offset == 0
         return -2im * m * term
     elseif offset == 1
         denom = 3 + 2l
-        abs(denom) < eps() && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps() && return zero_block
         coef = -18im * m * sqrt(max((l + 1)^2 - m^2, 0)) / denom
         return coef * term
     else
-        return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        return zero_block
     end
 end
 

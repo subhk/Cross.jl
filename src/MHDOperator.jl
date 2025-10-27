@@ -27,11 +27,18 @@ push!(LOAD_PATH, @__DIR__)
 include("UltrasphericalSpectral.jl")
 using .UltrasphericalSpectral
 
+include("DipoleOperators.jl")
+
 export MHDParams,
        MHDStabilityOperator,
        assemble_mhd_matrices,
        BackgroundField,
-       no_field, axial, dipole
+       no_field, axial, dipole,
+       is_dipole_case,
+       radial_power_shift_poloidal,
+       radial_power_shift_toroidal,
+       radial_power_shift_magnetic_poloidal,
+       radial_power_shift_magnetic_toroidal
 
 # -----------------------------------------------------------------------------
 # Background magnetic field types

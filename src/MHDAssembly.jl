@@ -208,7 +208,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         # B matrix: Time derivative (inertia)
         # ---------------------------------------------------------------------
         u_op = operator_u(op, l)
-        add_block!(B_rows, B_cols, B_vals, u_op, row_base, col_base)
+        add_block!(B_rows, B_cols, B_vals, -u_op, row_base, col_base)
 
         # ---------------------------------------------------------------------
         # A matrix: RHS operators
@@ -220,7 +220,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
         # Viscous diffusion
         visc_op = -operator_viscous_diffusion(op, l, E)
-        add_block!(A_rows, A_cols, A_vals, visc_op, row_base, col_base)
+        add_block!(A_rows, A_cols, A_vals, -visc_op, row_base, col_base)
 
         # Buoyancy (coupling from temperature)
         if Ra > 0
@@ -287,7 +287,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         # B matrix: Time derivative
         # ---------------------------------------------------------------------
         v_op = operator_u_toroidal(op, l)
-        add_block!(B_rows, B_cols, B_vals, v_op, row_base, col_base)
+        add_block!(B_rows, B_cols, B_vals, -v_op, row_base, col_base)
 
         # ---------------------------------------------------------------------
         # A matrix: RHS operators
@@ -299,7 +299,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
         # Viscous diffusion
         visc_tor = -operator_viscous_toroidal(op, l, E)
-        add_block!(A_rows, A_cols, A_vals, visc_tor, row_base, col_base)
+        add_block!(A_rows, A_cols, A_vals, -visc_tor, row_base, col_base)
 
         # Lorentz force from poloidal B (if Le > 0)
         if Le > 0

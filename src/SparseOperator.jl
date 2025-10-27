@@ -650,17 +650,17 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # A matrix: RHS operators (Coriolis, viscous, buoyancy)
         # -----------------------------------------------------------------
 
-        # Time derivative term: ∂u/∂t → operator_u in B matrix
+        # Time derivative term: ∂u/∂t → -operator_u in B matrix (matches Kore)
         u_op = operator_u(op, l)
-        add_block!(B_rows, B_cols, B_vals, u_op, row_base, col_base)
+        add_block!(B_rows, B_cols, B_vals, -u_op, row_base, col_base)
 
         # Coriolis force (diagonal)
         cori_op = operator_coriolis_diagonal(op, l, m)
         add_block!(A_rows, A_cols, A_vals, cori_op, row_base, col_base)
 
-        # Viscous diffusion
+        # Viscous diffusion (appears with a minus sign in Kore)
         visc_op = operator_viscous_diffusion(op, l, E)
-        add_block!(A_rows, A_cols, A_vals, visc_op, row_base, col_base)
+        add_block!(A_rows, A_cols, A_vals, -visc_op, row_base, col_base)
 
         # Coriolis coupling to toroidal velocity (l±1)
         for offset in [-1, 1]
@@ -698,17 +698,17 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # A matrix: RHS operators (Coriolis, viscous)
         # -----------------------------------------------------------------
 
-        # Time derivative term: ∂v/∂t → operator_u_toroidal in B matrix
+        # Time derivative term: ∂v/∂t → -operator_u_toroidal in B matrix (matches Kore)
         u_tor_op = operator_u_toroidal(op, l)
-        add_block!(B_rows, B_cols, B_vals, u_tor_op, row_base, col_base)
+        add_block!(B_rows, B_cols, B_vals, -u_tor_op, row_base, col_base)
 
         # Coriolis force acting on toroidal velocity
         cori_tor_op = operator_coriolis_toroidal(op, l, m)
         add_block!(A_rows, A_cols, A_vals, cori_tor_op, row_base, col_base)
 
-        # Viscous diffusion for toroidal velocity
+        # Viscous diffusion for toroidal velocity (minus sign per Kore)
         visc_tor_op = operator_viscous_toroidal(op, l, E)
-        add_block!(A_rows, A_cols, A_vals, visc_tor_op, row_base, col_base)
+        add_block!(A_rows, A_cols, A_vals, -visc_tor_op, row_base, col_base)
 
         # Coriolis coupling from toroidal to poloidal velocity (v → u, l±1)
         # This coupling goes in the TOROIDAL equation (v-rows), coupling to POLOIDAL variable (u-columns)

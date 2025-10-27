@@ -30,34 +30,19 @@ function assemble_reference(op::SO.SparseStabilityOperator)
     for (k, l) in enumerate(op.ll_top)
         row_base = (k - 1) * n_per_mode
         col_base = (k - 1) * n_per_mode
-        L = l * (l + 1)
-        # B matrix
-        block = L * (L * op.r2_D0_u - 2 * op.r3_D1_u - op.r4_D2_u)
-        add_block!(B, block, row_base, col_base)
-        # Coriolis
-        block = 2im * m * (-L * op.r2_D0_u + 2 * op.r3_D1_u + op.r4_D2_u)
-        add_block!(A, block, row_base, col_base)
-        # Viscous
-        block = E * L * (-L * op.r0_D0_u + 2 * L * op.r2_D2_u - 4 * op.r3_D3_u - op.r4_D4_u)
-        add_block!(A, block, row_base, col_base)
+        add_block!(B, -SO.operator_u(op, l), row_base, col_base)
+        add_block!(A, SO.operator_coriolis_diagonal(op, l, m), row_base, col_base)
+        add_block!(A, -SO.operator_viscous_diffusion(op, l, E), row_base, col_base)
         # Off-diagonal Coriolis
         for offset in (-1, 1)
             l2 = l + offset
             idx = findfirst(==(l2), op.ll_bot)
             idx === nothing && continue
             col_off = (nb_top + idx - 1) * n_per_mode
-            if offset == -1
-                C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-                block = 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
-            else
-                C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-                block = 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
-            end
+            block, _ = SO.operator_coriolis_offdiag(op, l, m, offset)
             add_block!(A, block, row_base, col_off)
         end
-        # Buoyancy
-        beyonce = -Ra * E^2 / Pr
-        block = beyonce * L * op.r4_D0_u
+        block = SO.operator_buoyancy(op, l, Ra, Pr)
         temp_col = (nb_top + nb_bot + k - 1) * n_per_mode
         add_block!(A, block, row_base, temp_col)
     end
@@ -65,29 +50,16 @@ function assemble_reference(op::SO.SparseStabilityOperator)
     for (k, l) in enumerate(op.ll_bot)
         row_base = (nb_top + k - 1) * n_per_mode
         col_base = (nb_top + k - 1) * n_per_mode
-        L = l * (l + 1)
-        # B matrix
-        block = L * op.r2_D0_v
-        add_block!(B, block, row_base, col_base)
-        # Coriolis diagonal
-        block = -2im * m * op.r2_D0_v
-        add_block!(A, block, row_base, col_base)
-        # Viscous
-        block = E * L * (-L * op.r0_D0_v + 2 * op.r1_D1_v + op.r2_D2_v)
-        add_block!(A, block, row_base, col_base)
+        add_block!(B, -SO.operator_u_toroidal(op, l), row_base, col_base)
+        add_block!(A, SO.operator_coriolis_toroidal(op, l, m), row_base, col_base)
+        add_block!(A, -SO.operator_viscous_toroidal(op, l, E), row_base, col_base)
         # Off-diagonal v->u
         for offset in (-1, 1)
             l2 = l + offset
             idx = findfirst(==(l2), op.ll_top)
             idx === nothing && continue
             col_off = (idx - 1) * n_per_mode
-            if offset == -1
-                C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-                block = 2 * C * ((l - 1) * op.r1_D0_v - op.r2_D1_v)
-            else
-                C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-                block = 2 * C * (-(l + 2) * op.r1_D0_v - op.r2_D1_v)
-            end
+            block = SO.operator_coriolis_v_to_u(op, l, m, offset)
             add_block!(A, block, row_base, col_off)
         end
     end
@@ -95,24 +67,10 @@ function assemble_reference(op::SO.SparseStabilityOperator)
     for (k, l) in enumerate(op.ll_top)
         row_base = (nb_top + nb_bot + k - 1) * n_per_mode
         col_base = (nb_top + nb_bot + k - 1) * n_per_mode
-        block = op.r2_D0_h
-        if op.params.heating == :differential
-            block = op.r3_D0_h
-        end
-        add_block!(B, block, row_base, col_base)
-        L = l * (l + 1)
-        if op.params.heating == :differential
-            block = params.Etherm * (-L * op.r1_D0_h + 2 * op.r2_D1_h + op.r3_D2_h)
-        else
-            block = params.Etherm * (-L * op.r0_D0_h + 2 * op.r1_D1_h + op.r2_D2_h)
-        end
-        add_block!(A, block, row_base, col_base)
-        block = L * op.r2_D0_h
-        if op.params.heating == :differential
-            block = L * (op.params.ricb / (one(eltype(block)) - op.params.ricb)) * op.r0_D0_h
-        end
+        add_block!(B, SO.operator_theta(op, l), row_base, col_base)
+        add_block!(A, SO.operator_thermal_diffusion(op, l, params.Etherm), row_base, col_base)
         vel_col = (k - 1) * n_per_mode
-        add_block!(A, block, row_base, vel_col)
+        add_block!(A, SO.operator_thermal_advection(op, l), row_base, vel_col)
     end
 
     return A, B

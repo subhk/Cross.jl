@@ -641,9 +641,6 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # =========================================================================
     println("  Assembling section u (poloidal)...")
 
-    # DEBUG: Track u→v Coriolis coupling
-    u_to_v_coupling_count = 0
-
     for (k, l) in enumerate(op.ll_top)
         row_base = (k - 1) * n_per_mode
         col_base = (k - 1) * n_per_mode
@@ -677,8 +674,6 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
                 add_block!(A_rows, A_cols, A_vals, cori_off,
                           row_base, col_coupled)
 
-                # DEBUG
-                u_to_v_coupling_count += 1
             end
         end
 
@@ -690,16 +685,10 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
                   row_base, temp_col_base)
     end
 
-    # DEBUG: Print coupling summary
-    println("  ✓ Added $u_to_v_coupling_count u→v Coriolis coupling blocks")
-
     # =========================================================================
     # Section v (toroidal velocity, 1curl equation)
     # =========================================================================
     println("  Assembling section v (toroidal)...")
-
-    # DEBUG: Track v→u Coriolis coupling
-    v_to_u_coupling_count = 0
 
     for (k, l) in enumerate(op.ll_bot)
         row_base = (nb_top + k - 1) * n_per_mode
@@ -736,21 +725,12 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
                 add_block!(A_rows, A_cols, A_vals, cori_v_to_u,
                           row_base, col_coupled)  # FIXED: v-rows (this equation), u-columns (coupled variable)
 
-                # DEBUG
-                v_to_u_coupling_count += 1
-                if v_to_u_coupling_count <= 3  # Only print first few
-                    println("    DEBUG: v→u coupling: v-eq at l=$l → u-var at l=$l_coupled (offset=$offset)")
-                    println("           row_base=$row_base, col_coupled=$col_coupled, nnz=$(length(cori_v_to_u.nzval))")
-                end
             end
         end
 
         # Note: No direct buoyancy coupling for toroidal velocity
         # (Buoyancy forces poloidal flow, which then couples to toroidal via Coriolis)
     end
-
-    # DEBUG: Print coupling summary
-    println("  ✓ Added $v_to_u_coupling_count v→u Coriolis coupling blocks")
 
     # =========================================================================
     # Temperature equation (section h)

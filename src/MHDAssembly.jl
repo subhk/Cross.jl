@@ -74,14 +74,12 @@ end
 function operator_coriolis_v_to_u(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
     if offset == -1
         C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-        mtx = 2im * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
-        return mtx
+        return 2 * C * ((l - 1) * op.r1_D0_v - op.r2_D1_v)
     elseif offset == 1
         C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-        mtx = 2im * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
-        return mtx
+        return 2 * C * (-(l + 2) * op.r1_D0_v - op.r2_D1_v)
     else
-        error("offset must be ±1")
+        error("offset must be ±1 for Coriolis v→u coupling")
     end
 end
 
@@ -112,16 +110,19 @@ function operator_thermal_diffusion(op::MHDStabilityOperator{T}, l::Int, Etherm:
     if op.params.heating == :differential
         return Etherm * (-L * op.r1_D0_h + 2 * op.r2_D1_h + op.r3_D2_h)
     else  # :internal
-        return Etherm * L * (-op.r0_D0_h + 2 * op.r1_D1_h + op.r2_D2_h)
+        return Etherm * (-L * op.r0_D0_h + 2 * op.r1_D1_h + op.r2_D2_h)
     end
 end
 
 function operator_thermal_advection(op::MHDStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
     if op.params.heating == :differential
-        return L * (op.r3_D0_h - 3 * op.r2_D0_h)
+        ricb = op.params.ricb
+        gap = one(T) - ricb
+        scale = iszero(gap) ? zero(T) : ricb / gap
+        return L * op.r0_D0_h * scale
     else  # :internal
-        return L * (op.r2_D0_h - op.r3_D0_h)
+        return L * op.r2_D0_h
     end
 end
 

@@ -377,29 +377,22 @@ For poloidal field (no-curl equation):
 - Shear of background field
 """
 function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
-                                            l::Int, m::Int, offset::Int) where {T}
+                                           l::Int, m::Int, offset::Int) where {T}
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_magnetic_poloidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)
 
-    function sqrt_pair(a, b)
-        val = a * b
-        return val > 0 ? sqrt(val) : 0.0
-    end
-
     if offset == -2
         denom = 3 - 8l + 4l^2
         abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        C1 = 3 * (-2 + l) * (1 + l) * sqrt_pair(l - m, l + m - 1) * sqrt_pair(l - 1 - m, l + m)
-        C = C1 / denom
-
+        sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
+        C = 3 * (l - 2) * (l + 1) * sqrt_factor / denom
         terms = [
-            ((-4 + l), bo(0, 0, 0)),
+            (-(4 - l), bo(0, 0, 0)),
             (-3.0, bo(1, 0, 1)),
-            ((-1 + l), bo(1, 1, 0))
+            (-(1 - l), bo(1, 1, 0))
         ]
-        combo = combine_terms(terms)
-        return C * combo
+        return C * combine_terms(terms)
 
     elseif offset == -1
         denom = 2l - 1
@@ -410,8 +403,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
             (l, bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1))
         ]
-        combo = combine_terms(terms)
-        return C * combo
+        return C * combine_terms(terms)
 
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
@@ -422,8 +414,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
             (l * (1 + l), bo(1, 1, 0)),
             (2 * (3 - l - l^2), bo(1, 0, 1))
         ]
-        combo = combine_terms(terms)
-        return C * combo
+        return C * combine_terms(terms)
 
     elseif offset == 1
         denom = 2l + 3
@@ -434,21 +425,20 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
             (-(l + 1), bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1))
         ]
-        combo = combine_terms(terms)
-        return C * combo
+        return C * combine_terms(terms)
 
     elseif offset == 2
-        denom = 15 + 16l + 4l^2
+        denom = (3 + 2l) * (5 + 2l)
         abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        C1 = 3 * l * (3 + l) * sqrt_pair(2 + l - m, 1 + l + m) * sqrt_pair(2 + 3l + l^2 + m - m^2, 2 + 3l + l^2 - m - m^2)
-        C = C1 / denom
+        sqrt1 = sqrt(max((2 + l - m) * (1 + l + m), 0))
+        sqrt2 = sqrt(max((1 + l - m) * (2 + l + m), 0))
+        C = 3 * l * (l + 3) * sqrt1 * sqrt2 / denom
         terms = [
-            (-(5 + l), bo(0, 0, 0)),
+            (-(l + 5), bo(0, 0, 0)),
             (-3.0, bo(1, 0, 1)),
-            (-(2 + l), bo(1, 1, 0))
+            (-(l + 2), bo(1, 1, 0))
         ]
-        combo = combine_terms(terms)
-        return C * combo
+        return C * combine_terms(terms)
     else
         error("offset must be in -2:-1:2 for induction poloidal (from u)")
     end

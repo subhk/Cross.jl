@@ -197,11 +197,6 @@ git-tree-sha1 = "0044e9f5e49a57e88205e8f30ab73928b05fe5b6"
 uuid = "442a2c76-b920-505d-bb47-c5924d526838"
 version = "1.1.0"
 
-[[deps.FeastKit]]
-deps = ["Distributed", "FastGaussQuadrature", "Krylov", "LinearAlgebra", "MPI", "Printf", "Random", "SharedArrays", "SparseArrays"]
-git-tree-sha1 = "fddc564a2a0d8ccd5453c4ad0024076ba0c317e2"
-uuid = "fb02c795-5df5-4db3-94bf-d2cc9bf113f2"
-version = "1.0.3"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]

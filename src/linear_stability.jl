@@ -17,9 +17,6 @@ import ..Cross: ChebyshevDiffn
 
 const _fourπ = 4π
 
-import FeastKit
-using FeastKit: feastinit!, feast_set_defaults!, feast_general, Feast_SUCCESS
-
 @inline function _symmetry_flag(sym::Symbol)
     sym === :symmetric && return 1
     sym === :antisymmetric && return -1
@@ -407,45 +404,30 @@ end
 
 (M::ShiftInvertMap)(y, x) = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
 
-struct FeastConvergenceInfo
-    converged::Bool
-    info_code::Int
-    iterations::Int
-    found::Int
-    radius::Float64
-end
-
 function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   nev::Int=6,
                                   tol::Float64=1e-10,
                                   maxiter::Int=1000,
                                   which::Symbol=:LR,
-                                  solver::Symbol=:feast,
-                                  feast_center::Complex{T}=Complex{T}(0),
-                                  feast_radius::Float64=1.0,
-                                  feast_M0::Int=max(nev * 4, 32),
-                                  feast_integration::Int=8,
-                                  feast_refine::Int=20,
-                                  feast_print_level::Int=0) where {T<:Float64}
+                                  solver::Symbol=:arpack,
+                                  arpack_shift::Union{Nothing,Number}=nothing) where {T<:Float64}
 
     A_full, B_full, interior_dofs, _ = assemble_matrices(op)
 
-    if solver == :feast
-        feast_result = _feast_eigensolve(A_full, B_full, interior_dofs;
-                                         nev=nev,
-                                         which=which,
-                                         tol=tol,
-                                         center=feast_center,
-                                         radius=feast_radius,
-                                         M0=feast_M0,
-                                         integration_points=feast_integration,
-                                         max_refine=feast_refine,
-                                         print_level=feast_print_level)
-        if feast_result !== nothing
-            eigenvalues, eigenvectors, info = feast_result
+    if solver == :arpack
+        arpack_result = _arpack_eigensolve(A_full, B_full, interior_dofs;
+                                           nev=nev,
+                                           tol=tol,
+                                           maxiter=maxiter,
+                                           which=which,
+                                           shift=arpack_shift)
+        if arpack_result !== nothing
+            eigenvalues, eigenvectors, info = arpack_result
             return eigenvalues, eigenvectors, info
         end
-        @warn "Feast solver failed or returned insufficient eigenpairs; falling back to Krylov shift-invert."
+        @warn "Arpack solver failed or returned insufficient eigenpairs; falling back to Krylov shift-invert."
+    elseif solver != :krylov
+        error("Unknown eigenvalue solver $solver; supported solvers are :arpack and :krylov.")
     end
 
     return _krylov_eigensolve(A_full, B_full, interior_dofs;
@@ -520,95 +502,58 @@ function _krylov_eigensolve(A_full::Matrix{Complex{T}},
     return eigenvalues[ordering], vecs_full[ordering], info
 end
 
-function _feast_eigensolve(A_full::Matrix{Complex{T}},
-                           B_full::Matrix{Complex{T}},
-                           interior_dofs::Vector{Int};
-                           nev::Int,
-                           which::Symbol,
-                           tol::Float64,
-                           center::Complex{T},
-                           radius::Float64,
-                           M0::Int,
-                           integration_points::Int,
-                           max_refine::Int,
-                           print_level::Int) where {T<:Float64}
-                           
+function _arpack_eigensolve(A_full::Matrix{Complex{T}},
+                            B_full::Matrix{Complex{T}},
+                            interior_dofs::Vector{Int};
+                            nev::Int,
+                            tol::Float64,
+                            maxiter::Int,
+                            which::Symbol,
+                            shift::Union{Nothing,Number}) where {T<:Float64}
+
     A = Matrix(A_full[interior_dofs, interior_dofs])
     B = Matrix(B_full[interior_dofs, interior_dofs])
 
-    n = size(A, 1)
-    M0_eff = min(max(M0, nev * 2), n)
-
-    radii = [radius, radius * 2, radius * 4]
-
-    fpm = zeros(Int, 64)
-    feastinit!(fpm)
-    tol_exp = clamp(Int(round(-log10(tol))), 6, 12)
-    
-    feast_set_defaults!(fpm; print_level=print_level,
-                             integration_points=integration_points,
-                             tolerance_exp=tol_exp,
-                             max_refinement=max_refine)
-
-    for r in radii
-        result = try
-            FeastKit.feast_general(copy(A), copy(B), center, r; M0=M0_eff, fpm=fpm)
-        catch
-            continue
-        end
-
-        if print_level >= 0
-            eigen_preview = result.M == 0 ? Complex{T}[] : copy(result.lambda[1:result.M])
-            if length(eigen_preview) > 8
-                eigen_preview = vcat(eigen_preview[1:5], eigen_preview[end-2:end])
-            end
-            @info "FEAST iteration" radius=r found=result.M info=result.info eigenvalues=eigen_preview
-        end
-
-        if result.info != Feast_SUCCESS.value
-            continue
-        end
-        if result.M == 0
-            continue
-        end
-
-        # Use Rayleigh quotient to recover complex eigenvalues
-        vecs = result.q[:, 1:result.M]
-        eigenvalues = Vector{Complex{T}}(undef, result.M)
-        for k in 1:result.M
-            v = vecs[:, k]
-            num = dot(v, A * v)
-            den = dot(v, B * v)
-            eigenvalues[k] = num / den
-        end
-
-        ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
-                   which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
-                   collect(1:length(eigenvalues))
-
-        if length(ordering) < nev
-            if print_level >= 0
-                @warn "FEAST returned fewer eigenpairs than requested; increasing contour radius may help." requested=nev found=length(ordering) radius=r
-            end
-            continue
-        end
-
-        sel = ordering[1:nev]
-        eigenvalues_sel = eigenvalues[sel]
-
-        vecs_full = Vector{Vector{Complex{T}}}(undef, nev)
-        n_full = size(A_full, 1)
-        for (i, idx) in enumerate(sel)
-            full_vec = zeros(Complex{T}, n_full)
-            full_vec[interior_dofs] = vecs[:, idx]
-            vecs_full[i] = full_vec
-        end
-
-        info = FeastConvergenceInfo(true, result.info, result.loop, result.M, r)
-        return eigenvalues_sel, vecs_full, info
+    σ = if shift === nothing
+        nothing
+    else
+        Complex{T}(real(shift), imag(shift))
     end
 
-    return nothing
+    solver_result = try
+        if σ === nothing
+            Arpack.eigs(A, B; nev=nev, which=which, tol=tol, maxiter=maxiter)
+        else
+            Arpack.eigs(A, B; nev=nev, which=which, tol=tol, maxiter=maxiter, sigma=σ)
+        end
+    catch err
+        @warn "Arpack eigensolver raised an exception; switching to Krylov shift-invert." exception=(err, catch_backtrace())
+        return nothing
+    end
+
+    eigenvalues_int, eigenvectors_int, info = solver_result
+
+    nconv = hasproperty(info, :nconv) ? getproperty(info, :nconv) : length(eigenvalues_int)
+    if nconv < nev || length(eigenvalues_int) < nev
+        return nothing
+    end
+
+    eigenvalues = Complex{T}.(eigenvalues_int)
+
+    vecs_full = Vector{Vector{Complex{T}}}(undef, length(eigenvalues))
+    n_full = size(A_full, 1)
+    for (i, v_int) in enumerate(eachcol(eigenvectors_int))
+        full_vec = zeros(Complex{T}, n_full)
+        full_vec[interior_dofs] = v_int
+        vecs_full[i] = full_vec
+    end
+
+    ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
+               which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
+               collect(1:length(eigenvalues))
+
+    sel = ordering[1:nev]
+    return eigenvalues[sel], vecs_full[sel], info
 end
 
 function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;

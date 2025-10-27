@@ -285,9 +285,10 @@ params = MHDParams(
 
 **Physics:** Finite conductivity with magnetic diffusion skin depth
 
-**Status:** ⚠️ Infrastructure ready but BC currently disabled
+**Status:** ✅ Implemented (requires `forcing_frequency` and `Em > 0`)
 
-**To enable:** Requires adding `forcing_frequency` parameter
+**Usage:** Provide the non-dimensional forcing frequency when constructing
+`MHDParams`, e.g. `MHDParams(..., bci_magnetic=1, forcing_frequency=1.0)`.
 
 ---
 

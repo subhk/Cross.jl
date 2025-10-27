@@ -162,6 +162,9 @@ MHD linear stability analysis or dynamo onset calculations.
   - 0 = **insulating**: Most common (electrically insulating mantle)
   - 1,2 = conducting/perfect (rarely used at CMB)
 
+- `forcing_frequency::T`: Dimensionless forcing frequency (ωτ) used for conducting
+  magnetic boundary conditions (only needed when `bci_magnetic==1` or thin-wall BCs)
+
 # Heating Mode
 
 - `heating::Symbol`: Thermal forcing configuration
@@ -244,6 +247,7 @@ struct MHDParams{T<:Real}
     bco_thermal::Int
     bci_magnetic::Int
     bco_magnetic::Int
+    forcing_frequency::T
 
     # Heating
     heating::Symbol
@@ -257,6 +261,7 @@ struct MHDParams{T<:Real}
                          B0_type, B0_amplitude,
                          bci, bco, bci_thermal, bco_thermal,
                          bci_magnetic, bco_magnetic,
+                         forcing_frequency,
                          heating, L, Etherm, Em) where {T<:Real}
         @assert 0 < ricb < 1 "ricb must be in (0,1)"
         @assert E > 0 "Ekman number must be positive"
@@ -272,6 +277,7 @@ struct MHDParams{T<:Real}
                B0_type, B0_amplitude,
                bci, bco, bci_thermal, bco_thermal,
                bci_magnetic, bco_magnetic,
+               forcing_frequency,
                heating, L, Etherm, Em)
     end
 end
@@ -285,6 +291,7 @@ function MHDParams(; E, Pr=1.0, Pm=1.0, Ra, ricb,
                    bci::Int=1, bco::Int=1,
                    bci_thermal::Int=0, bco_thermal::Int=0,
                    bci_magnetic::Int=0, bco_magnetic::Int=0,
+                   forcing_frequency=0.0,
                    heating::Symbol=:differential)
     # Promote all numeric parameters to common type
     T = promote_type(typeof(E), typeof(Pr), typeof(Pm), typeof(Ra), typeof(ricb), typeof(Le), typeof(B0_amplitude))
@@ -295,6 +302,7 @@ function MHDParams(; E, Pr=1.0, Pm=1.0, Ra, ricb,
     ricb_T = T(ricb)
     Le_T = T(Le)
     B0_amplitude_T = T(B0_amplitude)
+    forcing_frequency_T = T(forcing_frequency)
 
     L = one(T) - ricb_T
     Etherm = E_T / Pr_T
@@ -303,6 +311,7 @@ function MHDParams(; E, Pr=1.0, Pm=1.0, Ra, ricb,
                        B0_type, B0_amplitude_T,
                        bci, bco, bci_thermal, bco_thermal,
                        bci_magnetic, bco_magnetic,
+                       forcing_frequency_T,
                        heating, L, Etherm, Em)
 end
 

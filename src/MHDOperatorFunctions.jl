@@ -922,14 +922,35 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 end
 
             elseif params.bci_magnetic == 1
-                # Conducting ICB (finite conductivity): f - k·dlogjl(l, k·ri)·f' = 0
-                # where k = (1-i)√(forcing_frequency/(2Em))
-                # Following Kore: kore-main/bin/assemble.py:1575-1612
-                # NOTE: This creates a nonlinear eigenvalue problem when frequency = eigenvalue σ
-                # For now, requires forcing_frequency parameter to be set
+                freq = params.forcing_frequency
+                Em = params.Em
+                if Em <= 0
+                    error("Conducting magnetic BC requires Em > 0")
+                end
 
-                error("Conducting ICB with finite conductivity not yet fully implemented. " *
-                      "Use bci_magnetic=0 (insulating) or bci_magnetic=2 (perfect conductor)")
+                # If frequency is zero (steady state), condition reduces to f(ri) = 0
+                if freq == 0
+                    A[row_icb, :] .= 0.0
+                    B[row_icb, :] .= 0.0
+                    for n in 0:N
+                        col = row_base + n + 1
+                        A[row_icb, col] = ComplexF64((-1.0)^n)
+                    end
+                else
+                    k = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
+                    dlog = spherical_bessel_j_logderiv(l, k * ri)
+
+                    D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
+
+                    A[row_icb, :] .= 0.0
+                    B[row_icb, :] .= 0.0
+                    for n in 0:N
+                        col = row_base + n + 1
+                        Tn_at_minus1 = (-1.0)^n
+                        deriv = D1[N+1, n+1]
+                        A[row_icb, col] = ComplexF64(Tn_at_minus1) - k * dlog * ComplexF64(deriv)
+                    end
+                end
 
             elseif params.bci_magnetic == 2
                 # Perfect conductor ICB: 2-row boundary condition
@@ -1011,13 +1032,42 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
             # ----------------------------------------------------------------
             row_icb = row_base + n_per_mode
 
-            if params.bci_magnetic == 0 || params.bci_magnetic == 1
-                # Insulating or conducting: g = 0
+            if params.bci_magnetic == 0
+                # Insulating: g = 0
                 A[row_icb, :] .= 0.0
                 B[row_icb, :] .= 0.0
                 for n in 0:N
                     col = row_base + n + 1
                     A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
+                end
+
+            elseif params.bci_magnetic == 1
+                freq = params.forcing_frequency
+                Em = params.Em
+                if Em <= 0
+                    error("Conducting magnetic BC requires Em > 0")
+                end
+
+                if freq == 0
+                    A[row_icb, :] .= 0.0
+                    B[row_icb, :] .= 0.0
+                    for n in 0:N
+                        col = row_base + n + 1
+                        A[row_icb, col] = ComplexF64((-1.0)^n)
+                    end
+                else
+                    k = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
+                    dlog = spherical_bessel_j_logderiv(l, k * ri)
+                    D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
+
+                    A[row_icb, :] .= 0.0
+                    B[row_icb, :] .= 0.0
+                    for n in 0:N
+                        col = row_base + n + 1
+                        Tn_at_minus1 = (-1.0)^n
+                        deriv = D1[N+1, n+1]
+                        A[row_icb, col] = ComplexF64(Tn_at_minus1) - k * dlog * ComplexF64(deriv)
+                    end
                 end
 
             elseif params.bci_magnetic == 2
@@ -1036,13 +1086,10 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                     col = row_base + n + 1
                     Tn_at_minus1 = (-1.0)^n
 
-                    # Value term: -(1/ri)·g
                     value_term = -(1.0 / ri) * Tn_at_minus1
-
-                    # First derivative term: -g'
                     deriv1_term = -D1[N+1, n+1]
 
-                    A[row_icb, col] = params.Em * (value_term + deriv1_term)
+                    A[row_icb, col] = params.Em * ComplexF64(value_term + deriv1_term)
                 end
 
             else

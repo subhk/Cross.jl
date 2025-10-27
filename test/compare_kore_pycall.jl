@@ -12,9 +12,46 @@ np = pyimport("numpy")
 
 include(joinpath(ROOT, "src", "SparseOperator.jl"))
 const SO = SparseOperator
+include(joinpath(ROOT, "src", "CompleteMHD.jl"))
+const CM = CompleteMHD
 
 function np_array(mat::SparseMatrixCSC)
     return np.array(Matrix(mat))
+end
+
+function add_matrix!(dict::PyDict, name::String, mat)
+    dict[Symbol(name)] = np.array(Matrix{ComplexF64}(mat))
+end
+
+function build_mhd_matrix_dict(op::CM.MHDStabilityOperator)
+    mats = PyDict()
+
+    # Base radial operators for magnetic sections
+    add_matrix!(mats, "r0_D0_f", op.r0_D0_f)
+    add_matrix!(mats, "r1_D1_f", op.r1_D1_f)
+    add_matrix!(mats, "r2_D2_f", op.r2_D2_f)
+    add_matrix!(mats, "r2_D0_f", op.r2_D0_f)
+    add_matrix!(mats, "r0_D0_g", op.r0_D0_g)
+    add_matrix!(mats, "r1_D1_g", op.r1_D1_g)
+    add_matrix!(mats, "r2_D2_g", op.r2_D2_g)
+    add_matrix!(mats, "r2_D0_g", op.r2_D0_g)
+
+    # Background operators for velocity (u/v)
+    for p in -1:5, h in 0:3, d in 0:3
+        name_u = "r$(p)_h$(h)_D$(d)_u"
+        name_v = "r$(p)_h$(h)_D$(d)_v"
+        mat = CM.background_operator(op, p, h, d)
+        add_matrix!(mats, name_u, mat)
+        add_matrix!(mats, name_v, mat)
+    end
+
+    # Background operators for magnetic poloidal/toroidal sections
+    for p in -1:5, h in 0:2, d in 0:2
+        add_matrix!(mats, "r$(p)_h$(h)_D$(d)_f", CM.background_operator(op, p, h, d))
+        add_matrix!(mats, "r$(p)_h$(h)_D$(d)_g", CM.background_operator(op, p, h, d))
+    end
+
+    return mats
 end
 
 function maxabsdiff(A::AbstractArray, B::AbstractArray)
@@ -126,3 +163,108 @@ params_list = [
 for params in params_list
     compare_params(params)
 end
+
+function compare_mhd(params)
+    op = CM.MHDStabilityOperator(params)
+    println("Comparing MHD operators for Le=$(params.Le), B0=$(params.B0_type)")
+    mats = build_mhd_matrix_dict(op)
+    m = params.m
+    Le2 = params.Le^2
+    Em = params.E / params.Pm
+
+    for l in op.ll_u
+        mat_diag_py = Array(kf.lorentz_upol_diag_axial(l, m, mats))
+        mat_diag_jl = Matrix(CM.operator_lorentz_poloidal_diagonal(op, l, params.Le))
+        println("  l=$(l) Lorentz diag diff: ", maxabsdiff(Le2 * mat_diag_py, mat_diag_jl))
+
+        for offset in -2:2
+            mat_py = Array(kf.lorentz_upol_bpol_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_lorentz_poloidal_from_bpol(op, l, m, offset, params.Le))
+            println("    offset=$(offset) bpol diff: ", maxabsdiff(Le2 * mat_py, mat_jl))
+        end
+
+        for offset in (-1, 1)
+            mat_py = Array(kf.lorentz_upol_btor_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_lorentz_poloidal_offdiag(op, l, m, offset, params.Le))
+            println("    offset=$(offset) btor diff: ", maxabsdiff(Le2 * mat_py, mat_jl))
+        end
+
+        for offset in -2:2
+            mat_py = Array(kf.induction_f_upol_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_induction_poloidal_from_u(op, l, m, offset))
+            println("    induction (u) offset=$(offset) diff: ", maxabsdiff(mat_py, mat_jl))
+        end
+
+        for offset in -1:1
+            mat_py = Array(kf.induction_f_utor_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_induction_poloidal_from_v(op, l, m, offset))
+            println("    induction (v) offset=$(offset) diff: ", maxabsdiff(mat_py, mat_jl))
+        end
+
+        diff_py = Array(kf.magnetic_diffusion_f_axial(l, params.Etherm, mats))
+        diff_jl = Matrix(CM.operator_magnetic_diffusion_poloidal(op, l, Em))
+        println("    magnetic diffusion (f) diff: ", maxabsdiff(diff_py, diff_jl))
+
+        b_py = Array(kf.b_poloidal_axial(l, mats))
+        b_jl = Matrix(CM.operator_b_poloidal(op, l))
+        println("    b_poloidal diff: ", maxabsdiff(b_py, b_jl))
+    end
+
+    for l in op.ll_v
+        lorentz_py = Array(kf.lorentz_utor_axial(l, m, mats))
+        lorentz_jl = Matrix(CM.operator_lorentz_toroidal(op, l, params.Le))
+        println("  l=$(l) Lorentz tor diff: ", maxabsdiff(Le2 * lorentz_py, lorentz_jl))
+
+        for offset in -1:1
+            mat_py = Array(kf.lorentz_v_bpol_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_lorentz_toroidal_from_bpol(op, l, m, offset, params.Le))
+            println("    lorentz v←bpol offset=$(offset) diff: ", maxabsdiff(Le2 * mat_py, mat_jl))
+        end
+
+        for offset in -2:2
+            mat_py = Array(kf.lorentz_v_btor_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_lorentz_toroidal_from_btor(op, l, m, offset, params.Le))
+            println("    lorentz v←btor offset=$(offset) diff: ", maxabsdiff(Le2 * mat_py, mat_jl))
+        end
+
+        for offset in (-1, 1)
+            mat_py = Array(kf.induction_g_upol_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_induction_toroidal_from_u(op, l, m, offset))
+            println("    induction tor<-u offset=$(offset) diff: ", maxabsdiff(mat_py, mat_jl))
+        end
+
+        for offset in -2:2
+            mat_py = Array(kf.induction_g_utor_axial(l, m, offset, mats))
+            mat_jl = Matrix(CM.operator_induction_toroidal_from_v(op, l, m, offset))
+            println("    induction tor<-v offset=$(offset) diff: ", maxabsdiff(mat_py, mat_jl))
+        end
+
+        diff_py = Array(kf.magnetic_diffusion_g_axial(l, Em, mats))
+        diff_jl = Matrix(CM.operator_magnetic_diffusion_toroidal(op, l, Em))
+        println("    magnetic diffusion (g) diff: ", maxabsdiff(diff_py, diff_jl))
+
+        b_py = Array(kf.b_toroidal_axial(l, mats))
+        b_jl = Matrix(CM.operator_b_toroidal(op, l))
+        println("    b_toroidal diff: ", maxabsdiff(b_py, b_jl))
+    end
+end
+
+params_mhd = CM.MHDParams(
+    E = 1e-3,
+    Pr = 1.0,
+    Pm = 5.0,
+    Ra = 1e4,
+    Le = 0.1,
+    ricb = 0.35,
+    m = 2,
+    lmax = 6,
+    N = 8,
+    B0_type = CM.axial,
+    bci = 1,
+    bco = 1,
+    bci_magnetic = 0,
+    bco_magnetic = 0,
+    heating = :differential
+)
+
+compare_mhd(params_mhd)

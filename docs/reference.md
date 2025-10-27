@@ -19,7 +19,7 @@ This concise reference mirrors Kore’s command tables. It focuses on the export
 
 | Function | Purpose | Key Keywords | Notes |
 | --- | --- | --- | --- |
-| `solve_eigenvalue_problem(A, B; kwargs...)` | Wrapper around KrylovKit / ARPACK / ArnoldiMethod / FEAST | `solver`, `nev`, `which`, `tol`, `maxiter` | Accepts sparse or dense matrices. |
+| `solve_eigenvalue_problem(A, B; kwargs...)` | Wrapper around ARPACK or KrylovKit | `solver`, `nev`, `which`, `tol`, `maxiter` | Accepts sparse or dense matrices. |
 | `leading_modes(op; kwargs...)` | Compute leading eigenpairs of a linear stability operator | `nev`, `solver`, `which` | Operates on `LinearStabilityOperator` directly. |
 | `find_growth_rate(op; kwargs...)` | Return the largest growth rate and associated eigenvector | `nev`, `which` | Handy for fixed Rayleigh numbers. |
 | `find_critical_rayleigh(; kwargs...)` | Bracket search for critical `Ra` | `Ra_guess`, `solver`, `tolerance`, `max_iterations` | Returns `(Ra_c, ω_c, eigenvector)`. |
@@ -54,10 +54,8 @@ This concise reference mirrors Kore’s command tables. It focuses on the export
 
 `solve_eigenvalue_problem` accepts the following `solver` identifiers:
 
-- `:krylovkit` (default) – KrylovKit’s Arnoldi / Lanczos implementations.
-- `:arpack` – Julia’s ARPACK wrapper.
-- `:arnoldi` – `ArnoldiMethod.jl` partial Schur decompositions.
-- `:feast` – FEAST contour integration via `FeastKit`.
+- `:arpack` (default) – Julia’s ARPACK wrapper, optionally with `arpack_shift`.
+- `:krylov` – KrylovKit shift-invert fallback when ARPACK fails to converge.
 
 Common keywords:
 
@@ -65,6 +63,7 @@ Common keywords:
 - `which` – selection criterion (`:LR`, `:LI`, `:LM`, `:SR`, etc.).
 - `tol` – convergence tolerance (default `1e-8`).
 - `maxiter` – maximum iterations (backend dependent).
+- `arpack_shift` – optional complex shift targeting eigenvalues near the neutral curve.
 
 ## Logging Helpers
 

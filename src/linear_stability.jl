@@ -346,7 +346,10 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
         B[T_idx, T_idx] = -Complex.(L * R2D0)
 
         # Toroidal diagonal
-        coriolis_t = -2im * m * L * R2D0
+        # BUG FIX 2025-10-27: Removed incorrect L factor from Coriolis term
+        # Kore operators.py:121-122: out = -2j*par.m*r2_D0_v (NO L factor!)
+        # The toroidal Coriolis term should NOT have the L factor
+        coriolis_t = -2im * m * R2D0
         viscous_t = Ek * L * (-L * R0 + 2 * R1D1 + R2D2)
         A[T_idx, T_idx] .+= Complex.(coriolis_t - viscous_t)
 

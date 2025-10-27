@@ -60,7 +60,7 @@ Ra_c, ω_c, eigvec = find_critical_rayleigh(
     Ra_guess = params.Ra,
     mechanical_bc = params.mechanical_bc,
     thermal_bc = params.thermal_bc,
-    solver = :krylovkit,
+    solver = :arpack,
     nev = 6,
 )
 
@@ -69,7 +69,7 @@ Ra_c, ω_c, eigvec = find_critical_rayleigh(
 
 Arguments of note:
 
-- `solver` – choose `:krylovkit`, `:arnoldi`, `:arpack`, or `:feast`.
+- `solver` – choose `:arpack` (default) or `:krylov`.
 - `nev` – number of eigenvalues to compute; the first (largest growth rate) guides the search.
 - `equatorial_symmetry` – restricts the ℓ-spectrum when set to `:symmetric` or `:antisymmetric`.
 
@@ -106,7 +106,7 @@ function sweep_modes(m_values; base = params)
     results = Dict{Int, NamedTuple}()
     for m in m_values
         current = base |> (; m, Ra = base.Ra)
-        Ra_c, ω_c, vec = find_critical_rayleigh(; current..., solver = :krylovkit)
+        Ra_c, ω_c, vec = find_critical_rayleigh(; current..., solver = :arpack)
         results[m] = (Ra_c = Ra_c, ω_c = ω_c)
     end
     return results

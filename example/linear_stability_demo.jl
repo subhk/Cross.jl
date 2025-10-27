@@ -71,6 +71,19 @@ catch
     parse(Float64, str) + 0im
 end
 
+function solver_iterations(info)
+    info === nothing && return missing
+    if hasproperty(info, :niter)
+        return getproperty(info, :niter)
+    elseif hasproperty(info, :numiter)
+        return getproperty(info, :numiter)
+    elseif hasproperty(info, :iterations)
+        return getproperty(info, :iterations)
+    else
+        return missing
+    end
+end
+
 solver = get(cli_opts, :solver, Symbol(lowercase(get(ENV, "CROSS_SOLVER", "arpack"))))
 if !(solver in (:arpack, :krylov))
     @warn "Unknown solver requested; defaulting to :arpack" solver
@@ -101,13 +114,13 @@ for m in 1:20
                                          tol=1e-6,
                                          maxiter=120,
                                          solver=solver,
-                                         feast_center=feast_center,
-                                         feast_radius=feast_radius,
-                                         feast_M0=feast_M0)
+                                         arpack_shift=arpack_shift)
         λ1 = vals[1]
-        @printf("%2d  %12.5e  %12.5e  %5d\n", m, real(λ1), imag(λ1), info.iterations)
+        iter_val = solver_iterations(info)
+        iter_str = iter_val isa Integer ? @sprintf("%5d", iter_val) : "    --"
+        @printf("%2d  %12.5e  %12.5e  %s\n", m, real(λ1), imag(λ1), iter_str)
     catch err
         @printf("%2d  %12s  %12s      --\n", m, "ERROR", "ERROR")
-        @warn "Failed to converge" m err
+        @warn "Failed to converge" m err exception=(err, catch_backtrace())
     end
 end

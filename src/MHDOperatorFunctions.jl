@@ -233,15 +233,11 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     bo(p, h, d) = background_operator(op, p + shift, h, d)
     L = l * (l + 1)
 
-    function sqrt_pair(a, b)
-        val = a * b
-        return val > 0 ? sqrt(val) : 0.0
-    end
-
     if offset == -2
         denom = 3 - 8l + 4l^2
         abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        C = (3 * (-2 - l + l^2) * sqrt_pair(l - m, l + m - 1) * sqrt_pair(l - 1 - m, l + m)) / denom
+        sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
+        C = (3 * (-2 - l + l^2) * sqrt_factor) / denom
 
         terms = [
             (2l + 3l^2 + l^3, bo(0, 0, 0)),
@@ -323,7 +319,8 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     elseif offset == 2
         denom = 15 + 16l + 4l^2
         abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        C = (3 * l * (3 + l) * sqrt_pair(1 + l - m, 2 + l + m) * sqrt_pair(2 + 3l + l^2 + m, 2 + 3l + l^2 - m)) / denom
+        sqrt_factor = sqrt(max((1 + l - m) * (2 + l + m), 0))
+        C = (3 * l * (3 + l) * sqrt_factor) / denom
 
         terms = [
             (l - l^3, bo(0, 0, 0)),

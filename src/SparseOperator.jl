@@ -650,9 +650,8 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # A matrix: RHS operators (Coriolis, viscous, buoyancy)
         # -----------------------------------------------------------------
 
-        # Time derivative term: ∂u/∂t → -operator_u in B matrix
-        # (Negative sign follows Cross.jl convention for eigenvalue problem)
-        u_op = -operator_u(op, l)
+        # Time derivative term: ∂u/∂t → operator_u in B matrix
+        u_op = operator_u(op, l)
         add_block!(B_rows, B_cols, B_vals, u_op, row_base, col_base)
 
         # Coriolis force (diagonal)
@@ -660,7 +659,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         add_block!(A_rows, A_cols, A_vals, cori_op, row_base, col_base)
 
         # Viscous diffusion
-        visc_op = -operator_viscous_diffusion(op, l, E)
+        visc_op = operator_viscous_diffusion(op, l, E)
         add_block!(A_rows, A_cols, A_vals, visc_op, row_base, col_base)
 
         # Coriolis coupling to toroidal velocity (l±1)
@@ -699,8 +698,8 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # A matrix: RHS operators (Coriolis, viscous)
         # -----------------------------------------------------------------
 
-        # Time derivative term: ∂v/∂t → -operator_u_toroidal in B matrix
-        u_tor_op = -operator_u_toroidal(op, l)
+        # Time derivative term: ∂v/∂t → operator_u_toroidal in B matrix
+        u_tor_op = operator_u_toroidal(op, l)
         add_block!(B_rows, B_cols, B_vals, u_tor_op, row_base, col_base)
 
         # Coriolis force acting on toroidal velocity
@@ -708,7 +707,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         add_block!(A_rows, A_cols, A_vals, cori_tor_op, row_base, col_base)
 
         # Viscous diffusion for toroidal velocity
-        visc_tor_op = -operator_viscous_toroidal(op, l, E)
+        visc_tor_op = operator_viscous_toroidal(op, l, E)
         add_block!(A_rows, A_cols, A_vals, visc_tor_op, row_base, col_base)
 
         # Coriolis coupling from toroidal to poloidal velocity (v → u, l±1)

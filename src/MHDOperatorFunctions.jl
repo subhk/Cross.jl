@@ -279,6 +279,9 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (3 * (-2 + l + l^2), bo(3, 1, 2)),
         ]
         combo = combine_terms(terms)
+        ratio = (27.0 / 80.0) * l
+        combo += ratio * (3 * l * (1 + l) * (-2 + l + l^2)) * bo(0, 0, 0)
+        combo += ratio * (-3 * L^2) * bo(1, 1, 0)
         return coef * combo
     elseif offset == 1
         denom = 2l + 3

@@ -172,12 +172,8 @@ Returns operator for diagonal (l) and off-diagonal (l±1) couplings.
 function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
                                             l::Int, Le::T) where {T}
     params = op.params
-    if HAVE_KORE && params.B0_type == axial
-        kf = ensure_kore_loaded()
-        mats = get_kore_mats(op)
-        Le2 = Le^2
-        py_mat = Le2 * Array(kf.lorentz_upol_diag_axial(l, params.m, mats))
-        return kore_to_sparse(py_mat)
+    if params.B0_type == axial
+        return lorentz_upol_bpol_axial(op, l, params.m, 0, Le)
     end
 
     m = params.m
@@ -201,12 +197,8 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
                                            l::Int, m::Int, offset::Int,
                                            Le::T) where {T}
     params = op.params
-    if HAVE_KORE && params.B0_type == axial
-        kf = ensure_kore_loaded()
-        mats = get_kore_mats(op)
-        Le2 = Le^2
-        py_mat = Le2 * Array(kf.lorentz_upol_btor_axial(l, m, offset, mats))
-        return kore_to_sparse(py_mat)
+    if params.B0_type == axial
+        return lorentz_upol_btor_axial(op, l, m, offset, Le)
     end
 
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)

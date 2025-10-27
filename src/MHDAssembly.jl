@@ -119,8 +119,7 @@ function operator_thermal_advection(op::MHDStabilityOperator{T}, l::Int) where {
     if op.params.heating == :differential
         ricb = op.params.ricb
         gap = one(T) - ricb
-        scale = iszero(gap) ? zero(T) : ricb / gap
-        return L * op.r0_D0_h * scale
+        return L * op.r0_D0_h * (ricb / gap)
     else  # :internal
         return L * op.r2_D0_h
     end
@@ -203,8 +202,6 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         row_base = (k - 1) * n_per_mode
         col_base = (k - 1) * n_per_mode
 
-        L = l * (l + 1)
-
         # ---------------------------------------------------------------------
         # B matrix: Time derivative (inertia)
         # ---------------------------------------------------------------------
@@ -224,12 +221,9 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         add_block!(A_rows, A_cols, A_vals, -visc_op, row_base, col_base)
 
         # Buoyancy (coupling from temperature)
-        if Ra > 0
-            buoy_op = operator_buoyancy(op, l, Ra, Pr)
-            # Column offset for temperature section
-            temp_col_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
-            add_block!(A_rows, A_cols, A_vals, buoy_op, row_base, temp_col_base)
-        end
+        buoy_op = operator_buoyancy(op, l, Ra, Pr)
+        temp_col_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
+        add_block!(A_rows, A_cols, A_vals, buoy_op, row_base, temp_col_base)
 
         # Lorentz force from magnetic field (if Le > 0)
         if Le > 0
@@ -504,6 +498,7 @@ function apply_velocity_boundary_conditions!(A, B, op)
     N = params.N
     n_per_mode = N + 1
     nb_u = length(op.ll_u)
+    ro = one(params.E)
 
     # -------------------------------------------------------------------------
     # Poloidal velocity BCs (section u)
@@ -513,36 +508,42 @@ function apply_velocity_boundary_conditions!(A, B, op)
 
         # Outer boundary (r = ro = 1.0)
         if params.bco == 1
-            # No-slip: u = 0, du/dr = 0 (2 rows)
-            bc_rows = [row_base + 1, row_base + 2]
-            UltrasphericalSpectral.apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                                             params.ricb, 1.0)
-        else
-            # Stress-free: u = 0, d²u/dr² = 0 (2 rows)
+            # No-slip: u = 0, du/dr = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 2], :neumann, N,
+                                                              params.ricb, ro)
+        else
+            # Stress-free: u = 0, d²u/dr² = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
+                                                              params.ricb, ro)
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 2], :neumann2, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         end
 
         # Inner boundary (r = ri = ricb)
         if params.bci == 1
-            # No-slip: u = 0, du/dr = 0 (2 rows)
-            bc_rows = [row_base + n_per_mode - 1, row_base + n_per_mode]
-            UltrasphericalSpectral.apply_boundary_conditions!(A, B, bc_rows, :dirichlet, N,
-                                                             params.ricb, 1.0)
-        else
-            # Stress-free: u = 0, d²u/dr² = 0 (2 rows)
+            # No-slip: u = 0, du/dr = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode - 1], :neumann, N,
+                                                              params.ricb, ro)
+        else
+            # Stress-free: u = 0, d²u/dr² = 0
+            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
+                                                              params.ricb, ro)
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode - 1], :neumann2, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         end
     end
 
     # -------------------------------------------------------------------------
     # Toroidal velocity BCs (section v)
     # -------------------------------------------------------------------------
+    D1_toroidal = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, params.ricb, ro)
+    outer_deriv_row = Vector(D1_toroidal[1, :])
+    inner_deriv_row = Vector(D1_toroidal[N + 1, :])
+
     for (k, l) in enumerate(op.ll_v)
         row_base = (nb_u + k - 1) * n_per_mode
 
@@ -550,22 +551,36 @@ function apply_velocity_boundary_conditions!(A, B, op)
         if params.bco == 1
             # No-slip: v = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         else
-            # Stress-free: dv/dr = 0
-            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :neumann, N,
-                                                             params.ricb, 1.0)
+            # Stress-free: -r·∂v/∂r + v = 0
+            row = row_base + 1
+            A[row, :] .= 0.0
+            B[row, :] .= 0.0
+            block_start = row_base + 1
+            for n in 0:N
+                idx = block_start + n
+                A[row, idx] = -outer_deriv_row[n + 1]
+                A[row, idx] += 1.0
+            end
         end
 
         # Inner boundary (r = ri = ricb)
         if params.bci == 1
             # No-slip: v = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         else
-            # Stress-free: dv/dr = 0
-            UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :neumann, N,
-                                                             params.ricb, 1.0)
+            # Stress-free: -r·∂v/∂r + v = 0
+            row = row_base + n_per_mode
+            A[row, :] .= 0.0
+            B[row, :] .= 0.0
+            block_start = row_base + 1
+            for n in 0:N
+                idx = block_start + n
+                A[row, idx] = -params.ricb * inner_deriv_row[n + 1]
+                A[row, idx] += (-1.0)^n
+            end
         end
     end
 end
@@ -580,6 +595,7 @@ function apply_temperature_boundary_conditions!(A, B, op)
     nb_v = length(op.ll_v)
     nb_f = length(op.ll_f)
     nb_g = length(op.ll_g)
+    ro = one(params.E)
 
     # -------------------------------------------------------------------------
     # Temperature BCs (section h)
@@ -591,22 +607,22 @@ function apply_temperature_boundary_conditions!(A, B, op)
         if params.bco_thermal == 0
             # Fixed temperature: θ = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         else
             # Fixed flux: dθ/dr = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :neumann, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         end
 
         # Inner boundary (r = ri = ricb)
         if params.bci_thermal == 0
             # Fixed temperature: θ = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         else
             # Fixed flux: dθ/dr = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :neumann, N,
-                                                             params.ricb, 1.0)
+                                                              params.ricb, ro)
         end
     end
 end

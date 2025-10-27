@@ -22,6 +22,18 @@ Must be included after MHDOperator.jl
 # -----------------------------------------------------------------------------
 
 const SparseF64 = SparseMatrixCSC{Float64,Int}
+const SparseC64 = SparseMatrixCSC{ComplexF64,Int}
+
+@inline function complex_background_operator(op::MHDStabilityOperator,
+                                             p::Int, h::Int, d::Int,
+                                             shift::Int=0)
+    return SparseC64(background_operator(op, p + shift, h, d))
+end
+
+@inline function zero_block(op::MHDStabilityOperator)
+    n = op.params.N + 1
+    return spzeros(ComplexF64, n, n)
+end
 
 function combine_terms(terms::AbstractVector{<:Tuple{T,SparseF64}}) where {T<:Real}
     isempty(terms) && return spzeros(Float64, 0, 0)
@@ -159,8 +171,17 @@ Returns operator for diagonal (l) and off-diagonal (l±1) couplings.
 """
 function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
                                             l::Int, Le::T) where {T}
-    m = op.params.m
-    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    params = op.params
+    if HAVE_KORE && params.B0_type == axial
+        kf = ensure_kore_loaded()
+        mats = get_kore_mats(op)
+        Le2 = Le^2
+        py_mat = Le2 * Array(kf.lorentz_upol_diag_axial(l, params.m, mats))
+        return kore_to_sparse(py_mat)
+    end
+
+    m = params.m
+    is_dipole = is_dipole_case(params.B0_type, params.ricb)
     shift = radial_power_shift_poloidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)
 
@@ -179,6 +200,15 @@ end
 function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
                                            l::Int, m::Int, offset::Int,
                                            Le::T) where {T}
+    params = op.params
+    if HAVE_KORE && params.B0_type == axial
+        kf = ensure_kore_loaded()
+        mats = get_kore_mats(op)
+        Le2 = Le^2
+        py_mat = Le2 * Array(kf.lorentz_upol_btor_axial(l, m, offset, mats))
+        return kore_to_sparse(py_mat)
+    end
+
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_poloidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)
@@ -219,6 +249,15 @@ end
 function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
                                              l::Int, m::Int, offset::Int,
                                              Le::T) where {T}
+    params = op.params
+    if HAVE_KORE && params.B0_type == axial
+        kf = ensure_kore_loaded()
+        mats = get_kore_mats(op)
+        Le2 = Le^2
+        py_mat = Le2 * Array(kf.lorentz_upol_bpol_axial(l, m, offset, mats))
+        return kore_to_sparse(py_mat)
+    end
+
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_poloidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)

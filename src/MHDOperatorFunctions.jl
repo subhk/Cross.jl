@@ -154,6 +154,183 @@ spherical_bessel_j_logderiv(l::Int, x::T) where {T<:Real} =
     spherical_bessel_j_logderiv(l, complex(x))
 
 # -----------------------------------------------------------------------------
+# Axial-field Lorentz helper functions (match Kore exactly)
+# -----------------------------------------------------------------------------
+
+function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
+                                 l::Int, m::Int, offset::Int,
+                                 Le::T) where {T}
+    nblock = zero_block(op)
+    bo(p, h, d) = complex_background_operator(op, p, h, d, 0)
+    L = l * (l + 1)
+    Le2 = Le^2
+
+    if offset == -2
+        denom = 3 - 8l + 4l^2
+        if abs(denom) < eps(Float64)
+            return nblock
+        end
+        sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
+        if sqrt_factor == 0.0
+            return nblock
+        end
+        C = (3 * (-2 - l + l^2) * sqrt_factor) / denom
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += (2l + 3l^2 + l^3) * bo(0, 0, 0)
+        combo += -(6 - 7l + 3l^2) * bo(1, 0, 1)
+        combo += (2 + l - 6l^2 + l^3) * bo(1, 1, 0)
+        combo += (6 - l) * bo(2, 0, 2)
+        combo += 2 * (2 - l) * bo(2, 1, 1)
+        combo += (-2 + l) * bo(2, 2, 0)
+        combo += -1 * bo(3, 2, 1)
+        combo += 3 * bo(3, 0, 3)
+        combo += (3 - l) * bo(3, 1, 2)
+        combo += (-1 + l) * bo(3, 3, 0)
+        return Le2 * C * combo
+    elseif offset == -1
+        denom = 2l - 1
+        if abs(denom) < eps(Float64)
+            return nblock
+        end
+        sqrt_factor = sqrt(max(l^2 - m^2, 0))
+        if sqrt_factor == 0.0
+            return nblock
+        end
+        C = sqrt_factor * (l^2 - 1) / denom
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += L * (l + 2) * bo(0, 0, 0)
+        combo += L * (l - 4) * bo(1, 1, 0)
+        combo += l * bo(2, 2, 0)
+        combo += l * bo(3, 3, 0)
+        combo += 2 * bo(3, 0, 3)
+        combo += -2 * (l^2 + 2) * bo(1, 0, 1)
+        combo += -2 * (l - 2) * bo(2, 1, 1)
+        combo += -(l - 4) * bo(2, 0, 2)
+        combo += -(l - 2) * bo(3, 1, 2)
+        return Le2 * C * combo
+    elseif offset == 0
+        denom = -3 + 4l * (1 + l)
+        if abs(denom) < eps(Float64)
+            return nblock
+        end
+        C = 3 * (l + l^2 - 3 * m^2) / denom
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += 3 * l * (1 + l) * (-2 + l + l^2) * bo(0, 0, 0)
+        combo += -3 * L^2 * bo(1, 1, 0)
+        combo += 2 * (6 - 4l - 5l^2 - 2l^3 - l^4) * bo(1, 0, 1)
+        combo += 3 * L * bo(2, 2, 0)
+        combo += (-12 + 5l + 5l^2) * bo(2, 0, 2)
+        combo += 2 * (-6 + 5l + 5l^2) * bo(2, 1, 1)
+        combo += 2 * L * bo(3, 2, 1)
+        combo += L * bo(3, 3, 0)
+        combo += 2 * (-3 + l + l^2) * bo(3, 0, 3)
+        combo += 3 * (-2 + l + l^2) * bo(3, 1, 2)
+        return Le2 * C * combo
+    elseif offset == 1
+        denom = 2l + 3
+        if abs(denom) < eps(Float64)
+            return nblock
+        end
+        sqrt_factor = sqrt(max((l + 1 + m) * (l + 1 - m), 0))
+        if sqrt_factor == 0.0
+            return nblock
+        end
+        C = sqrt_factor * l * (l + 2) / denom
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += -2 * (l^2 + 2l + 3) * bo(1, 0, 1)
+        combo += 2 * (l + 3) * bo(2, 1, 1)
+        combo += (l + 5) * bo(2, 0, 2)
+        combo += (l + 3) * bo(3, 1, 2)
+        combo += -L * (l - 1) * bo(0, 0, 0)
+        combo += -L * (l + 5) * bo(1, 1, 0)
+        combo += -(l + 1) * bo(2, 2, 0)
+        combo += -(l + 1) * bo(3, 3, 0)
+        combo += 2 * bo(3, 0, 3)
+        return Le2 * C * combo
+    elseif offset == 2
+        denom = (3 + 2l) * (5 + 2l)
+        if abs(denom) < eps(Float64)
+            return nblock
+        end
+        sqrt_factor = sqrt(max((1 + l - m) * (2 + l + m) * (1 + l + m) * (2 + l - m), 0))
+        if sqrt_factor == 0.0
+            return nblock
+        end
+        C = (3 * l * (l + 3) * sqrt_factor) / denom
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += (l - l^3) * bo(0, 0, 0)
+        combo += -(16 + 13l + 3l^2) * bo(1, 0, 1)
+        combo += -(6 + 16l + 9l^2 + l^3) * bo(1, 1, 0)
+        combo += 2 * (3 + l) * bo(2, 1, 1)
+        combo += -(3 + l) * bo(2, 2, 0)
+        combo += (7 + l) * bo(2, 0, 2)
+        combo += -1 * bo(3, 2, 1)
+        combo += 3 * bo(3, 0, 3)
+        combo += (4 + l) * bo(3, 1, 2)
+        combo += -(2 + l) * bo(3, 3, 0)
+        return Le2 * C * combo
+    else
+        return nblock
+    end
+end
+
+function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
+                                 l::Int, m::Int, offset::Int,
+                                 Le::T) where {T}
+    nblock = zero_block(op)
+    bo(p, h, d) = complex_background_operator(op, p, h, d, 0)
+    Le2 = Le^2
+
+    if offset == -1
+        denom = 2l - 1
+        if abs(denom) < eps(Float64)
+            return nblock
+        end
+        sqrt_factor = sqrt(max(l^2 - m^2, 0))
+        if sqrt_factor == 0.0
+            return nblock
+        end
+        C = (6im * m * sqrt_factor) / denom
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += -(3 - 3l - 2l^2) * bo(1, 0, 0)
+        combo += -(l - 3) * bo(2, 0, 1)
+        combo += (3 - 2l - l^2) * bo(2, 1, 0)
+        combo += 3 * bo(3, 0, 2)
+        combo += -(l - 3) * bo(3, 1, 1)
+        combo += -l * bo(3, 2, 0)
+        return Le2 * C * combo
+    elseif offset == 0
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += -bo(1, 0, 0)
+        combo += -(l^2 + l - 1) * bo(2, 1, 0)
+        combo += bo(2, 0, 1)
+        combo += bo(3, 1, 1)
+        combo += bo(3, 0, 2)
+        return Le2 * (2im * m) * combo
+    elseif offset == 1
+        denom = 2l + 3
+        if abs(denom) < eps(Float64)
+            return nblock
+        end
+        sqrt_factor = sqrt(max((l + 1)^2 - m^2, 0))
+        if sqrt_factor == 0.0
+            return nblock
+        end
+        C = (6im * m * sqrt_factor) / denom
+        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
+        combo += (-4 + l + 2l^2) * bo(1, 0, 0)
+        combo += (4 + l) * bo(2, 0, 1)
+        combo += (4 - l^2) * bo(2, 1, 0)
+        combo += 3 * bo(3, 0, 2)
+        combo += (1 + l) * bo(3, 2, 0)
+        combo += (4 + l) * bo(3, 1, 1)
+        return Le2 * C * combo
+    else
+        return nblock
+    end
+end
+
+# -----------------------------------------------------------------------------
 # Lorentz Force Operators (magnetic field → velocity)
 # -----------------------------------------------------------------------------
 

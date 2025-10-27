@@ -32,7 +32,7 @@ julia> Pkg.activate(".")
 julia> Pkg.instantiate()
 ```
 
-The first run downloads packages such as `LinearAlgebra`, `KrylovKit`, `FeastKit`, and `JLD2`. Subsequent sessions reuse the compiled artifacts.
+The first run downloads packages such as `LinearAlgebra`, `KrylovKit`, `Arpack`, and `JLD2`. Subsequent sessions reuse the compiled artifacts.
 
 ## 4. Run the Test Suite
 
@@ -89,5 +89,5 @@ Open `http://127.0.0.1:8000` in your browser to see the rendered site with live 
 
 - **Package refuses to precompile:** run `Pkg.update()` and `Pkg.instantiate()` again; artifacts may be missing.
 - **Out-of-memory errors:** reduce `lmax` or `Nr` in the examples; use sparse solver options (`nev`, `which` flags).
-- **Solver hangs:** switch to a different backend (`:arpack`, `:krylovkit`, or `:feast`) using the options described in the Solver Reference page.
+- **Solver hangs:** switch to a different backend (`:arpack` or `:krylov`) using the options described in the Solver Reference page.
 - **Documentation build fails:** ensure you are using Python 3.10+ and that the virtual environment is active before running `mkdocs`.

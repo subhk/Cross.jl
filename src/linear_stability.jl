@@ -292,7 +292,6 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     R4D1 = radial_matrix(op, 4, 1)
     R4D2 = radial_matrix(op, 4, 2)
     R4D4 = radial_matrix(op, 4, 4)
-    Rneg2 = radial_matrix(op, -2, 0)
 
     TT = eltype(op.r)
     poloidal_ls = op.l_sets[:P]
@@ -326,15 +325,20 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
         # Temperature equation blocks for matching Θ ℓ
         if Θ_idx !== nothing
             if p.use_sparse_weighting
-                B[Θ_idx, Θ_idx] = Complex.(R3D0)
-                adv_factor = ri / gap
+                B_theta = R3D0
+                adv_coeff = ri / gap
+                adv_matrix = R0
                 diffusion = -L * R1D0 + 2 * R2D1 + R3D2
             else
-                B[Θ_idx, Θ_idx] = Complex.(R2D0)
-                adv_factor = (ri * ro) / p.L
+                B_theta = R2D0
+                adv_coeff = one(TT)
+                adv_matrix = R2D0
                 diffusion = -L * R0 + 2 * R1D1 + R2D2
             end
-            A[Θ_idx, P_idx] .+= Complex.(L * adv_factor * (p.use_sparse_weighting ? R0 : Rneg2))
+
+            B[Θ_idx, Θ_idx] = Complex.(B_theta)
+            thermal_adv = (L * adv_coeff) .* adv_matrix
+            A[Θ_idx, P_idx] .+= Complex.(thermal_adv)
             A[Θ_idx, Θ_idx] .+= Complex.(thermaD * diffusion)
         end
     end

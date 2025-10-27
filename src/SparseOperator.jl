@@ -875,9 +875,20 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
                                       params.ricb, one(T))
         else
-            # Stress-free: dv/dr = 0
-            apply_boundary_conditions!(A, B, [row_base + 1], :neumann, N,
-                                      params.ricb, one(T))
+            # Stress-free: -r·∂v/∂r + v = 0
+            row = row_base + 1
+            A[row, :] .= 0.0
+            B[row, :] .= 0.0
+            D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, params.ricb, one(T))
+            block_start = row_base + 1
+            block_range = block_start:(block_start + N)
+            # -ro * dv/dr term (ro = 1)
+            A[row, block_range] .= -D1[1, :]
+            # +v term
+            for n in 0:N
+                idx = block_start + n
+                A[row, idx] += 1.0
+            end
         end
 
         # Inner boundary (r = ri = ricb)
@@ -886,9 +897,18 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
                                       params.ricb, one(T))
         else
-            # Stress-free: dv/dr = 0
-            apply_boundary_conditions!(A, B, [row_base + n_per_mode], :neumann, N,
-                                      params.ricb, one(T))
+            # Stress-free: -r·∂v/∂r + v = 0
+            row = row_base + n_per_mode
+            A[row, :] .= 0.0
+            B[row, :] .= 0.0
+            D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, params.ricb, one(T))
+            block_start = row_base + 1
+            block_range = block_start:(block_start + N)
+            A[row, block_range] .= -params.ricb * D1[N+1, :]
+            for n in 0:N
+                idx = block_start + n
+                A[row, idx] += (-1.0)^n
+            end
         end
     end
 

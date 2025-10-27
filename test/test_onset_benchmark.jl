@@ -14,67 +14,51 @@ function parse_solver_options(args)
                 Usage: julia test/test_onset_benchmark.jl [options]
 
                 Options:
-                  --solver=feast|krylov          Solver backend (default krylov)
-                  --feast-center=<complex>        FEAST contour center (e.g. 0.0+0.0im)
-                  --feast-radius=<float>          FEAST contour radius (default 1.0)
-                  --feast-M0=<int>                FEAST subspace size (default 48)
-                  --feast-integration=<int>       FEAST integration points (default 8)
-                  --feast-refine=<int>            FEAST max refinement loops (default 20)
-                  --feast-print=<int>             FEAST verbosity (default -1 for silence)
+                  --solver=arpack|krylov          Solver backend (default arpack)
+                  --arpack-shift=<complex>        Optional complex shift (e.g. 0.1+0.1im)
                   --help                          Show this message
                 """)
             exit(0)
         elseif startswith(arg, "--solver=")
             val = strip(split(arg, "=", limit=2)[2])
             opts[:solver] = Symbol(lowercase(val))
-        elseif startswith(arg, "--feast-center=")
+        elseif startswith(arg, "--arpack-shift=")
             val = strip(split(arg, "=", limit=2)[2])
-            center_val = try
+            shift_val = try
                 parse(ComplexF64, val)
             catch
                 parse(Float64, val) + 0im
             end
-            opts[:feast_center] = center_val
-        elseif startswith(arg, "--feast-radius=")
-            val = strip(split(arg, "=", limit=2)[2])
-            opts[:feast_radius] = parse(Float64, val)
-        elseif startswith(arg, "--feast-M0=")
-            val = strip(split(arg, "=", limit=2)[2])
-            opts[:feast_M0] = parse(Int, val)
-        elseif startswith(arg, "--feast-integration=")
-            val = strip(split(arg, "=", limit=2)[2])
-            opts[:feast_integration] = parse(Int, val)
-        elseif startswith(arg, "--feast-refine=")
-            val = strip(split(arg, "=", limit=2)[2])
-            opts[:feast_refine] = parse(Int, val)
-        elseif startswith(arg, "--feast-print=")
-            val = strip(split(arg, "=", limit=2)[2])
-            opts[:feast_print] = parse(Int, val)
+            opts[:arpack_shift] = shift_val
         end
     end
     return opts
+end
+
+parse_shift_string(str) = try
+    parse(ComplexF64, str)
+catch
+    parse(Float64, str) + 0im
 end
 
 function solver_config_from_args(args)
     cli_opts = parse_solver_options(args)
 
     # Only use CROSS_SOLVER if user did not supply a CLI flag. Otherwise prefer the CLI value.
-    solver_env_raw = get(ENV, "CROSS_SOLVER", "krylov")
+    solver_env_raw = get(ENV, "CROSS_SOLVER", "arpack")
     solver_env = Symbol(lowercase(solver_env_raw))
     solver = get(cli_opts, :solver, solver_env)
-    solver = solver in (:feast, :krylov) ? solver : :krylov
+    solver = solver in (:arpack, :krylov) ? solver : :arpack
 
-    center_env = parse(Float64, get(ENV, "CROSS_FEAST_CENTER_REAL", "0.0")) +
-                 parse(Float64, get(ENV, "CROSS_FEAST_CENTER_IMAG", "0.0")) * im
-    feast_center = get(cli_opts, :feast_center, center_env)
+    arpack_shift = if haskey(cli_opts, :arpack_shift)
+        cli_opts[:arpack_shift]
+    elseif haskey(ENV, "CROSS_ARPACK_SHIFT")
+        parse_shift_string(ENV["CROSS_ARPACK_SHIFT"])
+    else
+        nothing
+    end
 
-    feast_radius = get(cli_opts, :feast_radius, parse(Float64, get(ENV, "CROSS_FEAST_RADIUS", "1.0")))
-    feast_M0 = get(cli_opts, :feast_M0, parse(Int, get(ENV, "CROSS_FEAST_M0", "48")))
-    feast_integration = get(cli_opts, :feast_integration, parse(Int, get(ENV, "CROSS_FEAST_INTEGRATION", "8")))
-    feast_refine = get(cli_opts, :feast_refine, parse(Int, get(ENV, "CROSS_FEAST_REFINE", "20")))
-    feast_print = get(cli_opts, :feast_print, parse(Int, get(ENV, "CROSS_FEAST_PRINT", "-1")))
-
-    return (; solver, feast_center, feast_radius, feast_M0, feast_integration, feast_refine, feast_print)
+    return (; solver, arpack_shift)
 end
 
 """
@@ -82,17 +66,12 @@ Benchmark against Table 1 in docs/poloidal_toroidal_derivation.tex
 which comes from Dormy et al. (2004) Table 5.
 """
 function benchmark_dormy2004(; solver::Symbol,
-                               feast_center::Complex=0.0 + 0.0im,
-                               feast_radius::Float64=1.0,
-                               feast_M0::Int=48,
-                               feast_integration::Int=8,
-                               feast_refine::Int=20,
-                               feast_print::Int=-1)
+                               arpack_shift::Union{Nothing,Complex}=nothing)
     println("="^70)
     println("Benchmarking against Dormy et al. (2004)")
     println("Aspect ratio χ = 0.35, Pr = 1")
-    println(@sprintf("Solver: %s (center=%s, radius=%.3f, M0=%d, integration=%d, refine=%d, print=%d)",
-                    String(solver), sprint(show, feast_center), feast_radius, feast_M0, feast_integration, feast_refine, feast_print))
+    shift_desc = arpack_shift === nothing ? "none" : sprint(show, arpack_shift)
+    println(@sprintf("Solver: %s (arpack_shift=%s)", String(solver), shift_desc))
     println("="^70)
     println()
 
@@ -138,12 +117,7 @@ function benchmark_dormy2004(; solver::Symbol,
                 mechanical_bc=:no_slip,
                 thermal_bc=:fixed_temperature,
                 solver=solver,
-                feast_center=feast_center,
-                feast_radius=feast_radius,
-                feast_M0=feast_M0,
-                feast_integration=feast_integration,
-                feast_refine=feast_refine,
-                feast_print_level=feast_print
+                arpack_shift=arpack_shift
             )
 
             # Calculate percentage difference

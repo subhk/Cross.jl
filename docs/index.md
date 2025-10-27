@@ -8,7 +8,7 @@ This guide mirrors the structure of the Kore documentation so you can publish it
 
 - Evaluate the onset of convection in rotating spherical shells with flexible mechanical and thermal boundary conditions.
 - Build axisymmetric (`BasicState`) or fully 3-D (`BasicState3D`) basic states and assess their linear stability.
-- Track leading eigenpairs with KrylovKit, ARPACK, ArnoldiMethod, or FEAST via a unified solver interface.
+- Track leading eigenpairs with ARPACK or KrylovKit via a unified solver interface.
 - Benchmark against published results using the provided example scripts and regression tests.
 - Extend the computation to include magnetic fields (`CompleteMHD`) for kinematic dynamo studies.
 

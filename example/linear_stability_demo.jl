@@ -16,27 +16,6 @@ else
     @warn "SHTnsKit path not found" sht_local
 end
 
-# Prefer a locally checked-out FeastKit before falling back to the registered version.
-feast_candidates = String[]
-if haskey(ENV, "FEASTKIT_PATH")
-    push!(feast_candidates, ENV["FEASTKIT_PATH"])
-end
-push!(feast_candidates, joinpath(repo_root, "..", "FeastKit.jl"))
-push!(feast_candidates, joinpath(repo_root, "..", "Feast.jl"))
-
-feast_path = nothing
-for candidate in feast_candidates
-    if isdir(candidate)
-        feast_path = candidate
-        push!(LOAD_PATH, joinpath(candidate, "src"))
-        break
-    end
-end
-
-if feast_path === nothing
-    @warn "FeastKit path not found; falling back to the registered package" feast_candidates
-end
-
 using Cross
 using Printf
 
@@ -59,28 +38,22 @@ function parse_cli_args(args)
                 Usage: julia example/linear_stability_demo.jl [options]
 
                 Options:
-                  --solver=feast|krylov          Choose eigen solver (default feast)
-                  --feast-center=<real>+<imag>im Complex center for FEAST contour (default 0.0+0.0im)
-                  --feast-radius=<float>         FEAST contour radius (default 1.0)
-                  --feast-M0=<int>               FEAST subspace size (default 48)
+                  --solver=arpack|krylov         Choose eigen solver (default arpack)
+                  --arpack-shift=<real+imag>     Optional shift for Arpack (e.g. 0.1+0.1im)
                   --theta-points=<int>           Number of meridional grid points (default 96)
                   --help                         Show this message
                 """)
             exit(0)
         elseif startswith(arg, "--solver=")
             opts[:solver] = Symbol(lowercase(split(arg, '=' )[2]))
-        elseif startswith(arg, "--feast-center=")
-            val = split(arg, '=' )[2]
-            center_val = try
-                parse(ComplexF64, val)
+        elseif startswith(arg, "--arpack-shift=")
+            raw = split(arg, '=' )[2]
+            shift_val = try
+                parse(ComplexF64, raw)
             catch
-                parse(Float64, val) + 0im
+                parse(Float64, raw) + 0im
             end
-            opts[:feast_center] = center_val
-        elseif startswith(arg, "--feast-radius=")
-            opts[:feast_radius] = parse(Float64, split(arg, '=' )[2])
-        elseif startswith(arg, "--feast-M0=")
-            opts[:feast_M0] = parse(Int, split(arg, '=' )[2])
+            opts[:arpack_shift] = shift_val
         elseif startswith(arg, "--theta-points=")
             opts[:theta_points] = parse(Int, split(arg, '=' )[2])
         else
@@ -92,16 +65,26 @@ end
 
 cli_opts = parse_cli_args(ARGS)
 
-solver = get(cli_opts, :solver, Symbol(lowercase(get(ENV, "CROSS_SOLVER", "feast"))))
-if !(solver in (:feast, :krylov))
-    @warn "Unknown solver requested; defaulting to :feast" solver
-    solver = :feast
+parse_shift_string(str) = try
+    parse(ComplexF64, str)
+catch
+    parse(Float64, str) + 0im
 end
-feast_center = get(cli_opts, :feast_center,
-                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_REAL", "0.0")) +
-                   parse(Float64, get(ENV, "CROSS_FEAST_CENTER_IMAG", "0.0")) * im)
-feast_radius = get(cli_opts, :feast_radius, parse(Float64, get(ENV, "CROSS_FEAST_RADIUS", "1.0")))
-feast_M0 = get(cli_opts, :feast_M0, parse(Int, get(ENV, "CROSS_FEAST_M0", "48")))
+
+solver = get(cli_opts, :solver, Symbol(lowercase(get(ENV, "CROSS_SOLVER", "arpack"))))
+if !(solver in (:arpack, :krylov))
+    @warn "Unknown solver requested; defaulting to :arpack" solver
+    solver = :arpack
+end
+
+arpack_shift = if haskey(cli_opts, :arpack_shift)
+    cli_opts[:arpack_shift]
+elseif haskey(ENV, "CROSS_ARPACK_SHIFT")
+    parse_shift_string(ENV["CROSS_ARPACK_SHIFT"])
+else
+    nothing
+end
+
 meridional_points = get(cli_opts, :theta_points, parse(Int, get(ENV, "CROSS_THETA_POINTS", "96")))
 
 println("m    Re(λ₁)          Im(λ₁)          iterations")

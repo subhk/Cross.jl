@@ -406,11 +406,13 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
         # Induction from velocity field (if Le > 0)
         if Le > 0
-            # From toroidal velocity v (diagonal)
-            if l in op.ll_v
-                k_v = findfirst(==(l), op.ll_v)
-                v_col_base = (nb_u + k_v - 1) * n_per_mode
-                induct_v_tor = operator_induction_toroidal_from_v(op, l)
+            # From toroidal velocity v (offsets l-2 ... l+2)
+            for offset in -2:2
+                l_src = l + offset
+                idx_v = findfirst(==(l_src), op.ll_v)
+                idx_v === nothing && continue
+                v_col_base = (nb_u + idx_v - 1) * n_per_mode
+                induct_v_tor = operator_induction_toroidal_from_v(op, l, m, offset)
                 add_block!(A_rows, A_cols, A_vals, induct_v_tor, row_base, v_col_base)
             end
 

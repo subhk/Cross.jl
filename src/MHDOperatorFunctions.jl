@@ -159,19 +159,20 @@ Returns operator for diagonal (l) and off-diagonal (l±1) couplings.
 """
 function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
                                             l::Int, Le::T) where {T}
-    L = l * (l + 1)
     m = op.params.m
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_poloidal(is_dipole)
+    bo(p, h, d) = background_operator(op, p + shift, h, d)
 
-    term1 = background_operator(op, 1 + shift, 0, 0)
-    term2 = background_operator(op, 2 + shift, 1, 0)
-    term3 = background_operator(op, 2 + shift, 0, 1)
-    term4 = background_operator(op, 3 + shift, 1, 1)
-    term5 = background_operator(op, 3 + shift, 0, 2)
+    terms = [
+        (-1.0, bo(1, 0, 0)),
+        (-(l^2 + l - 1), bo(2, 1, 0)),
+        (1.0, bo(2, 0, 1)),
+        (1.0, bo(3, 1, 1)),
+        (1.0, bo(3, 0, 2)),
+    ]
 
-    combo = -term1 - (L - 1) * term2 + term3 + term4 + term5
-
+    combo = combine_terms(terms)
     return (Le^2) * (2im * m) * combo
 end
 
@@ -180,49 +181,38 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
                                            Le::T) where {T}
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_poloidal(is_dipole)
+    bo(p, h, d) = background_operator(op, p + shift, h, d)
 
     if offset == -1
         denom = 2l - 1
-        denom == 0 && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
-        coef = 6im * m * sqrt(max(l^2 - m^2, 0)) / denom
-
-        term1 = background_operator(op, 1 + shift, 0, 0)
-        term2 = background_operator(op, 2 + shift, 0, 1)
-        term3 = background_operator(op, 2 + shift, 1, 0)
-        term4 = background_operator(op, 3 + shift, 0, 2)
-        term5 = background_operator(op, 3 + shift, 1, 1)
-        term6 = background_operator(op, 3 + shift, 2, 0)
-
-        combo = -(3 - 3l - 2l^2) * term1
-        combo += -(l - 3) * term2
-        combo += (3 - 2l - l^2) * term3
-        combo += 3 * term4
-        combo += -(l - 3) * term5
-        combo += -l * term6
-
-        return (Le^2) * coef * combo
-
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        coef = (Le^2) * (6im * m * sqrt(max(l^2 - m^2, 0))) / denom
+        terms = [
+            (-(3 - 3l - 2l^2), bo(1, 0, 0)),
+            (-(l - 3), bo(2, 0, 1)),
+            ((3 - 2l - l^2), bo(2, 1, 0)),
+            (3.0, bo(3, 0, 2)),
+            (-(l - 3), bo(3, 1, 1)),
+            (-l, bo(3, 2, 0)),
+        ]
+        combo = combine_terms(terms)
+        return coef * combo
     elseif offset == 1
         denom = 2l + 3
-        coef = 6im * m * sqrt(max((l + 1)^2 - m^2, 0)) / denom
-
-        term1 = background_operator(op, 1 + shift, 0, 0)
-        term2 = background_operator(op, 2 + shift, 0, 1)
-        term3 = background_operator(op, 2 + shift, 1, 0)
-        term4 = background_operator(op, 3 + shift, 0, 2)
-        term5 = background_operator(op, 3 + shift, 2, 0)
-        term6 = background_operator(op, 3 + shift, 1, 1)
-
-        combo = (-4 + l + 2l^2) * term1
-        combo += (4 + l) * term2
-        combo += (4 - l^2) * term3
-        combo += 3 * term4
-        combo += (1 + l) * term5
-        combo += (4 + l) * term6
-
-        return (Le^2) * coef * combo
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        coef = (Le^2) * (6im * m * sqrt(max((l + 1)^2 - m^2, 0))) / denom
+        terms = [
+            ((-4 + l + 2l^2), bo(1, 0, 0)),
+            ((4 + l), bo(2, 0, 1)),
+            ((4 - l^2), bo(2, 1, 0)),
+            (3.0, bo(3, 0, 2)),
+            ((1 + l), bo(3, 2, 0)),
+            ((4 + l), bo(3, 1, 1)),
+        ]
+        combo = combine_terms(terms)
+        return coef * combo
     else
-        error("offset must be ±1 for Lorentz off-diagonal")
+        return spzeros(Float64, op.params.N + 1, op.params.N + 1)
     end
 end
 
@@ -233,34 +223,32 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     shift = radial_power_shift_poloidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)
     L = l * (l + 1)
+    Np1 = op.params.N + 1
+    zero_block = spzeros(Float64, Np1, Np1)
 
     if offset == -2
         denom = 3 - 8l + 4l^2
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps() && return zero_block
         sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
-        C = (3 * (-2 - l + l^2) * sqrt_factor) / denom
-
+        coef = (Le^2) * (3 * (-2 - l + l^2) * sqrt_factor) / denom
         terms = [
             (2l + 3l^2 + l^3, bo(0, 0, 0)),
-            (-(6 - 7l + 3l^2), bo(1, 0, 1)),
+            ((-6 + 7l - 3l^2), bo(1, 0, 1)),
             (2 + l - 6l^2 + l^3, bo(1, 1, 0)),
-            (6 - l, bo(2, 0, 2)),
+            ((6 - l), bo(2, 0, 2)),
             (2 * (2 - l), bo(2, 1, 1)),
             ((-2 + l), bo(2, 2, 0)),
             (-1.0, bo(3, 2, 1)),
             (3.0, bo(3, 0, 3)),
-            (3 - l, bo(3, 1, 2)),
-            ((-1 + l), bo(3, 3, 0))
+            ((3 - l), bo(3, 1, 2)),
+            ((-1 + l), bo(3, 3, 0)),
         ]
-
         combo = combine_terms(terms)
-        return (Le^2) * C * combo
-
+        return coef * combo
     elseif offset == -1
         denom = 2l - 1
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        C = sqrt(max(l^2 - m^2, 0)) * (l^2 - 1) / denom
-
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (sqrt(max(l^2 - m^2, 0)) * (l^2 - 1)) / denom
         terms = [
             (L * (l + 2), bo(0, 0, 0)),
             (L * (l - 4), bo(1, 1, 0)),
@@ -269,18 +257,15 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (2.0, bo(3, 0, 3)),
             (-2 * (l^2 + 2), bo(1, 0, 1)),
             (-2 * (l - 2), bo(2, 1, 1)),
-            (-(l - 4), bo(2, 0, 2)),
-            (-(l - 2), bo(3, 1, 2))
+            ((-l + 4), bo(2, 0, 2)),
+            ((-l + 2), bo(3, 1, 2)),
         ]
-
         combo = combine_terms(terms)
-        return (Le^2) * C * combo
-
+        return coef * combo
     elseif offset == 0
-        denom = -3 + 4l + 4l^2
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        C = 3 * (l + l^2 - 3m^2) / denom
-
+        denom = -3 + 4l * (1 + l)
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (3 * (l + l^2 - 3m^2)) / denom
         terms = [
             (3 * l * (1 + l) * (-2 + l + l^2), bo(0, 0, 0)),
             (-3 * L^2, bo(1, 1, 0)),
@@ -291,17 +276,14 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (2 * L, bo(3, 2, 1)),
             (L, bo(3, 3, 0)),
             (2 * (-3 + l + l^2), bo(3, 0, 3)),
-            (3 * (-2 + l + l^2), bo(3, 1, 2))
+            (3 * (-2 + l + l^2), bo(3, 1, 2)),
         ]
-
         combo = combine_terms(terms)
-        return (Le^2) * C * combo
-
+        return coef * combo
     elseif offset == 1
         denom = 2l + 3
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        C = sqrt(max((l + 1 + m) * (l + 1 - m), 0)) * l * (l + 2) / denom
-
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (sqrt(max((l + 1 + m) * (l + 1 - m), 0)) * l * (l + 2)) / denom
         terms = [
             (-2 * (l^2 + 2l + 3), bo(1, 0, 1)),
             (2 * (l + 3), bo(2, 1, 1)),
@@ -311,18 +293,16 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (-L * (l + 5), bo(1, 1, 0)),
             (-(l + 1), bo(2, 2, 0)),
             (-(l + 1), bo(3, 3, 0)),
-            (2.0, bo(3, 0, 3))
+            (2.0, bo(3, 0, 3)),
         ]
-
         combo = combine_terms(terms)
-        return (Le^2) * C * combo
-
+        return coef * combo
     elseif offset == 2
-        denom = 15 + 16l + 4l^2
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-        sqrt_factor = sqrt(max((1 + l - m) * (2 + l + m), 0))
-        C = (3 * l * (3 + l) * sqrt_factor) / denom
-
+        denom = (3 + 2l) * (5 + 2l)
+        abs(denom) < eps() && return zero_block
+        sqrt1 = sqrt(max((1 + l - m) * (2 + l + m), 0))
+        sqrt2 = sqrt(max((2 + l - m) * (1 + l + m), 0))  # same as sqrt1 but retain symmetry
+        coef = (Le^2) * (3 * l * (l + 3) * sqrt1 * sqrt2) / denom
         terms = [
             (l - l^3, bo(0, 0, 0)),
             (-(16 + 13l + 3l^2), bo(1, 0, 1)),
@@ -333,13 +313,12 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (-1.0, bo(3, 2, 1)),
             (3.0, bo(3, 0, 3)),
             (4 + l, bo(3, 1, 2)),
-            (-(2 + l), bo(3, 3, 0))
+            (-(2 + l), bo(3, 3, 0)),
         ]
-
         combo = combine_terms(terms)
-        return (Le^2) * C * combo
+        return coef * combo
     else
-        error("offset must be in -2:-1:2 for Lorentz bpol coupling")
+        return zero_block
     end
 end
 
@@ -709,13 +688,13 @@ Magnetic diffusion for poloidal magnetic field.
 Where Em = η/(ΩL²) is the magnetic Ekman number.
 """
 function operator_magnetic_diffusion_poloidal(op::MHDStabilityOperator{T},
-                                              l::Int, Em::T) where {T}
+                                              l::Int, Etherm::T) where {T}
     L = l * (l + 1)
 
     # Diffusion: Em * ∇²B
     # For poloidal field (no-curl equation)
     # Following Kore operators.py lines 320-322
-    return Em * (-L * op.r0_D0_f + 2 * op.r1_D1_f + op.r2_D2_f)
+    return Etherm * (-L * op.r0_D0_f + 2 * op.r1_D1_f + op.r2_D2_f)
 end
 
 """
@@ -751,7 +730,8 @@ For poloidal field: r²D⁰
 function operator_b_poloidal(op::MHDStabilityOperator{T}, l::Int) where {T}
     # Time derivative: ∂B_pol/∂t
     # Weighted by r² for no-curl equation
-    return op.r2_D0_f
+    L = l * (l + 1)
+    return L * op.r2_D0_f
 end
 
 """
@@ -765,7 +745,8 @@ For toroidal field: r²D⁰
 function operator_b_toroidal(op::MHDStabilityOperator{T}, l::Int) where {T}
     # Time derivative: ∂B_tor/∂t
     # Weighted by r² for 1curl equation
-    return op.r2_D0_g
+    L = l * (l + 1)
+    return L * op.r2_D0_g
 end
 
 # -----------------------------------------------------------------------------

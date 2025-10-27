@@ -352,7 +352,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         # ---------------------------------------------------------------------
 
         # Magnetic diffusion
-        mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Em)
+        mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Etherm)
         add_block!(A_rows, A_cols, A_vals, mag_diff_pol, row_base, col_base)
 
         # Induction from velocity field

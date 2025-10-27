@@ -232,6 +232,17 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
         # Lorentz force from magnetic field (if Le > 0)
         if Le > 0
+            # Coupling from poloidal magnetic field (bpol, section f)
+            for offset in -2:2
+                l_coupled = l + offset
+                if l_coupled in op.ll_f
+                    k_f = findfirst(==(l_coupled), op.ll_f)
+                    f_col_base = (nb_u + nb_v + k_f - 1) * n_per_mode
+                    lorentz_bpol = operator_lorentz_poloidal_from_bpol(op, l, m, offset, Le)
+                    add_block!(A_rows, A_cols, A_vals, lorentz_bpol, row_base, f_col_base)
+                end
+            end
+
             # Diagonal: toroidal B at same l
             lorentz_diag = operator_lorentz_poloidal_diagonal(op, l, Le)
             g_col_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode

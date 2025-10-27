@@ -225,6 +225,126 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
     end
 end
 
+function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
+                                             l::Int, m::Int, offset::Int,
+                                             Le::T) where {T}
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_poloidal(is_dipole)
+    bo(p, h, d) = background_operator(op, p + shift, h, d)
+    L = l * (l + 1)
+
+    function sqrt_pair(a, b)
+        val = a * b
+        return val > 0 ? sqrt(val) : 0.0
+    end
+
+    if offset == -2
+        denom = 3 - 8l + 4l^2
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = (3 * (-2 - l + l^2) * sqrt_pair(l - m, l + m - 1) * sqrt_pair(l - 1 - m, l + m)) / denom
+
+        terms = [
+            (2l + 3l^2 + l^3, bo(0, 0, 0)),
+            (-(6 - 7l + 3l^2), bo(1, 0, 1)),
+            (2 + l - 6l^2 + l^3, bo(1, 1, 0)),
+            (6 - l, bo(2, 0, 2)),
+            (2 * (2 - l), bo(2, 1, 1)),
+            ((-2 + l), bo(2, 2, 0)),
+            (-1.0, bo(3, 2, 1)),
+            (3.0, bo(3, 0, 3)),
+            (3 - l, bo(3, 1, 2)),
+            ((-1 + l), bo(3, 3, 0))
+        ]
+
+        combo = combine_terms(terms)
+        return (Le^2) * C * combo
+
+    elseif offset == -1
+        denom = 2l - 1
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = sqrt(max(l^2 - m^2, 0)) * (l^2 - 1) / denom
+
+        terms = [
+            (L * (l + 2), bo(0, 0, 0)),
+            (L * (l - 4), bo(1, 1, 0)),
+            (l, bo(2, 2, 0)),
+            (l, bo(3, 3, 0)),
+            (2.0, bo(3, 0, 3)),
+            (-2 * (l^2 + 2), bo(1, 0, 1)),
+            (-2 * (l - 2), bo(2, 1, 1)),
+            (-(l - 4), bo(2, 0, 2)),
+            (-(l - 2), bo(3, 1, 2))
+        ]
+
+        combo = combine_terms(terms)
+        return (Le^2) * C * combo
+
+    elseif offset == 0
+        denom = -3 + 4l + 4l^2
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = 3 * (l + l^2 - 3m^2) / denom
+
+        terms = [
+            (3 * l * (1 + l) * (-2 + l + l^2), bo(0, 0, 0)),
+            (-3 * L^2, bo(1, 1, 0)),
+            (2 * (6 - 4l - 5l^2 - 2l^3 - l^4), bo(1, 0, 1)),
+            (3 * L, bo(2, 2, 0)),
+            ((-12 + 5l + 5l^2), bo(2, 0, 2)),
+            (2 * (-6 + 5l + 5l^2), bo(2, 1, 1)),
+            (2 * L, bo(3, 2, 1)),
+            (L, bo(3, 3, 0)),
+            (2 * (-3 + l + l^2), bo(3, 0, 3)),
+            (3 * (-2 + l + l^2), bo(3, 1, 2))
+        ]
+
+        combo = combine_terms(terms)
+        return (Le^2) * C * combo
+
+    elseif offset == 1
+        denom = 2l + 3
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = sqrt(max((l + 1 + m) * (l + 1 - m), 0)) * l * (l + 2) / denom
+
+        terms = [
+            (-2 * (l^2 + 2l + 3), bo(1, 0, 1)),
+            (2 * (l + 3), bo(2, 1, 1)),
+            ((l + 5), bo(2, 0, 2)),
+            (l + 3, bo(3, 1, 2)),
+            (-L * (l - 1), bo(0, 0, 0)),
+            (-L * (l + 5), bo(1, 1, 0)),
+            (-(l + 1), bo(2, 2, 0)),
+            (-(l + 1), bo(3, 3, 0)),
+            (2.0, bo(3, 0, 3))
+        ]
+
+        combo = combine_terms(terms)
+        return (Le^2) * C * combo
+
+    elseif offset == 2
+        denom = 15 + 16l + 4l^2
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = (3 * l * (3 + l) * sqrt_pair(1 + l - m, 2 + l + m) * sqrt_pair(2 + 3l + l^2 + m, 2 + 3l + l^2 - m)) / denom
+
+        terms = [
+            (l - l^3, bo(0, 0, 0)),
+            (-(16 + 13l + 3l^2), bo(1, 0, 1)),
+            (-(6 + 16l + 9l^2 + l^3), bo(1, 1, 0)),
+            (2 * (3 + l), bo(2, 1, 1)),
+            (-(3 + l), bo(2, 2, 0)),
+            (7 + l, bo(2, 0, 2)),
+            (-1.0, bo(3, 2, 1)),
+            (3.0, bo(3, 0, 3)),
+            (4 + l, bo(3, 1, 2)),
+            (-(2 + l), bo(3, 3, 0))
+        ]
+
+        combo = combine_terms(terms)
+        return (Le^2) * C * combo
+    else
+        error("offset must be in -2:-1:2 for Lorentz bpol coupling")
+    end
+end
+
 function operator_lorentz_toroidal(op::MHDStabilityOperator{T},
                                    l::Int, Le::T) where {T}
     L = l * (l + 1)
@@ -260,35 +380,104 @@ For poloidal field (no-curl equation):
 - Shear of background field
 """
 function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
-                                            l::Int) where {T}
-    m = op.params.m
-    L = l * (l + 1)
-    denom = -3 + 4l * (l + 1)
-    denom == 0 && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-
-    coef = 3 * (l + l^2 - 3 * m^2) / denom
+                                            l::Int, m::Int, offset::Int) where {T}
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_magnetic_poloidal(is_dipole)
+    bo(p, h, d) = background_operator(op, p + shift, h, d)
 
-    term1 = background_operator(op, 0 + shift, 0, 0)
-    term2 = background_operator(op, 1 + shift, 1, 0)
-    term3 = background_operator(op, 1 + shift, 0, 1)
+    function sqrt_pair(a, b)
+        val = a * b
+        return val > 0 ? sqrt(val) : 0.0
+    end
 
-    combo = (6 - l - l^2) * term1
-    combo += l * (l + 1) * term2
-    combo += 2 * (3 - l - l^2) * term3
+    if offset == -2
+        denom = 3 - 8l + 4l^2
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C1 = 3 * (-2 + l) * (1 + l) * sqrt_pair(l - m, l + m - 1) * sqrt_pair(l - 1 - m, l + m)
+        C = C1 / denom
 
-    return coef * combo
+        terms = [
+            ((-4 + l), bo(0, 0, 0)),
+            (-3.0, bo(1, 0, 1)),
+            ((-1 + l), bo(1, 1, 0))
+        ]
+        combo = combine_terms(terms)
+        return C * combo
+
+    elseif offset == -1
+        denom = 2l - 1
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = sqrt(max(l^2 - m^2, 0)) * (l^2 - 1) / denom
+        terms = [
+            ((l - 2), bo(0, 0, 0)),
+            (l, bo(1, 1, 0)),
+            (-2.0, bo(1, 0, 1))
+        ]
+        combo = combine_terms(terms)
+        return C * combo
+
+    elseif offset == 0
+        denom = -3 + 4l * (1 + l)
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = 3 * (l + l^2 - 3m^2) / denom
+        terms = [
+            ((6 - l - l^2), bo(0, 0, 0)),
+            (l * (1 + l), bo(1, 1, 0)),
+            (2 * (3 - l - l^2), bo(1, 0, 1))
+        ]
+        combo = combine_terms(terms)
+        return C * combo
+
+    elseif offset == 1
+        denom = 2l + 3
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C = sqrt(max((l + 1)^2 - m^2, 0)) * l * (l + 2) / denom
+        terms = [
+            (-(l + 3), bo(0, 0, 0)),
+            (-(l + 1), bo(1, 1, 0)),
+            (-2.0, bo(1, 0, 1))
+        ]
+        combo = combine_terms(terms)
+        return C * combo
+
+    elseif offset == 2
+        denom = 15 + 16l + 4l^2
+        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        C1 = 3 * l * (3 + l) * sqrt_pair(2 + l - m, 1 + l + m) * sqrt_pair(2 + 3l + l^2 + m - m^2, 2 + 3l + l^2 - m - m^2)
+        C = C1 / denom
+        terms = [
+            (-(5 + l), bo(0, 0, 0)),
+            (-3.0, bo(1, 0, 1)),
+            (-(2 + l), bo(1, 1, 0))
+        ]
+        combo = combine_terms(terms)
+        return C * combo
+    else
+        error("offset must be in -2:-1:2 for induction poloidal (from u)")
+    end
 end
 
 function operator_induction_poloidal_from_v(op::MHDStabilityOperator{T},
-                                            l::Int) where {T}
-    m = op.params.m
+                                            l::Int, m::Int, offset::Int) where {T}
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_magnetic_poloidal(is_dipole)
-
     term = background_operator(op, 1 + shift, 0, 0)
-    return -2im * m * term
+
+    if offset == -1
+        denom = 1 - 2l
+        abs(denom) < eps() && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        coef = 18im * m * sqrt(max(l^2 - m^2, 0)) / denom
+        return coef * term
+    elseif offset == 0
+        return -2im * m * term
+    elseif offset == 1
+        denom = 3 + 2l
+        abs(denom) < eps() && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        coef = -18im * m * sqrt(max((l + 1)^2 - m^2, 0)) / denom
+        return coef * term
+    else
+        return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+    end
 end
 
 """

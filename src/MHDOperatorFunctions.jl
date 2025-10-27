@@ -360,6 +360,111 @@ function operator_lorentz_toroidal(op::MHDStabilityOperator{T},
     return (Le^2) * (1im * m) * combo
 end
 
+function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
+                                             l::Int, m::Int, offset::Int,
+                                             Le::T) where {T}
+    Np1 = op.params.N + 1
+    zero_block = spzeros(Float64, Np1, Np1)
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_toroidal(is_dipole)
+    bo(p, h, d) = background_operator(op, p + shift, h, d)
+
+    if offset == 0
+        return operator_lorentz_toroidal(op, l, Le)
+    elseif offset == -1
+        denom = 2l - 1
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (3im * m * sqrt(max(l^2 - m^2, 0))) / denom
+        combo = combine_terms([
+            (12.0, bo(0, 0, 1)),
+            (-2 * (l - 1) * l, bo(0, 1, 0)),
+            (6.0, bo(1, 0, 2)),
+            (-(l - 1) * l, bo(1, 2, 0)),
+        ])
+        return coef * combo
+    elseif offset == 1
+        denom = 2l + 3
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (3im * m * sqrt(max((l + 1)^2 - m^2, 0))) / denom
+        combo = combine_terms([
+            (12.0, bo(0, 0, 1)),
+            (-2 * (l + 1) * (l + 2), bo(0, 1, 0)),
+            (6.0, bo(1, 0, 2)),
+            (-(l + 1) * (l + 2), bo(1, 2, 0)),
+        ])
+        return coef * combo
+    else
+        return zero_block
+    end
+end
+
+function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
+                                             l::Int, m::Int, offset::Int,
+                                             Le::T) where {T}
+    Np1 = op.params.N + 1
+    zero_block = spzeros(Float64, Np1, Np1)
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
+    shift = radial_power_shift_toroidal(is_dipole)
+    bo(p, h, d) = background_operator(op, p + shift, h, d)
+
+    if offset == -2
+        denom = 3 - 8l + 4l^2
+        abs(denom) < eps() && return zero_block
+        sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
+        coef = (Le^2) * (3 * (l - 2) * (l + 1) * sqrt_factor) / denom
+        combo = combine_terms([
+            ((-4 + l), bo(0, 0, 0)),
+            (-3.0, bo(1, 0, 1)),
+            ((-1 + l), bo(1, 1, 0)),
+        ])
+        return coef * combo
+    elseif offset == -1
+        denom = 2l - 1
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (sqrt(max(l^2 - m^2, 0)) * (l^2 - 1)) / denom
+        combo = combine_terms([
+            ((l - 2), bo(0, 0, 0)),
+            (l, bo(1, 1, 0)),
+            (-2.0, bo(1, 0, 1)),
+        ])
+        return coef * combo
+    elseif offset == 0
+        denom = -3 + 4l * (l + 1)
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (3 * (l + l^2 - 3 * m^2)) / denom
+        combo = combine_terms([
+            ((6 - l - l^2), bo(0, 0, 0)),
+            (l * (l + 1), bo(1, 1, 0)),
+            (-2 * (-3 + l + l^2), bo(1, 0, 1)),
+        ])
+        return coef * combo
+    elseif offset == 1
+        denom = 2l + 3
+        abs(denom) < eps() && return zero_block
+        coef = (Le^2) * (-sqrt(max((l + 1 - m) * (l + 1 + m), 0)) * l * (l + 2)) / denom
+        combo = combine_terms([
+            ((l + 3), bo(0, 0, 0)),
+            ((l + 1), bo(1, 1, 0)),
+            (2.0, bo(1, 0, 1)),
+        ])
+        return coef * combo
+    elseif offset == 2
+        denom = (3 + 2l) * (5 + 2l)
+        abs(denom) < eps() && return zero_block
+        sqrt1 = sqrt(max((2 + l - m) * (1 + l + m), 0))
+        sqrt2 = sqrt(max((1 + l - m) * (2 + l + m), 0))
+        coef = (Le^2) * (3 * l * (l + 3) * sqrt1 * sqrt2) / denom
+        combo = combine_terms([
+            (-(5 + l), bo(0, 0, 0)),
+            (-3.0, bo(1, 0, 1)),
+            (-(2 + l), bo(1, 1, 0)),
+        ])
+        return coef * combo
+    else
+        return zero_block
+    end
+end
+
 # -----------------------------------------------------------------------------
 # Induction Equation Operators (velocity → magnetic field)
 # -----------------------------------------------------------------------------
@@ -526,25 +631,69 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
 end
 
 function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
-                                            l::Int) where {T}
-    m = op.params.m
-    L = l * (l + 1)
-    denom = -3 + 4l * (l + 1)
-    denom == 0 && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
-
-    coef = 3 * (l + l^2 - 3 * m^2) / denom
+                                            l::Int, m::Int, offset::Int) where {T}
+    Np1 = op.params.N + 1
+    zero_block = spzeros(Float64, Np1, Np1)
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_magnetic_toroidal(is_dipole)
+    bo(p, h, d) = background_operator(op, p + shift, h, d)
 
-    term1 = background_operator(op, 0 + shift, 0, 0)
-    term2 = background_operator(op, 1 + shift, 0, 1)
-    term3 = background_operator(op, 1 + shift, 1, 0)
-
-    combo = -L * term1
-    combo += -2 * (-3 + l + l^2) * term2
-    combo += -3 * (-2 + l + l^2) * term3
-
-    return coef * combo
+    if offset == -2
+        denom = 3 - 8l + 4l^2
+        abs(denom) < eps() && return zero_block
+        sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
+        coef = (3 * (l - 2) * (l + 1) * sqrt_factor) / denom
+        combo = combine_terms([
+            ((-4 + l), bo(0, 0, 0)),
+            (-3.0, bo(1, 0, 1)),
+            ((-1 + l), bo(1, 1, 0)),
+        ])
+        return coef * combo
+    elseif offset == -1
+        denom = 2l - 1
+        abs(denom) < eps() && return zero_block
+        coef = (sqrt(max(l^2 - m^2, 0)) * (l^2 - 1)) / denom
+        combo = combine_terms([
+            ((l - 2), bo(0, 0, 0)),
+            (l, bo(1, 1, 0)),
+            (-2.0, bo(1, 0, 1)),
+        ])
+        return coef * combo
+    elseif offset == 0
+        denom = -3 + 4l * (l + 1)
+        abs(denom) < eps() && return zero_block
+        coef = (3 * (l + l^2 - 3 * m^2)) / denom
+        combo = combine_terms([
+            ((6 - l - l^2), bo(0, 0, 0)),
+            (l * (l + 1), bo(1, 1, 0)),
+            (-2 * (-3 + l + l^2), bo(1, 0, 1)),
+        ])
+        return coef * combo
+    elseif offset == 1
+        denom = 2l + 3
+        abs(denom) < eps() && return zero_block
+        coef = (-sqrt(max((l + 1 - m) * (l + 1 + m), 0)) * l * (l + 2)) / denom
+        combo = combine_terms([
+            ((l + 3), bo(0, 0, 0)),
+            ((l + 1), bo(1, 1, 0)),
+            (2.0, bo(1, 0, 1)),
+        ])
+        return coef * combo
+    elseif offset == 2
+        denom = (3 + 2l) * (5 + 2l)
+        abs(denom) < eps() && return zero_block
+        sqrt1 = sqrt(max((2 + l - m) * (1 + l + m), 0))
+        sqrt2 = sqrt(max((1 + l - m) * (2 + l + m), 0))
+        coef = (3 * l * (l + 3) * sqrt1 * sqrt2) / denom
+        combo = combine_terms([
+            (-(5 + l), bo(0, 0, 0)),
+            (-3.0, bo(1, 0, 1)),
+            (-(2 + l), bo(1, 1, 0)),
+        ])
+        return coef * combo
+    else
+        return zero_block
+    end
 end
 
 # -----------------------------------------------------------------------------

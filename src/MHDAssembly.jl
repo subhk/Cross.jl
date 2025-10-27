@@ -344,17 +344,27 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Em)
         add_block!(A_rows, A_cols, A_vals, mag_diff_pol, row_base, col_base)
 
-        # Induction from poloidal velocity u
-        if Le > 0  # Only if there's a background field
-            u_col_base = (k - 1) * n_per_mode
-            induct_from_u = operator_induction_poloidal_from_u(op, l)
-            add_block!(A_rows, A_cols, A_vals, induct_from_u, row_base, u_col_base)
+        # Induction from velocity field
+        if Le > 0
+            # From poloidal velocity u (offsets l-2 ... l+2)
+            for offset in -2:2
+                l_src = l + offset
+                idx_u = findfirst(==(l_src), op.ll_u)
+                idx_u === nothing && continue
 
-            # Induction from toroidal velocity v (if l exists in v)
-            if l in op.ll_v
-                k_v = findfirst(==(l), op.ll_v)
-                v_col_base = (nb_u + k_v - 1) * n_per_mode
-                induct_from_v = operator_induction_poloidal_from_v(op, l)
+                induct_from_u = operator_induction_poloidal_from_u(op, l, m, offset)
+                u_col_base = (idx_u - 1) * n_per_mode
+                add_block!(A_rows, A_cols, A_vals, induct_from_u, row_base, u_col_base)
+            end
+
+            # From toroidal velocity v (offsets l-1 ... l+1)
+            for offset in -1:1
+                l_src = l + offset
+                idx_v = findfirst(==(l_src), op.ll_v)
+                idx_v === nothing && continue
+
+                induct_from_v = operator_induction_poloidal_from_v(op, l, m, offset)
+                v_col_base = (nb_u + idx_v - 1) * n_per_mode
                 add_block!(A_rows, A_cols, A_vals, induct_from_v, row_base, v_col_base)
             end
         end

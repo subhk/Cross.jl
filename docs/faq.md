@@ -4,7 +4,7 @@ This page follows the quick-reference format of Kore’s FAQ. It collects recurr
 
 ## Installation
 
-**Q: Julia complains about incompatible versions of KrylovKit or FeastKit.**  
+**Q: Julia complains about incompatible versions of KrylovKit or Arpack.**  
 A: Run `Pkg.update()` within the project and ensure your Julia version is ≥ 1.10. If conflicts persist, delete `Manifest.toml` and re-run `Pkg.instantiate()` to resolve fresh dependencies.
 
 **Q: `Pkg.instantiate()` hangs or takes excessively long.**  
@@ -23,8 +23,8 @@ A: Provide a better `Ra_guess` and reduce `nev` to 2 or 4. Extreme Ekman numbers
 **Q: Memory usage spikes beyond expectations.**  
 A: Lower `lmax` or `Nr`, switch `use_sparse_weighting` to `true` (default), and run on a machine with adequate RAM. Tri-global problems scale with `length(m_range) × lmax × Nr × 3`.
 
-**Q: FEAST returns zero eigenvalues.**  
-A: Adjust the search contour and the number of integration points. Ensure your contour encloses the target eigenvalues.
+**Q: Arpack returns zero eigenvalues.**  
+A: Provide a small complex shift (e.g., `arpack_shift=0.1+0.1im`) so the solver targets modes near neutral stability, and ensure `which=:LR` or `:LM` matches the growth rate you need.
 
 ## Basic States
 

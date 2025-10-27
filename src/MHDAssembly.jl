@@ -218,13 +218,13 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         cori_op = operator_coriolis_diagonal(op, l, m)
         add_block!(A_rows, A_cols, A_vals, cori_op, row_base, col_base)
 
-        # Viscous diffusion
-        visc_op = -operator_viscous_diffusion(op, l, E)
+        # Viscous diffusion (appears with a minus sign in Kore)
+        visc_op = operator_viscous_diffusion(op, l, E)
         add_block!(A_rows, A_cols, A_vals, -visc_op, row_base, col_base)
 
         # Buoyancy (coupling from temperature)
         if Ra > 0
-            buoy_op = -operator_buoyancy(op, l, Ra, Pr)
+            buoy_op = operator_buoyancy(op, l, Ra, Pr)
             # Column offset for temperature section
             temp_col_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
             add_block!(A_rows, A_cols, A_vals, buoy_op, row_base, temp_col_base)
@@ -297,8 +297,8 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         cori_tor = operator_coriolis_toroidal(op, l, m)
         add_block!(A_rows, A_cols, A_vals, cori_tor, row_base, col_base)
 
-        # Viscous diffusion
-        visc_tor = -operator_viscous_toroidal(op, l, E)
+        # Viscous diffusion (minus sign following Kore)
+        visc_tor = operator_viscous_toroidal(op, l, E)
         add_block!(A_rows, A_cols, A_vals, -visc_tor, row_base, col_base)
 
         # Lorentz force from poloidal B (if Le > 0)

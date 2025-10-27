@@ -866,6 +866,10 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
     # -------------------------------------------------------------------------
     # Toroidal velocity BCs
     # -------------------------------------------------------------------------
+    D1_toroidal = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, params.ricb, one(T))
+    outer_deriv_row = Vector(D1_toroidal[1, :])
+    inner_deriv_row = Vector(D1_toroidal[N+1, :])
+
     for (k, l) in enumerate(op.ll_bot)
         row_base = (nb_top + k - 1) * n_per_mode
 
@@ -879,11 +883,9 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             row = row_base + 1
             A[row, :] .= 0.0
             B[row, :] .= 0.0
-            D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, params.ricb, one(T))
             block_start = row_base + 1
             block_range = block_start:(block_start + N)
-            # -ro * dv/dr term (ro = 1)
-            A[row, block_range] .= -D1[1, :]
+            A[row, block_range] .= -outer_deriv_row
             # +v term
             for n in 0:N
                 idx = block_start + n
@@ -901,10 +903,9 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             row = row_base + n_per_mode
             A[row, :] .= 0.0
             B[row, :] .= 0.0
-            D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, params.ricb, one(T))
             block_start = row_base + 1
             block_range = block_start:(block_start + N)
-            A[row, block_range] .= -params.ricb * D1[N+1, :]
+            A[row, block_range] .= -params.ricb * inner_deriv_row
             for n in 0:N
                 idx = block_start + n
                 A[row, idx] += (-1.0)^n

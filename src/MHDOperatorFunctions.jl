@@ -161,7 +161,7 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
     nblock = zero_block(op)
-    bo(p, h, d) = complex_background_operator(op, p, h, d, 0)
+    mat(p, h, d) = Matrix{ComplexF64}(background_operator(op, p, h, d))
     L = l * (l + 1)
     Le2 = Le^2
 
@@ -175,18 +175,17 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (3 * (-2 - l + l^2) * sqrt_factor) / denom
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += (2l + 3l^2 + l^3) * bo(0, 0, 0)
-        combo += -(6 - 7l + 3l^2) * bo(1, 0, 1)
-        combo += (2 + l - 6l^2 + l^3) * bo(1, 1, 0)
-        combo += (6 - l) * bo(2, 0, 2)
-        combo += 2 * (2 - l) * bo(2, 1, 1)
-        combo += (-2 + l) * bo(2, 2, 0)
-        combo += -1 * bo(3, 2, 1)
-        combo += 3 * bo(3, 0, 3)
-        combo += (3 - l) * bo(3, 1, 2)
-        combo += (-1 + l) * bo(3, 3, 0)
-        return Le2 * C * combo
+        out = (2l + 3l^2 + l^3) .* mat(0, 0, 0)
+        out .-= (6 - 7l + 3l^2) .* mat(1, 0, 1)
+        out .+= (2 + l - 6l^2 + l^3) .* mat(1, 1, 0)
+        out .+= (6 - l) .* mat(2, 0, 2)
+        out .+= 2 * (2 - l) .* mat(2, 1, 1)
+        out .+= (-2 + l) .* mat(2, 2, 0)
+        out .-= mat(3, 2, 1)
+        out .+= 3 .* mat(3, 0, 3)
+        out .+= (3 - l) .* mat(3, 1, 2)
+        out .+= (-1 + l) .* mat(3, 3, 0)
+        return sparse(Le2 .* (C .* out))
     elseif offset == -1
         denom = 2l - 1
         if abs(denom) < eps(Float64)
@@ -197,37 +196,34 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = sqrt_factor * (l^2 - 1) / denom
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += L * (l + 2) * bo(0, 0, 0)
-        combo += L * (l - 4) * bo(1, 1, 0)
-        combo += l * bo(2, 2, 0)
-        combo += l * bo(3, 3, 0)
-        combo += 2 * bo(3, 0, 3)
-        combo += -2 * (l^2 + 2) * bo(1, 0, 1)
-        combo += -2 * (l - 2) * bo(2, 1, 1)
-        combo += -(l - 4) * bo(2, 0, 2)
-        combo += -(l - 2) * bo(3, 1, 2)
-        return Le2 * C * combo
+        out = -2 * (l^2 + 2) .* mat(1, 0, 1)
+        out .-= 2 * (l - 2) .* mat(2, 1, 1)
+        out .-= (l - 4) .* mat(2, 0, 2)
+        out .-= (l - 2) .* mat(3, 1, 2)
+        out .+= L * (l + 2) .* mat(0, 0, 0)
+        out .+= L * (l - 4) .* mat(1, 1, 0)
+        out .+= l .* mat(2, 2, 0)
+        out .+= l .* mat(3, 3, 0)
+        out .+= 2 .* mat(3, 0, 3)
+        return sparse(Le2 .* (C .* out))
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
         if abs(denom) < eps(Float64)
             return nblock
         end
         C = 3 * (l + l^2 - 3 * m^2) / denom
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += 3 * l * (1 + l) * (-2 + l + l^2) * bo(0, 0, 0)
-        combo += -3 * L^2 * bo(1, 1, 0)
-        combo += 2 * (6 - 4l - 5l^2 - 2l^3 - l^4) * bo(1, 0, 1)
-        combo += 3 * L * bo(2, 2, 0)
-        combo += (-12 + 5l + 5l^2) * bo(2, 0, 2)
-        combo += 2 * (-6 + 5l + 5l^2) * bo(2, 1, 1)
-        combo += 2 * L * bo(3, 2, 1)
-        combo += L * bo(3, 3, 0)
-        combo += 2 * (-3 + l + l^2) * bo(3, 0, 3)
-        combo += 3 * (-2 + l + l^2) * bo(3, 1, 2)
-        correction_scale = (3 / 2) * l^2 * (l - 1) * (l + 1) * (l + 2)
-        combo += correction_scale * (bo(0, 0, 0) + bo(1, 1, 0))
-        return Le2 * C * combo
+        out = 3 * l * (1 + l) * (-2 + l + l^2) .* mat(0, 0, 0)
+        out .-= 3 * L^2 .* mat(1, 1, 0)
+        out .+= 2 * (6 - 4l - 5l^2 - 2l^3 - l^4) .* mat(1, 0, 1)
+        out .+= 3 * L .* mat(2, 2, 0)
+        out .+= (-12 + 5l + 5l^2) .* mat(2, 0, 2)
+        out .+= 2 * (-6 + 5l + 5l^2) .* mat(2, 1, 1)
+        out .+= 2 * L .* mat(3, 2, 1)
+        out .+= L .* mat(3, 3, 0)
+        out .+= 2 * (-3 + l + l^2) .* mat(3, 0, 3)
+        out .+= 3 * (-2 + l + l^2) .* mat(3, 1, 2)
+        out .+= (3 / 2) * l^2 * (l - 1) * (l + 1) * (l + 2) .* (mat(0, 0, 0) .+ mat(1, 1, 0))
+        return sparse(Le2 .* (C .* out))
     elseif offset == 1
         denom = 2l + 3
         if abs(denom) < eps(Float64)
@@ -238,17 +234,16 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = sqrt_factor * l * (l + 2) / denom
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += -2 * (l^2 + 2l + 3) * bo(1, 0, 1)
-        combo += 2 * (l + 3) * bo(2, 1, 1)
-        combo += (l + 5) * bo(2, 0, 2)
-        combo += (l + 3) * bo(3, 1, 2)
-        combo += -L * (l - 1) * bo(0, 0, 0)
-        combo += -L * (l + 5) * bo(1, 1, 0)
-        combo += -(l + 1) * bo(2, 2, 0)
-        combo += -(l + 1) * bo(3, 3, 0)
-        combo += 2 * bo(3, 0, 3)
-        return Le2 * C * combo
+        out = -2 * (l^2 + 2l + 3) .* mat(1, 0, 1)
+        out .+= 2 * (l + 3) .* mat(2, 1, 1)
+        out .+= (l + 5) .* mat(2, 0, 2)
+        out .+= (l + 3) .* mat(3, 1, 2)
+        out .-= L * (l - 1) .* mat(0, 0, 0)
+        out .-= L * (l + 5) .* mat(1, 1, 0)
+        out .-= (l + 1) .* mat(2, 2, 0)
+        out .-= (l + 1) .* mat(3, 3, 0)
+        out .+= 2 .* mat(3, 0, 3)
+        return sparse(Le2 .* (C .* out))
     elseif offset == 2
         denom = (3 + 2l) * (5 + 2l)
         if abs(denom) < eps(Float64)
@@ -259,18 +254,17 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (3 * l * (l + 3) * sqrt_factor) / denom
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += (l - l^3) * bo(0, 0, 0)
-        combo += -(16 + 13l + 3l^2) * bo(1, 0, 1)
-        combo += -(6 + 16l + 9l^2 + l^3) * bo(1, 1, 0)
-        combo += 2 * (3 + l) * bo(2, 1, 1)
-        combo += -(3 + l) * bo(2, 2, 0)
-        combo += (7 + l) * bo(2, 0, 2)
-        combo += -1 * bo(3, 2, 1)
-        combo += 3 * bo(3, 0, 3)
-        combo += (4 + l) * bo(3, 1, 2)
-        combo += -(2 + l) * bo(3, 3, 0)
-        return Le2 * C * combo
+        out = (l - l^3) .* mat(0, 0, 0)
+        out .-= (16 + 13l + 3l^2) .* mat(1, 0, 1)
+        out .-= (6 + 16l + 9l^2 + l^3) .* mat(1, 1, 0)
+        out .+= 2 * (3 + l) .* mat(2, 1, 1)
+        out .-= (3 + l) .* mat(2, 2, 0)
+        out .+= (7 + l) .* mat(2, 0, 2)
+        out .-= mat(3, 2, 1)
+        out .+= 3 .* mat(3, 0, 3)
+        out .+= (4 + l) .* mat(3, 1, 2)
+        out .-= (2 + l) .* mat(3, 3, 0)
+        return sparse(Le2 .* (C .* out))
     else
         return nblock
     end
@@ -280,7 +274,7 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
     nblock = zero_block(op)
-    bo(p, h, d) = complex_background_operator(op, p, h, d, 0)
+    mat(p, h, d) = Matrix{ComplexF64}(background_operator(op, p, h, d))
     Le2 = Le^2
 
     if offset == -1
@@ -293,22 +287,20 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (6im * m * sqrt_factor) / denom
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += -(3 - 3l - 2l^2) * bo(1, 0, 0)
-        combo += -(l - 3) * bo(2, 0, 1)
-        combo += (3 - 2l - l^2) * bo(2, 1, 0)
-        combo += 3 * bo(3, 0, 2)
-        combo += -(l - 3) * bo(3, 1, 1)
-        combo += -l * bo(3, 2, 0)
-        return Le2 * C * combo
+        out = -(3 - 3l - 2l^2) .* mat(1, 0, 0)
+        out .-= (l - 3) .* mat(2, 0, 1)
+        out .+= (3 - 2l - l^2) .* mat(2, 1, 0)
+        out .+= 3 .* mat(3, 0, 2)
+        out .-= (l - 3) .* mat(3, 1, 1)
+        out .-= l .* mat(3, 2, 0)
+        return sparse(Le2 .* (C .* out))
     elseif offset == 0
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += -bo(1, 0, 0)
-        combo += -(l^2 + l - 1) * bo(2, 1, 0)
-        combo += bo(2, 0, 1)
-        combo += bo(3, 1, 1)
-        combo += bo(3, 0, 2)
-        return Le2 * (2im * m) * combo
+        out = -mat(1, 0, 0)
+        out .-= (l^2 + l - 1) .* mat(2, 1, 0)
+        out .+= mat(2, 0, 1)
+        out .+= mat(3, 1, 1)
+        out .+= mat(3, 0, 2)
+        return sparse(Le2 .* (2im * m) .* out)
     elseif offset == 1
         denom = 2l + 3
         if abs(denom) < eps(Float64)
@@ -319,14 +311,13 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (6im * m * sqrt_factor) / denom
-        combo = spzeros(ComplexF64, size(nblock, 1), size(nblock, 2))
-        combo += (-4 + l + 2l^2) * bo(1, 0, 0)
-        combo += (4 + l) * bo(2, 0, 1)
-        combo += (4 - l^2) * bo(2, 1, 0)
-        combo += 3 * bo(3, 0, 2)
-        combo += (1 + l) * bo(3, 2, 0)
-        combo += (4 + l) * bo(3, 1, 1)
-        return Le2 * C * combo
+        out = (-4 + l + 2l^2) .* mat(1, 0, 0)
+        out .+= (4 + l) .* mat(2, 0, 1)
+        out .+= (4 - l^2) .* mat(2, 1, 0)
+        out .+= 3 .* mat(3, 0, 2)
+        out .+= (1 + l) .* mat(3, 2, 0)
+        out .+= (4 + l) .* mat(3, 1, 1)
+        return sparse(Le2 .* (C .* out))
     else
         return nblock
     end

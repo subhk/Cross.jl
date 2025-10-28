@@ -18,6 +18,7 @@ module OnsetEigenvalueSolver
 using LinearAlgebra
 using SparseArrays
 using LinearMaps
+using Arpack
 using KrylovKit
 using Printf
 using Random
@@ -48,7 +49,7 @@ end
 
 """
     solve_eigenvalue_problem(A, B; nev=20, sigma=nothing, which=:LR,
-                             selection=:maxreal, tol=1e-10)
+                             selection=:maxreal, tol=1e-10, solver=:arpack)
 
 Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices.
 
@@ -56,14 +57,17 @@ Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices.
 - `A::SparseMatrixCSC`: Operator matrix (physics terms)
 - `B::SparseMatrixCSC`: Mass matrix (time derivative weights)
 - `nev::Int=20`: Number of eigenvalues to compute
-- `sigma::Union{Nothing,Number}=nothing`: Shift for shift-invert mode (set to a
-  numeric value to target eigenvalues near that shift)
-- `which::Symbol=:LR`: Which eigenvalues to compute (see `KrylovKit.eigsolve`)
+- `sigma::Union{Nothing,Number}=nothing`: Shift target for shift-invert modes
+- `which::Symbol=:LR`: Which eigenvalues to compute (follows the conventions of
+  `Arpack.eigs` or `KrylovKit.eigsolve` depending on `solver`)
 - `selection::Symbol=:maxreal`: How to order the returned eigenvalues:
   - `:maxreal`: sort by descending real part
   - `:minabs`: sort by ascending magnitude
   - `:closest_real`: sort by ascending |Re(σ)|
 - `tol::Float64=1e-10`: Convergence tolerance
+- `solver::Symbol=:arpack`: Preferred eigensolver backend (`:arpack` or
+  `:krylov`). When `:arpack` is selected the routine falls back to KrylovKit if
+  ARPACK fails to converge.
 
 # Returns
 - `eigenvalues::Vector{ComplexF64}`: Computed eigenvalues σ = σ_r + iω
@@ -83,34 +87,163 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                                  tol::Float64=1e-10,
                                  maxiter::Int=1000,
                                  krylovdim::Union{Nothing,Int}=nothing,
-                                 verbosity::Int=0)
+                                 verbosity::Int=0,
+                                 solver::Symbol=:arpack)
 
     n = size(A, 1)
     @assert size(A) == size(B) "A and B must have same dimensions"
     @assert size(A, 1) == size(A, 2) "Matrices must be square"
 
-    println("Solving eigenvalue problem (KrylovKit)...")
+    solver_pref = Symbol(lowercase(String(solver)))
+    solver_pref in (:arpack, :krylov) ||
+        error("Unknown eigenvalue solver $solver; supported solvers are :arpack and :krylov.")
+
+    println("Solving eigenvalue problem (preferred solver: $(solver_pref == :arpack ? "ARPACK" : "KrylovKit"))...")
     println("  Matrix size: $n × $n")
     println("  A nnz: $(nnz(A)), B nnz: $(nnz(B))")
     println("  Computing $nev eigenvalues with which=$which")
+    println("  Selection strategy: $selection")
 
-    # Determine Krylov subspace dimension
-    #kdim = something(krylovdim, min(n, max(4 * nev, 30)))
+    if solver_pref == :arpack
+        arpack_result = _arpack_eigensolve(A, B;
+                                           nev = nev,
+                                           sigma = sigma,
+                                           which = which,
+                                           selection = selection,
+                                           tol = tol,
+                                           maxiter = maxiter,
+                                           verbosity = verbosity)
+        if arpack_result !== nothing
+            eigenvalues, eigenvectors, info = arpack_result
+            _print_selection_summary(eigenvalues, selection, :arpack)
+            return eigenvalues, eigenvectors, info
+        end
+        println("  Falling back to KrylovKit shift-invert solver...")
+    end
 
-    kdim = 300
+    eigenvalues, eigenvectors, info = _krylov_eigensolve(A, B;
+                                                         nev = nev,
+                                                         sigma = sigma,
+                                                         which = which,
+                                                         selection = selection,
+                                                         tol = tol,
+                                                         maxiter = maxiter,
+                                                         krylovdim = krylovdim,
+                                                         verbosity = verbosity)
 
+    _print_selection_summary(eigenvalues, selection, :krylov)
+    return eigenvalues, eigenvectors, info
+end
+
+function _print_selection_summary(eigenvalues, selection, solver_sym)
+    println("  ✓ Converged using $(solver_sym == :arpack ? "ARPACK" : "KrylovKit") solver")
+    println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
+    println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
+    println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
+end
+
+function _sort_indices(eigenvalues::AbstractVector{<:Complex}, selection::Symbol)
+    select_values = real.(eigenvalues)
+    if selection == :maxreal
+        return sortperm(select_values, rev=true)
+    elseif selection == :minabs
+        return sortperm(abs.(eigenvalues))
+    elseif selection == :closest_real
+        return sortperm(abs.(select_values))
+    else
+        error("Unknown selection strategy $(selection)")
+    end
+end
+
+function _arpack_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
+                            nev::Int,
+                            sigma::Union{Nothing,Number},
+                            which::Symbol,
+                            selection::Symbol,
+                            tol::Float64,
+                            maxiter::Int,
+                            verbosity::Int)
     σ_eff = sigma === nothing ? 0.0 : ComplexF64(sigma)
+    A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
+    B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
 
     try
-        println("  Using shift-invert around σ = $(σ_eff)")
+        if sigma === nothing
+            values, vectors, info_struct = Arpack.eigs(
+                A_complex, B_complex;
+                nev = nev,
+                which = which,
+                tol = tol,
+                maxiter = maxiter
+            )
+        else
+            values, vectors, info_struct = Arpack.eigs(
+                A_complex, B_complex;
+                nev = nev,
+                which = which,
+                tol = tol,
+                maxiter = maxiter,
+                sigma = σ_eff
+            )
+        end
 
-        A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
-        B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
-        shift_matrix = A_complex - σ_eff * B_complex
+        nconv = hasproperty(info_struct, :nconv) ? getproperty(info_struct, :nconv) : length(values)
+        if nconv < nev || length(values) < nev
+            @warn "ARPACK returned insufficient converged eigenpairs (nconv=$(nconv), requested=$(nev))."
+            return nothing
+        end
 
-        linmap = construct_linear_map(shift_matrix, B_complex)
-        x0 = randn(ComplexF64, n)
+        eigenvalues = ComplexF64.(values)
+        eigenvectors = Matrix{ComplexF64}(vectors)
 
+        perm = _sort_indices(eigenvalues, selection)
+        eigenvalues = eigenvalues[perm]
+        eigenvectors = eigenvectors[:, perm]
+
+        info = Dict(
+            "solver" => :arpack,
+            "strategy" => sigma === nothing ? :arnoldi : :shift_invert,
+            "shift" => σ_eff,
+            "iterations" => hasproperty(info_struct, :niter) ? getproperty(info_struct, :niter) : missing,
+            "nconv" => nconv,
+            "nev" => nev,
+            "selected" => eigenvalues[1],
+            "selection" => selection
+        )
+
+        return eigenvalues, eigenvectors, info
+    catch err
+        @warn "ARPACK eigensolver failed; switching to KrylovKit." exception=(err, catch_backtrace())
+        return nothing
+    end
+end
+
+function _krylov_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
+                            nev::Int,
+                            sigma::Union{Nothing,Number},
+                            which::Symbol,
+                            selection::Symbol,
+                            tol::Float64,
+                            maxiter::Int,
+                            krylovdim::Union{Nothing,Int},
+                            verbosity::Int,
+                            _allow_retry::Bool=true)
+
+    n = size(A, 1)
+    σ_eff = sigma === nothing ? 0.0 : ComplexF64(sigma)
+
+    println("  Using shift-invert around σ = $(σ_eff)")
+
+    A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
+    B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
+    shift_matrix = A_complex - σ_eff * B_complex
+
+    linmap = construct_linear_map(shift_matrix, B_complex)
+    x0 = randn(ComplexF64, n)
+
+    kdim = krylovdim === nothing ? 300 : krylovdim
+
+    try
         values, vectors, history = eigsolve(
             linmap, x0, nev, which;
             tol = tol,
@@ -127,24 +260,9 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
         eigenvalues = ComplexF64.(σ_eff .+ inv.(values))
         eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
 
-        select_values = real.(eigenvalues)
-        perm = if selection == :maxreal
-            sortperm(select_values, rev=true)
-        elseif selection == :minabs
-            sortperm(abs.(eigenvalues))
-        elseif selection == :closest_real
-            sortperm(abs.(select_values))
-        else
-            error("Unknown selection strategy $(selection)")
-        end
-
+        perm = _sort_indices(eigenvalues, selection)
         eigenvalues = eigenvalues[perm]
         eigenvectors = eigenvectors[:, perm]
-
-        println("  ✓ Converged using shift-invert Krylov solver")
-        println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
-        println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
-        println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
 
         info = Dict(
             "solver" => :krylovkit,
@@ -161,21 +279,19 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
         )
 
         return eigenvalues, eigenvectors, info
-
     catch err
-        if sigma !== nothing && err isa KrylovKit.ConvergenceError
+        if sigma !== nothing && _allow_retry && err isa KrylovKit.ConvergenceError
             @warn "Shift-invert Krylov solver failed to converge; retrying without shift" exception=(err, catch_backtrace())
-            return solve_eigenvalue_problem(
-                A, B;
-                nev = nev,
-                sigma = nothing,
-                which = which,
-                selection = selection,
-                tol = tol,
-                maxiter = maxiter,
-                krylovdim = kdim,
-                verbosity = verbosity
-            )
+            return _krylov_eigensolve(A, B;
+                                      nev = nev,
+                                      sigma = nothing,
+                                      which = which,
+                                      selection = selection,
+                                      tol = tol,
+                                      maxiter = maxiter,
+                                      krylovdim = krylovdim,
+                                      verbosity = verbosity,
+                                      _allow_retry = false)
         else
             @error "Eigenvalue solver failed" exception=(err, catch_backtrace())
             rethrow()

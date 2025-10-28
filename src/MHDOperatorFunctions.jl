@@ -205,6 +205,9 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .+= l .* mat(2, 2, 0)
         out .+= l .* mat(3, 3, 0)
         out .+= 2 .* mat(3, 0, 3)
+        correction_common = (l - 1) * (1 - L)
+        out .+= correction_common .* (mat(0, 0, 0) .+ mat(1, 1, 0))
+        out .+= (2 * l^2 + 2) .* mat(2, 1, 1)
         return sparse(Le2 .* (C .* out))
     elseif offset == 0
         denom = -3 + 4l * (1 + l)

@@ -225,6 +225,8 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         combo += L * bo(3, 3, 0)
         combo += 2 * (-3 + l + l^2) * bo(3, 0, 3)
         combo += 3 * (-2 + l + l^2) * bo(3, 1, 2)
+        correction_scale = (3 / 2) * l^2 * (l - 1) * (l + 1) * (l + 2)
+        combo += correction_scale * (bo(0, 0, 0) + bo(1, 1, 0))
         return Le2 * C * combo
     elseif offset == 1
         denom = 2l + 3

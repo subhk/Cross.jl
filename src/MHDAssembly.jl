@@ -224,7 +224,13 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
     println("\nAssembling MHD sparse matrices...")
     println("  Matrix size: $n × $n")
-    println("  Sections: u($nb_u modes), v($nb_v modes), f($nb_f modes), g($nb_g modes), h($nb_h modes)")
+    section_info = String[]
+    nb_u > 0 && push!(section_info, "u($nb_u modes)")
+    nb_v > 0 && push!(section_info, "v($nb_v modes)")
+    nb_f > 0 && push!(section_info, "f($nb_f modes)")
+    nb_g > 0 && push!(section_info, "g($nb_g modes)")
+    nb_h > 0 && push!(section_info, "h($nb_h modes)")
+    println("  Sections: $(join(section_info, \", \"))")
 
     # Use COO format for efficient assembly
     # Use ComplexF64 because Coriolis operator has imaginary terms
@@ -385,48 +391,50 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # =========================================================================
     # SECTION F: Poloidal Magnetic Field (no-curl induction)
     # =========================================================================
-    println("  Assembling section f (poloidal magnetic field)...")
+    if nb_f > 0
+        println("  Assembling section f (poloidal magnetic field)...")
 
-    for (k, l) in enumerate(op.ll_f)
-        row_base = (nb_u + nb_v + k - 1) * n_per_mode
-        col_base = (nb_u + nb_v + k - 1) * n_per_mode
+        for (k, l) in enumerate(op.ll_f)
+            row_base = (nb_u + nb_v + k - 1) * n_per_mode
+            col_base = (nb_u + nb_v + k - 1) * n_per_mode
 
-        # ---------------------------------------------------------------------
-        # B matrix: Time derivative
-        # ---------------------------------------------------------------------
-        b_pol = operator_b_poloidal(op, l)
-        add_block!(B_rows, B_cols, B_vals, b_pol, row_base, col_base)
+            # -----------------------------------------------------------------
+            # B matrix: Time derivative
+            # -----------------------------------------------------------------
+            b_pol = operator_b_poloidal(op, l)
+            add_block!(B_rows, B_cols, B_vals, b_pol, row_base, col_base)
 
-        # ---------------------------------------------------------------------
-        # A matrix: RHS operators
-        # ---------------------------------------------------------------------
+            # -----------------------------------------------------------------
+            # A matrix: RHS operators
+            # -----------------------------------------------------------------
 
-        # Magnetic diffusion
-        mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Etherm)
-        add_block!(A_rows, A_cols, A_vals, mag_diff_pol, row_base, col_base)
+            # Magnetic diffusion
+            mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Etherm)
+            add_block!(A_rows, A_cols, A_vals, mag_diff_pol, row_base, col_base)
 
-        # Induction from velocity field
-        if Le > 0
-            # From poloidal velocity u (offsets l-2 ... l+2)
-            for offset in -2:2
-                l_src = l + offset
-                idx_u = findfirst(==(l_src), op.ll_u)
-                idx_u === nothing && continue
+            # Induction from velocity field
+            if Le > 0
+                # From poloidal velocity u (offsets l-2 ... l+2)
+                for offset in -2:2
+                    l_src = l + offset
+                    idx_u = findfirst(==(l_src), op.ll_u)
+                    idx_u === nothing && continue
 
-                induct_from_u = operator_induction_poloidal_from_u(op, l, m, offset)
-                u_col_base = (idx_u - 1) * n_per_mode
-                add_block!(A_rows, A_cols, A_vals, induct_from_u, row_base, u_col_base)
-            end
+                    induct_from_u = operator_induction_poloidal_from_u(op, l, m, offset)
+                    u_col_base = (idx_u - 1) * n_per_mode
+                    add_block!(A_rows, A_cols, A_vals, induct_from_u, row_base, u_col_base)
+                end
 
-            # From toroidal velocity v (offsets l-1 ... l+1)
-            for offset in -1:1
-                l_src = l + offset
-                idx_v = findfirst(==(l_src), op.ll_v)
-                idx_v === nothing && continue
+                # From toroidal velocity v (offsets l-1 ... l+1)
+                for offset in -1:1
+                    l_src = l + offset
+                    idx_v = findfirst(==(l_src), op.ll_v)
+                    idx_v === nothing && continue
 
-                induct_from_v = operator_induction_poloidal_from_v(op, l, m, offset)
-                v_col_base = (nb_u + idx_v - 1) * n_per_mode
-                add_block!(A_rows, A_cols, A_vals, induct_from_v, row_base, v_col_base)
+                    induct_from_v = operator_induction_poloidal_from_v(op, l, m, offset)
+                    v_col_base = (nb_u + idx_v - 1) * n_per_mode
+                    add_block!(A_rows, A_cols, A_vals, induct_from_v, row_base, v_col_base)
+                end
             end
         end
     end
@@ -434,47 +442,49 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # =========================================================================
     # SECTION G: Toroidal Magnetic Field (1curl induction)
     # =========================================================================
-    println("  Assembling section g (toroidal magnetic field)...")
+    if nb_g > 0
+        println("  Assembling section g (toroidal magnetic field)...")
 
-    for (k, l) in enumerate(op.ll_g)
-        row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
-        col_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
+        for (k, l) in enumerate(op.ll_g)
+            row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
+            col_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
 
-        # ---------------------------------------------------------------------
-        # B matrix: Time derivative
-        # ---------------------------------------------------------------------
-        b_tor = operator_b_toroidal(op, l)
-        add_block!(B_rows, B_cols, B_vals, b_tor, row_base, col_base)
+            # -----------------------------------------------------------------
+            # B matrix: Time derivative
+            # -----------------------------------------------------------------
+            b_tor = operator_b_toroidal(op, l)
+            add_block!(B_rows, B_cols, B_vals, b_tor, row_base, col_base)
 
-        # ---------------------------------------------------------------------
-        # A matrix: RHS operators
-        # ---------------------------------------------------------------------
+            # -----------------------------------------------------------------
+            # A matrix: RHS operators
+            # -----------------------------------------------------------------
 
-        # Magnetic diffusion
-        mag_diff_tor = operator_magnetic_diffusion_toroidal(op, l, Em)
-        add_block!(A_rows, A_cols, A_vals, mag_diff_tor, row_base, col_base)
+            # Magnetic diffusion
+            mag_diff_tor = operator_magnetic_diffusion_toroidal(op, l, Em)
+            add_block!(A_rows, A_cols, A_vals, mag_diff_tor, row_base, col_base)
 
-        # Induction from velocity field (if Le > 0)
-        if Le > 0
-            # From toroidal velocity v (offsets l-2 ... l+2)
-            for offset in -2:2
-                l_src = l + offset
-                idx_v = findfirst(==(l_src), op.ll_v)
-                idx_v === nothing && continue
-                v_col_base = (nb_u + idx_v - 1) * n_per_mode
-                induct_v_tor = operator_induction_toroidal_from_v(op, l, m, offset)
-                add_block!(A_rows, A_cols, A_vals, induct_v_tor, row_base, v_col_base)
-            end
+            # Induction from velocity field (if Le > 0)
+            if Le > 0
+                # From toroidal velocity v (offsets l-2 ... l+2)
+                for offset in -2:2
+                    l_src = l + offset
+                    idx_v = findfirst(==(l_src), op.ll_v)
+                    idx_v === nothing && continue
+                    v_col_base = (nb_u + idx_v - 1) * n_per_mode
+                    induct_v_tor = operator_induction_toroidal_from_v(op, l, m, offset)
+                    add_block!(A_rows, A_cols, A_vals, induct_v_tor, row_base, v_col_base)
+                end
 
-            # From poloidal velocity u (off-diagonal l±1)
-            for offset in [-1, 1]
-                l_coupled = l + offset
-                if l_coupled in op.ll_u
-                    k_coupled = findfirst(==(l_coupled), op.ll_u)
-                    u_col_coupled = (k_coupled - 1) * n_per_mode
+                # From poloidal velocity u (off-diagonal l±1)
+                for offset in [-1, 1]
+                    l_coupled = l + offset
+                    if l_coupled in op.ll_u
+                        k_coupled = findfirst(==(l_coupled), op.ll_u)
+                        u_col_coupled = (k_coupled - 1) * n_per_mode
 
-                    induct_u_tor = operator_induction_toroidal_from_u(op, l, m, offset)
-                    add_block!(A_rows, A_cols, A_vals, induct_u_tor, row_base, u_col_coupled)
+                        induct_u_tor = operator_induction_toroidal_from_u(op, l, m, offset)
+                        add_block!(A_rows, A_cols, A_vals, induct_u_tor, row_base, u_col_coupled)
+                    end
                 end
             end
         end
@@ -528,8 +538,12 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     apply_velocity_boundary_conditions!(A, B, op)
 
     # Magnetic field BCs
-    apply_magnetic_boundary_conditions!(A, B, op, :f)
-    apply_magnetic_boundary_conditions!(A, B, op, :g)
+    if nb_f > 0
+        apply_magnetic_boundary_conditions!(A, B, op, :f)
+    end
+    if nb_g > 0
+        apply_magnetic_boundary_conditions!(A, B, op, :g)
+    end
 
     # Temperature BCs (same as hydrodynamic)
     apply_temperature_boundary_conditions!(A, B, op)
@@ -542,6 +556,13 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     interior_dofs = findall(i -> abs(B_diag[i]) > 1e-14, 1:n)
     println("  Interior DOFs: $(length(interior_dofs)) / $n")
 
+    section_labels = String[]
+    nb_u > 0 && push!(section_labels, "u")
+    nb_v > 0 && push!(section_labels, "v")
+    nb_f > 0 && push!(section_labels, "f")
+    nb_g > 0 && push!(section_labels, "g")
+    nb_h > 0 && push!(section_labels, "h")
+
     info = Dict(
         "method" => "MHD sparse ultraspherical",
         "N" => N,
@@ -549,7 +570,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         "m" => m,
         "nl_modes" => op.nl_modes,
         "matrix_size" => n,
-        "sections" => "u, v, f, g, h"
+        "sections" => join(section_labels, ", ")
     )
 
     return A, B, interior_dofs, info

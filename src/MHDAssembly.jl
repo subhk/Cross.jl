@@ -230,7 +230,8 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     nb_f > 0 && push!(section_info, "f($nb_f modes)")
     nb_g > 0 && push!(section_info, "g($nb_g modes)")
     nb_h > 0 && push!(section_info, "h($nb_h modes)")
-    println("  Sections: $(join(section_info, \", \"))")
+    sections_text = join(section_info, ", ")
+    println("  Sections: $sections_text")
 
     # Use COO format for efficient assembly
     # Use ComplexF64 because Coriolis operator has imaginary terms

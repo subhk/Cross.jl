@@ -536,22 +536,27 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
 
     # Determine l-mode structure
     ll_u, ll_v = compute_mhd_l_modes(params.m, params.lmax, params.symm, params.B0_type)
-    ll_f = ll_u  # Poloidal magnetic field has same parity as poloidal velocity
-    ll_g = ll_v  # Toroidal magnetic field has same parity as toroidal velocity
+
+    has_magnetic = !(iszero(params.Le) && params.B0_type == no_field && iszero(params.B0_amplitude))
+
+    ll_f = has_magnetic ? ll_u : Int[]  # Poloidal magnetic field parity
+    ll_g = has_magnetic ? ll_v : Int[]  # Toroidal magnetic field parity
     ll_h = ll_u  # Temperature has same parity as poloidal velocity
 
     nl_modes = length(ll_u) + length(ll_v)
     n_per_mode = N + 1
 
-    # Matrix size: 4 sections (u, v, f, g, h)
-    # For MHD: u, v, f, g, h
-    matrix_size = 2 * nl_modes * n_per_mode +  # u, v
-                  2 * nl_modes * n_per_mode +  # f, g
-                  length(ll_h) * n_per_mode     # h
+    n_u = length(ll_u) * n_per_mode
+    n_v = length(ll_v) * n_per_mode
+    n_f = length(ll_f) * n_per_mode
+    n_g = length(ll_g) * n_per_mode
+    n_h = length(ll_h) * n_per_mode
+
+    matrix_size = n_u + n_v + n_f + n_g + n_h
 
     println("  l-modes: $(length(ll_u)) poloidal + $(length(ll_v)) toroidal")
     println("  Matrix size: $(matrix_size) × $(matrix_size)")
-    println("  Estimated sparsity: ~$(estimate_mhd_sparsity(N, nl_modes))%")
+    println("  Estimated sparsity: ~$(estimate_mhd_sparsity(N, ll_u, ll_v, ll_f, ll_g, ll_h))%")
 
     return MHDStabilityOperator{T}(
         params,
@@ -720,12 +725,24 @@ function compute_mhd_l_modes(m::Int, lmax::Int, symm::Int, B0_type::BackgroundFi
     return ll_u, ll_v
 end
 
-function estimate_mhd_sparsity(N::Int, nl_modes::Int)
-    # MHD has more couplings than pure hydro
-    # Each field couples to multiple others via Lorentz force and induction
-    total_size = 5 * nl_modes * (N + 1)  # u, v, f, g, h
-    nnz_estimate = 10 * nl_modes * N^2   # More couplings than hydro
-    sparsity = 100.0 * (1.0 - nnz_estimate / total_size^2)
+function estimate_mhd_sparsity(N::Int,
+                               ll_u::Vector{Int},
+                               ll_v::Vector{Int},
+                               ll_f::Vector{Int},
+                               ll_g::Vector{Int},
+                               ll_h::Vector{Int})
+    nl_modes = length(ll_u) + length(ll_v)
+    total_blocks = (length(ll_u) + length(ll_v) + length(ll_f) + length(ll_g) + length(ll_h)) * (N + 1)
+
+    nnz_estimate = if isempty(ll_f) && isempty(ll_g)
+        # Hydrodynamic case: reuse sparse convection estimate
+        5 * nl_modes * N^2
+    else
+        # Full MHD: more couplings between fields
+        10 * nl_modes * N^2
+    end
+
+    sparsity = 100.0 * (1.0 - nnz_estimate / total_blocks^2)
     return round(sparsity, digits=2)
 end
 

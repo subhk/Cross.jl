@@ -26,6 +26,7 @@ import .SparseOperator: operator_u, operator_coriolis_diagonal, operator_corioli
                         operator_viscous_diffusion, operator_buoyancy, operator_coriolis_v_to_u,
                         operator_u_toroidal, operator_coriolis_toroidal, operator_viscous_toroidal,
                         operator_theta, operator_thermal_diffusion, operator_thermal_advection
+import .MHDOperator: is_dipole_case
 
 # -----------------------------------------------------------------------------
 # Inline operator construction for MHDStabilityOperator
@@ -34,22 +35,39 @@ import .SparseOperator: operator_u, operator_coriolis_diagonal, operator_corioli
 
 function operator_u(op::MHDStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
-    return L * (L * op.r2_D0_u - 2 * op.r3_D1_u - op.r4_D2_u)
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return L * (L * op.r4_D0_u - 2 * op.r5_D1_u - op.r6_D2_u)
+    else
+        return L * (L * op.r2_D0_u - 2 * op.r3_D1_u - op.r4_D2_u)
+    end
 end
 
 function operator_coriolis_diagonal(op::MHDStabilityOperator{T}, l::Int, m::Int) where {T}
     L = l * (l + 1)
-    return 2im * m * (-L * op.r2_D0_u + 2 * op.r3_D1_u + op.r4_D2_u)
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return 2im * m * (-L * op.r4_D0_u + 2 * op.r5_D1_u + op.r6_D2_u)
+    else
+        return 2im * m * (-L * op.r2_D0_u + 2 * op.r3_D1_u + op.r4_D2_u)
+    end
 end
 
 function operator_coriolis_offdiag(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
+    dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     if offset == -1
         C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-        mtx = 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
+        if dipole
+            mtx = 2 * C * ((l - 1) * op.r5_D0_u - op.r6_D1_u)
+        else
+            mtx = 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
+        end
         return mtx, -1
     elseif offset == 1
         C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-        mtx = 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
+        if dipole
+            mtx = 2 * C * (-(l + 2) * op.r5_D0_u - op.r6_D1_u)
+        else
+            mtx = 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
+        end
         return mtx, 1
     else
         error("offset must be ±1 for Coriolis off-diagonal")
@@ -58,26 +76,46 @@ end
 
 function operator_viscous_diffusion(op::MHDStabilityOperator{T}, l::Int, E::T) where {T}
     L = l * (l + 1)
-    return E * L * (-L * (l + 2) * (l - 1) * op.r0_D0_u +
-                    2 * L * op.r2_D2_u -
-                    4 * op.r3_D3_u -
-                    op.r4_D4_u)
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return E * L * (-L * (l + 2) * (l - 1) * op.r2_D0_u +
+                        2 * L * op.r4_D2_u -
+                        4 * op.r5_D3_u -
+                        op.r6_D4_u)
+    else
+        return E * L * (-L * (l + 2) * (l - 1) * op.r0_D0_u +
+                        2 * L * op.r2_D2_u -
+                        4 * op.r3_D3_u -
+                        op.r4_D4_u)
+    end
 end
 
 function operator_buoyancy(op::MHDStabilityOperator{T}, l::Int, Ra::T, Pr::T) where {T}
     E = op.params.E
     beyonce = -Ra * E^2 / Pr
     L = l * (l + 1)
-    return beyonce * L * op.r4_D0_u
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return beyonce * L * op.r6_D0_u
+    else
+        return beyonce * L * op.r4_D0_u
+    end
 end
 
 function operator_coriolis_v_to_u(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
+    dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     if offset == -1
         C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-        return 2 * C * ((l - 1) * op.r1_D0_v - op.r2_D1_v)
+        if dipole
+            return 2 * C * ((l - 1) * op.r4_D0_v - op.r5_D1_v)
+        else
+            return 2 * C * ((l - 1) * op.r1_D0_v - op.r2_D1_v)
+        end
     elseif offset == 1
         C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-        return 2 * C * (-(l + 2) * op.r1_D0_v - op.r2_D1_v)
+        if dipole
+            return 2 * C * (-(l + 2) * op.r4_D0_v - op.r5_D1_v)
+        else
+            return 2 * C * (-(l + 2) * op.r1_D0_v - op.r2_D1_v)
+        end
     else
         error("offset must be ±1 for Coriolis v→u coupling")
     end
@@ -85,16 +123,28 @@ end
 
 function operator_u_toroidal(op::MHDStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
-    return L * op.r2_D0_v
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return L * op.r5_D0_v
+    else
+        return L * op.r2_D0_v
+    end
 end
 
 function operator_coriolis_toroidal(op::MHDStabilityOperator{T}, l::Int, m::Int) where {T}
-    return -2im * m * op.r2_D0_v
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return -2im * m * op.r5_D0_v
+    else
+        return -2im * m * op.r2_D0_v
+    end
 end
 
 function operator_viscous_toroidal(op::MHDStabilityOperator{T}, l::Int, E::T) where {T}
     L = l * (l + 1)
-    return E * L * (-L * op.r0_D0_v + 2 * op.r1_D1_v + op.r2_D2_v)
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return E * L * (-L * op.r3_D0_v + 2 * op.r4_D1_v + op.r5_D2_v)
+    else
+        return E * L * (-L * op.r0_D0_v + 2 * op.r1_D1_v + op.r2_D2_v)
+    end
 end
 
 function operator_theta(op::MHDStabilityOperator{T}, l::Int) where {T}

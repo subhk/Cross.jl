@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "test/**"
+      - "example/**"
+      - "Project.toml"
+      - "Manifest.toml"
+      - "**/*.jl"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "test/**"
+      - "example/**"
+      - "Project.toml"
+      - "Manifest.toml"
+      - "**/*.jl"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        julia-version: ['1.10', '1.11']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: ${{ matrix['julia-version'] }}
+
+      - name: Instantiate and run smoke test
+        env:
+          JULIA_NUM_THREADS: 2
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: |
+          julia --color=yes -e '
+            using Pkg;
+            Pkg.activate(pwd());
+            Pkg.instantiate(; allow_autoprecomp=false);
+            using Cross;
+            params = ShellParams(m=3, E=1e-4, Pr=1.0, Ra=1e6, ri=0.35, ro=1.0, lmax=16, Nr=16);
+            vals, _, _, _ = leading_modes(params; nθ=18, nev=2, maxiter=20);
+            @info "Computed eigenvalues" vals;
+          '

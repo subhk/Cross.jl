@@ -301,10 +301,14 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
                 end
             end
 
-            # Diagonal: toroidal B at same l
-            lorentz_diag = operator_lorentz_poloidal_diagonal(op, l, Le)
-            g_col_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
-            add_block!(A_rows, A_cols, A_vals, lorentz_diag, row_base, g_col_base)
+            # Diagonal: toroidal B at same l (only if such mode exists)
+            # For symm=±1, ll_u and ll_g have different parities, so diagonal coupling doesn't exist
+            if l in op.ll_g
+                k_g = findfirst(==(l), op.ll_g)
+                lorentz_diag = operator_lorentz_poloidal_diagonal(op, l, Le)
+                g_col_base = (nb_u + nb_v + nb_f + k_g - 1) * n_per_mode
+                add_block!(A_rows, A_cols, A_vals, lorentz_diag, row_base, g_col_base)
+            end
 
             # Off-diagonal: toroidal B at l±1
             for offset in [-1, 1]

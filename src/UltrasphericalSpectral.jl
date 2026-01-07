@@ -1,12 +1,10 @@
 # =============================================================================
 #  Ultraspherical (Gegenbauer) Spectral Method
 #
-#  Implementation of the Olver-Townsend (2013) sparse spectral method
-#  following the approach used in Kore for rotating spherical shell problems.
+#  Implementation of the Olver-Townsend (2013) sparse spectral method.
 #
 #  References:
 #  - Olver & Townsend (2013), SIAM Review 55(3), 462-489
-#  - Rekier et al. (2019), Kore implementation
 # =============================================================================
 
 module UltrasphericalSpectral

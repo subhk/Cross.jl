@@ -796,16 +796,16 @@ bc_type can be:
   - :no_slip → u = du/dr = 0 (for poloidal)
   - :stress_free → u = d²u/dr² - 2u/r² = 0
 """
-function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
+function apply_boundary_conditions!(A::SparseMatrixCSC{T}, B::SparseMatrixCSC{T},
                                    bc_rows::Vector{Int}, bc_type::Symbol,
-                                   N::Int, ri::Real, ro::Real)
+                                   N::Int, ri::Real, ro::Real) where {T}
     # Tau method: replace rows corresponding to boundary conditions
     scale = _radial_scale(ri, ro)
 
     for row in bc_rows
-        # Zero out the row
-        A[row, :] .= 0.0
-        B[row, :] .= 0.0
+        # Zero out the row (using element type of matrix for type consistency)
+        A[row, :] .= zero(T)
+        B[row, :] .= zero(T)
 
         # Determine local index within the (N+1) block
         local_idx = (row - 1) % (N + 1) + 1
@@ -817,18 +817,18 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
             # u(r_boundary) = 0
             # Set row to evaluation at boundary point
             row_vals = _chebyshev_boundary_values(N, boundary)
-            A[row, block_range] = row_vals
+            A[row, block_range] = T.(row_vals)
 
         elseif bc_type == :neumann
             # du/dr(r_boundary) = 0
             row_vals = scale * _chebyshev_boundary_derivative(N, boundary)
-            A[row, block_range] = row_vals
+            A[row, block_range] = T.(row_vals)
 
         elseif bc_type == :neumann2
             # r · d²u/dr²(r_boundary) = 0
             r_boundary = _boundary_radius(ri, ro, boundary)
             row_vals = r_boundary * scale^2 * _chebyshev_boundary_second_derivative(N, boundary)
-            A[row, block_range] = row_vals
+            A[row, block_range] = T.(row_vals)
 
         # Additional BC types can be added here
         end

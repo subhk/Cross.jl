@@ -203,17 +203,19 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
 
     # Determine l-mode structure based on equatorial symmetry
     ll_top, ll_bot = compute_l_modes(params.m, params.lmax, params.symm)
-    nl_modes = length(ll_top) + length(ll_bot)
+    n_poloidal = length(ll_top)
+    n_toroidal = length(ll_bot)
+    n_temperature = n_poloidal
+    nl_modes = n_poloidal + n_toroidal
 
     # Each l-mode has (N+1) radial DOFs
-    # Total size: 2 sections (u,v) × nl_modes × (N+1) + 1 section (theta) × nl_modes × (N+1)
-    # For onset: velocity (poloidal + toroidal) + temperature
+    # Total size: poloidal + toroidal + temperature
     n_per_mode = N + 1
-    matrix_size = 2 * nl_modes * n_per_mode + nl_modes * n_per_mode  # u, v, theta
+    matrix_size = (n_poloidal + n_toroidal + n_temperature) * n_per_mode
 
     println("  l-modes: $(length(ll_top)) poloidal + $(length(ll_bot)) toroidal")
     println("  Matrix size: $(matrix_size) × $(matrix_size)")
-    println("  Estimated sparsity: ~$(estimate_sparsity(N, nl_modes))%")
+    println("  Estimated sparsity: ~$(estimate_sparsity(N, n_poloidal, n_toroidal))%")
 
     return SparseStabilityOperator{T}(
         params,
@@ -282,19 +284,19 @@ function compute_l_modes(m::Int, lmax::Int, symm::Int)
 end
 
 """
-    estimate_sparsity(N, nl_modes)
+    estimate_sparsity(N, n_poloidal, n_toroidal)
 
 Estimate the percentage of nonzero entries in the assembled matrices.
 """
-function estimate_sparsity(N::Int, nl_modes::Int)
+function estimate_sparsity(N::Int, n_poloidal::Int, n_toroidal::Int)
     # Each l-mode couples to l±1, l±2 neighbors
     # Average coupling: ~5 l-modes per row
     # Each operator contributes ~O(N) nonzeros per radial mode
-    # Total nonzeros: ~5 * nl_modes * N^2
-    # Total entries: (3 * nl_modes * (N+1))^2
-
-    total_size = 3 * nl_modes * (N + 1)
+    nl_modes = n_poloidal + n_toroidal
     nnz_estimate = 5 * nl_modes * N^2
+
+    # Total entries: (N+1) blocks for poloidal, toroidal, temperature
+    total_size = (2 * n_poloidal + n_toroidal) * (N + 1)
     sparsity = 100.0 * (1.0 - nnz_estimate / total_size^2)
 
     return round(sparsity, digits=2)

@@ -2,7 +2,7 @@
 #  MHD Linear Stability Operator
 #
 #  Implementation of magnetohydrodynamic (MHD) operators for dynamo simulations
-#  in rotating spherical shells following Kore's structure.
+#  in rotating spherical shells.
 #
 #  Extends the hydrodynamic operators with:
 #  - Lorentz forces (magnetic field acting on velocity)
@@ -10,7 +10,6 @@
 #  - Magnetic diffusion
 #
 #  References:
-#  - Kore: kore-main/bin/operators.py, submatrices.py, assemble.py
 #  - Christensen & Wicht (2015), "Numerical Dynamo Simulations"
 #  - Jones (2011), "Planetary Magnetic Fields and Fluid Dynamos"
 # =============================================================================

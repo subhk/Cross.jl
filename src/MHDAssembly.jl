@@ -416,7 +416,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
             # -----------------------------------------------------------------
 
             # Magnetic diffusion
-            mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Etherm)
+            mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Em)
             add_block!(A_rows, A_cols, A_vals, mag_diff_pol, row_base, col_base)
 
             # Induction from velocity field
@@ -482,8 +482,8 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
                     add_block!(A_rows, A_cols, A_vals, induct_v_tor, row_base, v_col_base)
                 end
 
-                # From poloidal velocity u (off-diagonal l±1)
-                for offset in [-1, 1]
+                # From poloidal velocity u (diagonal and off-diagonal)
+                for offset in [-1, 0, 1]
                     l_coupled = l + offset
                     if l_coupled in op.ll_u
                         k_coupled = findfirst(==(l_coupled), op.ll_u)

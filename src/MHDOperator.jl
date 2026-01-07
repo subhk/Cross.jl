@@ -389,6 +389,7 @@ struct MHDStabilityOperator{T<:Real}
     r2_D0_f::SparseMatrixCSC{Float64,Int}
     r2_D1_f::SparseMatrixCSC{Float64,Int}
     r2_D2_f::SparseMatrixCSC{Float64,Int}
+    r3_D1_f::SparseMatrixCSC{Float64,Int}
 
     # Dipole field operators for magnetic poloidal (f) - shift +2
     r4_D0_f::SparseMatrixCSC{Float64,Int}  # Replaces r²D⁰ → r⁴D⁰ (time deriv)
@@ -470,6 +471,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
     r2_D0_f = sparse_radial_operator(2, 0, N, ri, ro)
     r2_D1_f = sparse_radial_operator(2, 1, N, ri, ro)
     r2_D2_f = sparse_radial_operator(2, 2, N, ri, ro)
+    r3_D1_f = sparse_radial_operator(3, 1, N, ri, ro)
 
     r0_D0_g = sparse_radial_operator(0, 0, N, ri, ro)
     r1_D0_g = sparse_radial_operator(1, 0, N, ri, ro)
@@ -577,7 +579,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
         # Dipole velocity operators (toroidal shift +3)
         r3_D0_v, r4_D0_v, r4_D1_v, r5_D0_v, r5_D1_v, r5_D2_v,
         # Standard magnetic operators
-        r0_D0_f, r1_D0_f, r1_D1_f, r2_D0_f, r2_D1_f, r2_D2_f,
+        r0_D0_f, r1_D0_f, r1_D1_f, r2_D0_f, r2_D1_f, r2_D2_f, r3_D1_f,
         # Dipole magnetic poloidal operators (shift +2)
         r4_D0_f, r4_D2_f, r5_D3_f, r6_D4_f,
         # Standard magnetic toroidal operators

@@ -205,9 +205,6 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .+= l .* mat(2, 2, 0)
         out .+= l .* mat(3, 3, 0)
         out .+= 2 .* mat(3, 0, 3)
-        correction_common = (l - 1) * (1 - L)
-        out .+= correction_common .* (mat(0, 0, 0) .+ mat(1, 1, 0))
-        out .+= (2 * l^2 + 2) .* mat(2, 1, 1)
         return sparse(Le2 .* (C .* out))
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
@@ -225,7 +222,6 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .+= L .* mat(3, 3, 0)
         out .+= 2 * (-3 + l + l^2) .* mat(3, 0, 3)
         out .+= 3 * (-2 + l + l^2) .* mat(3, 1, 2)
-        out .+= (3 / 2) * l^2 * (l - 1) * (l + 1) * (l + 2) .* (mat(0, 0, 0) .+ mat(1, 1, 0))
         return sparse(Le2 .* (C .* out))
     elseif offset == 1
         denom = 2l + 3
@@ -346,7 +342,7 @@ function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
                                             l::Int, Le::T) where {T}
     params = op.params
     if params.B0_type == axial
-        return lorentz_upol_bpol_axial(op, l, params.m, 0, Le)
+        return lorentz_upol_btor_axial(op, l, params.m, 0, Le)
     end
 
     m = params.m
@@ -479,9 +475,6 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (3 * (-2 + l + l^2), bo(3, 1, 2)),
         ]
         combo = combine_terms(terms)
-        ratio = (27.0 / 80.0) * l
-        combo += ratio * (3 * l * (1 + l) * (-2 + l + l^2)) * bo(0, 0, 0)
-        combo += ratio * (-3 * L^2) * bo(1, 1, 0)
         return coef * combo
     elseif offset == 1
         denom = 2l + 3
@@ -788,6 +781,18 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
 
         return coef * combo
 
+    elseif offset == 0
+        L = l * (l + 1)
+        term1 = background_operator(op, 0 + shift, 0, 1)
+        term2 = background_operator(op, 1 + shift, 1, 1)
+        term3 = background_operator(op, -1 + shift, 0, 0)
+        term4 = background_operator(op, 0 + shift, 1, 0)
+        term5 = background_operator(op, 1 + shift, 2, 0)
+        term6 = background_operator(op, 1 + shift, 0, 2)
+
+        combo = term1 + term2 - (L + 1) * term3 + term4 + (L / 2) * term5 + term6
+        return (2im * m) * combo
+
     elseif offset == 1
         denom = 2l + 3
         coef = (3im * m * sqrt(max((l + 1)^2 - m^2, 0))) / denom
@@ -826,9 +831,9 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
         coef = (3 * (l - 2) * (l + 1) * sqrt_factor) / denom
         combo = combine_terms([
-            ((-4 + l), bo(0, 0, 0)),
+            (l, bo(0, 0, 0)),
             (-3.0, bo(1, 0, 1)),
-            ((-1 + l), bo(1, 1, 0)),
+            ((l - 3), bo(1, 1, 0)),
         ])
         return coef * combo
     elseif offset == -1
@@ -836,8 +841,8 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         abs(denom) < eps() && return zero_block
         coef = (sqrt(max(l^2 - m^2, 0)) * (l^2 - 1)) / denom
         combo = combine_terms([
-            ((l - 2), bo(0, 0, 0)),
-            (l, bo(1, 1, 0)),
+            (l, bo(0, 0, 0)),
+            ((l - 2), bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1)),
         ])
         return coef * combo
@@ -846,19 +851,19 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         abs(denom) < eps() && return zero_block
         coef = (3 * (l + l^2 - 3 * m^2)) / denom
         combo = combine_terms([
-            ((6 - l - l^2), bo(0, 0, 0)),
-            (l * (l + 1), bo(1, 1, 0)),
+            (-(l * (l + 1)), bo(0, 0, 0)),
+            (-3 * (-2 + l + l^2), bo(1, 1, 0)),
             (-2 * (-3 + l + l^2), bo(1, 0, 1)),
         ])
         return coef * combo
     elseif offset == 1
         denom = 2l + 3
         abs(denom) < eps() && return zero_block
-        coef = (-sqrt(max((l + 1 - m) * (l + 1 + m), 0)) * l * (l + 2)) / denom
+        coef = (sqrt(max((l + 1 - m) * (l + 1 + m), 0)) * l * (l + 2)) / denom
         combo = combine_terms([
-            ((l + 3), bo(0, 0, 0)),
-            ((l + 1), bo(1, 1, 0)),
-            (2.0, bo(1, 0, 1)),
+            (-(l + 1), bo(0, 0, 0)),
+            (-(l + 3), bo(1, 1, 0)),
+            (-2.0, bo(1, 0, 1)),
         ])
         return coef * combo
     elseif offset == 2
@@ -868,9 +873,9 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         sqrt2 = sqrt(max((1 + l - m) * (2 + l + m), 0))
         coef = (3 * l * (l + 3) * sqrt1 * sqrt2) / denom
         combo = combine_terms([
-            (-(5 + l), bo(0, 0, 0)),
+            (-(1 + l), bo(0, 0, 0)),
             (-3.0, bo(1, 0, 1)),
-            (-(2 + l), bo(1, 1, 0)),
+            (-(4 + l), bo(1, 1, 0)),
         ])
         return coef * combo
     else
@@ -891,13 +896,16 @@ Magnetic diffusion for poloidal magnetic field.
 Where Em = η/(ΩL²) is the magnetic Ekman number.
 """
 function operator_magnetic_diffusion_poloidal(op::MHDStabilityOperator{T},
-                                              l::Int, Etherm::T) where {T}
+                                              l::Int, Em::T) where {T}
     L = l * (l + 1)
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
 
-    # Diffusion: Em * ∇²B
-    # For poloidal field (no-curl equation)
-    # Following Kore operators.py lines 320-322
-    return Etherm * (-L * op.r0_D0_f + 2 * op.r1_D1_f + op.r2_D2_f)
+    # Diffusion: Em * ∇²B (no-curl equation)
+    # Following Kore operators.py lines 656-670
+    if is_dipole
+        return Em * L * (-L * op.r2_D0_f + 2 * op.r3_D1_f + op.r4_D2_f)
+    end
+    return Em * L * (-L * op.r0_D0_f + 2 * op.r1_D1_f + op.r2_D2_f)
 end
 
 """
@@ -911,10 +919,14 @@ More complex due to spherical geometry.
 function operator_magnetic_diffusion_toroidal(op::MHDStabilityOperator{T},
                                               l::Int, Em::T) where {T}
     L = l * (l + 1)
+    is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
 
     # Toroidal magnetic diffusion
     # Following Kore operators.py lines 675-680
     # More terms than poloidal due to curl-curl in spherical coordinates
+    if is_dipole
+        return Em * L * (-L * op.r3_D0_g + 2 * op.r4_D1_g + op.r5_D2_g)
+    end
     return Em * L * (-L * op.r0_D0_g + 2 * op.r1_D1_g + op.r2_D2_g)
 end
 
@@ -934,6 +946,9 @@ function operator_b_poloidal(op::MHDStabilityOperator{T}, l::Int) where {T}
     # Time derivative: ∂B_pol/∂t
     # Weighted by r² for no-curl equation
     L = l * (l + 1)
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return L * op.r4_D0_f
+    end
     return L * op.r2_D0_f
 end
 
@@ -949,6 +964,9 @@ function operator_b_toroidal(op::MHDStabilityOperator{T}, l::Int) where {T}
     # Time derivative: ∂B_tor/∂t
     # Weighted by r² for 1curl equation
     L = l * (l + 1)
+    if is_dipole_case(op.params.B0_type, op.params.ricb)
+        return L * op.r5_D0_g
+    end
     return L * op.r2_D0_g
 end
 

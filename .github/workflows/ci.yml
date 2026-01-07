@@ -36,7 +36,7 @@ jobs:
         with:
           version: ${{ matrix['julia-version'] }}
 
-      - name: Instantiate and run smoke test
+      - name: Instantiate and run tests
         env:
           JULIA_NUM_THREADS: 2
           JULIA_PKG_PRECOMPILE_AUTO: "0"
@@ -49,4 +49,5 @@ jobs:
             params = ShellParams(m=3, E=1e-4, Pr=1.0, Ra=1e6, ri=0.35, ro=1.0, lmax=16, Nr=16);
             vals, _, _, _ = leading_modes(params; nθ=18, nev=2, maxiter=20);
             @info "Computed eigenvalues" vals;
+            Pkg.test();
           '

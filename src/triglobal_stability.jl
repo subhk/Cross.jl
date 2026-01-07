@@ -20,7 +20,7 @@ using KrylovKit
 using WignerSymbols
 
 # Import from parent module
-import ..Cross: LinearStabilityOperator, OnsetParams, assemble_matrices
+import ..Cross: LinearStabilityOperator, OnsetParams, BasicState, assemble_matrices
 
 """
     TriGlobalParams{T<:Real}
@@ -258,6 +258,42 @@ end
 #  Helper Functions for Tri-Global Eigenvalue Problem
 # =============================================================================
 
+function axisymmetric_basic_state(basic_state::BasicState3D{T}) where T
+    lmax_bs = basic_state.lmax_bs
+    Nr = basic_state.Nr
+    theta_coeffs = Dict{Int, Vector{T}}()
+    uphi_coeffs = Dict{Int, Vector{T}}()
+    dtheta_dr_coeffs = Dict{Int, Vector{T}}()
+    duphi_dr_coeffs = Dict{Int, Vector{T}}()
+
+    for ℓ in 0:lmax_bs
+        theta_coeffs[ℓ] = get(basic_state.theta_coeffs, (ℓ, 0), zeros(T, Nr))
+        uphi_coeffs[ℓ] = get(basic_state.uphi_coeffs, (ℓ, 0), zeros(T, Nr))
+        dtheta_dr_coeffs[ℓ] = get(basic_state.dtheta_dr_coeffs, (ℓ, 0), zeros(T, Nr))
+        duphi_dr_coeffs[ℓ] = get(basic_state.duphi_dr_coeffs, (ℓ, 0), zeros(T, Nr))
+    end
+
+    return BasicState(
+        lmax_bs = lmax_bs,
+        Nr = Nr,
+        r = basic_state.r,
+        theta_coeffs = theta_coeffs,
+        uphi_coeffs = uphi_coeffs,
+        dtheta_dr_coeffs = dtheta_dr_coeffs,
+        duphi_dr_coeffs = duphi_dr_coeffs
+    )
+end
+
+function _has_nonzero_basic_state(basic_state::BasicState{T}; tol=1e-14) where T
+    for coeff in values(basic_state.theta_coeffs)
+        maximum(abs.(coeff)) > tol && return true
+    end
+    for coeff in values(basic_state.uphi_coeffs)
+        maximum(abs.(coeff)) > tol && return true
+    end
+    return false
+end
+
 """
     build_single_mode_operators(problem::CoupledModeProblem, verbose::Bool)
 
@@ -270,6 +306,8 @@ Returns a dictionary mapping m => (A_m, B_m, op_m) where:
 function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bool) where T
     params_tri = problem.params
     single_mode_ops = Dict{Int, Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Any}}()
+    basic_state_axis = axisymmetric_basic_state(params_tri.basic_state_3d)
+    has_axisymmetric = _has_nonzero_basic_state(basic_state_axis)
 
     for m in problem.m_range
         if verbose && abs(m) <= 2
@@ -287,12 +325,16 @@ function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bo
             Nr = params_tri.Nr,
             mechanical_bc = params_tri.mechanical_bc,
             thermal_bc = params_tri.thermal_bc,
-            basic_state = nothing  # Don't include basic state in single-mode ops
+            basic_state = has_axisymmetric ? basic_state_axis : nothing
         )
 
         # Create operator and assemble matrices
         op_m = LinearStabilityOperator(params_m)
         A_m, B_m, _, _ = assemble_matrices(op_m)
+        if m < 0
+            A_m = conj(A_m)
+            B_m = conj(B_m)
+        end
 
         single_mode_ops[m] = (A_m, B_m, op_m)
 
@@ -362,6 +404,15 @@ function interpolate_to_grid(coeffs_bs::Vector{T}, r_bs::Vector{T}, r_op::Vector
     end
 
     return coeffs_interp
+end
+
+function _basic_state_mode_scale(m_bs::Int, ::Type{T}) where {T<:Real}
+    if m_bs == 0
+        return one(T)
+    end
+    scale = inv(sqrt(T(2)))
+    phase = (m_bs < 0 && isodd(abs(m_bs))) ? -one(T) : one(T)
+    return phase * scale
 end
 
 function build_mode_coupling_operators(problem::CoupledModeProblem{T},
@@ -552,7 +603,8 @@ function add_advection_coupling!(C::Matrix{ComplexF64},
 
     # Advection coefficient: im_from × ū_φ/(r)
     # Note: The 1/sinθ factor is handled through spherical harmonic coupling
-    adv_coeff = im * m_from .* uphi_bs ./ r
+    bs_scale = _basic_state_mode_scale(m_bs, T)
+    adv_coeff = im * m_from .* (bs_scale .* uphi_bs) ./ r
 
     # Loop over ℓ modes in both from and to operators
     for (ℓ_from, field_from) in keys(op_from.index_map)
@@ -636,6 +688,7 @@ function add_temperature_gradient_coupling!(C::Matrix{ComplexF64},
     if maximum(abs.(dtheta_dr_bs)) < 1e-14
         return
     end
+    bs_scale = _basic_state_mode_scale(m_bs, T)
 
     # The coupling is: u'_r × ∂θ̄_bs/∂r
     # where u'_r = ℓ(ℓ+1)/r² × P (from poloidal potential)
@@ -675,7 +728,7 @@ function add_temperature_gradient_coupling!(C::Matrix{ComplexF64},
             to_offset = first(idx_to) - 1
 
             # Coupling coefficient: L_from/r² × ∂θ̄_bs/∂r
-            temp_grad_coeff = L_from .* dtheta_dr_bs ./ (r.^2)
+            temp_grad_coeff = L_from .* (bs_scale .* dtheta_dr_bs) ./ (r.^2)
 
             for i in 1:Nr
                 row = to_offset + i
@@ -722,6 +775,7 @@ function add_shear_coupling!(C::Matrix{ComplexF64},
     if maximum(abs.(duphi_dr_bs)) < 1e-14
         return
     end
+    bs_scale = _basic_state_mode_scale(m_bs, T)
 
     # Shear term: u'_r × ∂ū_φ/∂r couples poloidal (P) to toroidal (T)
 
@@ -759,7 +813,7 @@ function add_shear_coupling!(C::Matrix{ComplexF64},
             to_offset = first(idx_to) - 1
 
             # Coupling: L_from/r² × ∂ū_φ/∂r
-            shear_coeff = L_from .* duphi_dr_bs ./ (r.^2)
+            shear_coeff = L_from .* (bs_scale .* duphi_dr_bs) ./ (r.^2)
 
             for i in 1:Nr
                 row = to_offset + i
@@ -816,7 +870,8 @@ function compute_sh_coupling_coefficient(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
     # Wigner 3j symbol (m1 m2 -m3)
     w3j_mmm = wigner3j_simple(ℓ1, ℓ2, ℓ3, m1, m2, -m3)
 
-    gaunt = norm_factor * w3j_000 * w3j_mmm
+    phase = isodd(m3) ? -1.0 : 1.0
+    gaunt = phase * norm_factor * w3j_000 * w3j_mmm
 
     return gaunt
 end

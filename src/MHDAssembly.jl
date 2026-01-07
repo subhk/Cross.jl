@@ -610,7 +610,7 @@ function apply_velocity_boundary_conditions!(A, B, op)
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 2], :neumann, N,
                                                               params.ricb, ro)
         else
-            # Stress-free: u = 0, d²u/dr² = 0
+            # Stress-free: u = 0, r·d²u/dr² = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 1], :dirichlet, N,
                                                               params.ricb, ro)
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + 2], :neumann2, N,
@@ -625,7 +625,7 @@ function apply_velocity_boundary_conditions!(A, B, op)
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode - 1], :neumann, N,
                                                               params.ricb, ro)
         else
-            # Stress-free: u = 0, d²u/dr² = 0
+            # Stress-free: u = 0, r·d²u/dr² = 0
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode], :dirichlet, N,
                                                               params.ricb, ro)
             UltrasphericalSpectral.apply_boundary_conditions!(A, B, [row_base + n_per_mode - 1], :neumann2, N,

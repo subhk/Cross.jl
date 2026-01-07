@@ -550,8 +550,25 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
 
     has_magnetic = !(iszero(params.Le) && params.B0_type == no_field && iszero(params.B0_amplitude))
 
-    ll_f = has_magnetic ? ll_u : Int[]  # Poloidal magnetic field parity
-    ll_g = has_magnetic ? ll_v : Int[]  # Toroidal magnetic field parity
+    # Magnetic field parity depends on background field symmetry (symmB0)
+    # For axial and dipole fields, symmB0 = -1 (equatorially antisymmetric)
+    # This means magnetic field has OPPOSITE parity to velocity
+    # Following Kore: kore-main/bin/assemble.py lines 69-74
+    # symmB0 = -1: ll_f = loc_bot (ll_v), ll_g = loc_top (ll_u)
+    # symmB0 = +1: ll_f = loc_top (ll_u), ll_g = loc_bot (ll_v)
+    symmB0 = (params.B0_type == axial || params.B0_type == dipole) ? -1 : 1
+    if has_magnetic
+        if symmB0 == -1  # antisymmetric B0 (axial, dipole)
+            ll_f = ll_v  # Poloidal magnetic field uses opposite parity
+            ll_g = ll_u  # Toroidal magnetic field uses opposite parity
+        else  # symmetric B0 (rare, e.g., Luo_S2)
+            ll_f = ll_u  # Poloidal magnetic field uses same parity
+            ll_g = ll_v  # Toroidal magnetic field uses same parity
+        end
+    else
+        ll_f = Int[]
+        ll_g = Int[]
+    end
     ll_h = ll_u  # Temperature has same parity as poloidal velocity
 
     nl_modes = length(ll_u) + length(ll_v)

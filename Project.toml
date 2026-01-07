@@ -1,0 +1,37 @@
+name = "Cross"
+uuid = "b261f30d-6c96-4f96-8f67-071dc8a02665"
+authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
+version = "1.0.0"
+
+[deps]
+ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+KrylovKit = "0b1a1467-8014-51b9-945f-bf0ae24f4b77"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
+Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SHTnsKit = "1b9d0af0-2e90-4fb0-9eae-4a2e2cdf5320"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+WignerSymbols = "9f57e263-0b3d-5e2e-b1be-24f2bb48858b"
+
+[compat]
+ArnoldiMethod = "0.2"
+BenchmarkTools = "1"
+JLD2 = "0.4, 0.5"
+KrylovKit = "0.6"
+LinearMaps = "3"
+Parameters = "0.12"
+PyCall = "1.96.4"
+SHTnsKit = "1.1.8"
+WignerSymbols = "2.0.0"
+julia = "1.10, 1.11"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

@@ -1,4 +1,5 @@
 using Test
+using LinearAlgebra: I
 
 include("../src/boundary_conditions.jl")
 

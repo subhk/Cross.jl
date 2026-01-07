@@ -31,8 +31,8 @@ Fields
 - `D2`          : second-derivative matrix
 - `D3`, `D4`    : third and fourth derivative matrices (or `nothing`)
 
-All derivative matrices act on column vectors of nodal values arranged in the
-standard Chebyshev–Gauss–Lobatto ordering (descending `x`).
+All derivative matrices act on column vectors of nodal values arranged in
+ascending order (from `x = a` to `x = b`).
 """
 struct ChebyshevDiffn{T<:Real}
     n::Int
@@ -49,13 +49,13 @@ end
 #  Helper functions (internal)
 # -----------------------------------------------------------------------------
 
-# Compute Chebyshev–Gauss–Lobatto nodes on [-1, 1] in descending order.
+# Compute Chebyshev–Gauss–Lobatto nodes on [-1, 1] in ascending order (from -1 to 1).
 chebyshev_nodes(n::Int) = cospi.(reverse(0:n-1) ./ (n-1))
 
 # Vandermonde matrix evaluating Chebyshev polynomials T_k(x) at nodes x̂.
-function chebyshev_vandermonde(x̂::Vector{Float64})
+function chebyshev_vandermonde(x̂::AbstractVector{T}) where {T<:Real}
     n = length(x̂)
-    V = Array{Float64}(undef, n, n)
+    V = Matrix{T}(undef, n, n)
     θ = acos.(x̂)
     @inbounds for j in 1:n
         V[:, j] = cos.((j - 1) .* θ)
@@ -64,15 +64,14 @@ function chebyshev_vandermonde(x̂::Vector{Float64})
 end
 
 # Derivative of Chebyshev coefficients (ported from Kore's utils.Dcheb).
+# Implements the standard recurrence: a'_{n-2} = 2(n-1)a_{n-1},
+#   a'_k = a'_{k+2} + 2(k+1)a_{k+1} for k = n-3,...,0, then a'_0 /= 2.
 function chebyshev_coeff_derivative!(out::Vector{Float64}, coeff::Vector{Float64})
     s = length(coeff)
     fill!(out, 0.0)
     s <= 1 && return out
 
-    tmp0 = copy(coeff)
-    tmp0[1] *= 2.0
-
-    out[s - 1] = 2.0 * (s - 1) * tmp0[s]
+    out[s - 1] = 2.0 * (s - 1) * coeff[s]
     for k in (s - 2):-1:1
         out[k] = out[k + 2] + 2.0 * k * coeff[k + 1]
     end
@@ -109,10 +108,12 @@ function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) w
     a, b = domain[1], domain[2]
     @assert a < b "Domain must satisfy a < b"
 
-    # Nodes on [-1,1] and corresponding Vandermonde matrices
+    # Nodes on [-1,1] and corresponding Vandermonde matrix
     x̂ = chebyshev_nodes(n)
     V = chebyshev_vandermonde(x̂)
-    V_inv = inv(V)
+
+    # Use LU factorization for more stable computation of V \ (...)
+    V_lu = lu(V)
 
     # Coefficient-space derivative matrices
     Dc1 = chebyshev_coeff_derivative_matrix(n)
@@ -120,11 +121,12 @@ function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) w
     Dc3 = Dc1 * Dc2
     Dc4 = Dc1 * Dc3
 
-    # Convert to value-space operators (on [-1, 1])
-    D1_hat = V * Dc1 * V_inv
-    D2_hat = V * Dc2 * V_inv
-    D3_hat = V * Dc3 * V_inv
-    D4_hat = V * Dc4 * V_inv
+    # Convert to value-space operators (on [-1, 1]) using D = V * Dc * V^{-1}
+    # Computed as (V * Dc) / V via LU factorization for stability
+    D1_hat = (V * Dc1) / V_lu
+    D2_hat = (V * Dc2) / V_lu
+    D3_hat = (V * Dc3) / V_lu
+    D4_hat = (V * Dc4) / V_lu
 
     # Map nodes to [a, b] and scale derivatives
     x = @. (b - a) / 2 * (x̂ + 1) + a

@@ -11,7 +11,6 @@
 #  - g: toroidal magnetic field perturbation
 #  - h: temperature perturbation
 #
-#  Following Kore's assemble.py structure
 # =============================================================================
 
 """

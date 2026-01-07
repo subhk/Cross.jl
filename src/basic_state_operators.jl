@@ -149,6 +149,130 @@ function compute_gaunt_coefficient(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int, ℓ3:
 end
 
 
+function _theta_derivative_coeff(l::Int, m::Int)
+    if l < abs(m)
+        return (0.0, 0.0)
+    end
+
+    c_plus = 0.0
+    c_minus = 0.0
+
+    if l > 0
+        num_plus = (l + 1)^2 - m^2
+        den_plus = (2l + 1) * (2l + 3)
+        c_plus = l * sqrt(num_plus / den_plus)
+    end
+
+    if l > abs(m)
+        num_minus = l^2 - m^2
+        den_minus = (2l - 1) * (2l + 1)
+        c_minus = -(l + 1) * sqrt(num_minus / den_minus)
+    end
+
+    return (c_plus, c_minus)
+end
+
+function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int, m::Int)
+    c_plus, c_minus = _theta_derivative_coeff(l_bs, 0)
+    coupling = 0.0
+
+    if abs(c_plus) > 1e-14
+        l_temp = l_bs + 1
+        coupling += c_plus * compute_gaunt_coefficient(l_input, m, l_temp, 0, l_output, m)
+    end
+    if abs(c_minus) > 1e-14 && l_bs > 0
+        l_temp = l_bs - 1
+        coupling += c_minus * compute_gaunt_coefficient(l_input, m, l_temp, 0, l_output, m)
+    end
+
+    return coupling
+end
+
+struct AzimuthalCouplingCache
+    m::Int
+    weight::Float64
+    y_m::Matrix{Float64}
+    y_0::Matrix{Float64}
+end
+
+function _double_factorial(n::Int)
+    n <= 0 && return 1.0
+    result = 1.0
+    for k in n:-2:1
+        result *= k
+    end
+    return result
+end
+
+function _associated_legendre_table(m::Int, lmax::Int, mu::Vector{Float64})
+    nmu = length(mu)
+    n_l = lmax - m + 1
+    P = zeros(Float64, n_l, nmu)
+    n_l <= 0 && return P
+
+    if m == 0
+        P[1, :] .= 1.0
+    else
+        Pmm = (-1.0)^m * _double_factorial(2 * m - 1) .* (1 .- mu.^2).^(m / 2)
+        P[1, :] .= Pmm
+    end
+
+    lmax == m && return P
+
+    P[2, :] .= mu .* (2 * m + 1) .* P[1, :]
+
+    for l in (m + 2):lmax
+        idx = l - m + 1
+        P[idx, :] .= ((2 * l - 1) .* mu .* P[idx - 1, :] .-
+                      (l + m - 1) .* P[idx - 2, :]) ./ (l - m)
+    end
+
+    return P
+end
+
+function _normalization_table(m::Int, lmax::Int)
+    n_l = lmax - m + 1
+    N = Vector{Float64}(undef, n_l)
+    for l in m:lmax
+        ratio = 1.0
+        for k in (l - m + 1):(l + m)
+            ratio /= k
+        end
+        N[l - m + 1] = sqrt((2 * l + 1) / (4 * pi) * ratio)
+    end
+    return N
+end
+
+function _build_azimuthal_coupling_cache(m::Int, lmax_m::Int, lmax_0::Int)
+    ntheta = max(64, 4 * max(lmax_m, lmax_0) + 1)
+    k = collect(1:ntheta)
+    mu = cos.((2 .* k .- 1) .* (pi / (2 * ntheta)))
+    weight = pi / ntheta
+
+    Pm = _associated_legendre_table(m, lmax_m, mu)
+    P0 = _associated_legendre_table(0, lmax_0, mu)
+    Nm = _normalization_table(m, lmax_m)
+    N0 = _normalization_table(0, lmax_0)
+
+    y_m = similar(Pm)
+    for i in axes(Pm, 1)
+        y_m[i, :] .= Nm[i] .* Pm[i, :]
+    end
+
+    y_0 = similar(P0)
+    for i in axes(P0, 1)
+        y_0[i, :] .= N0[i] .* P0[i, :]
+    end
+
+    return AzimuthalCouplingCache(m, weight, y_m, y_0)
+end
+
+function _azimuthal_coupling_matrix(cache::AzimuthalCouplingCache, l_bs::Int)
+    y_bs = view(cache.y_0, l_bs + 1, :)
+    weighted = cache.y_m .* y_bs'
+    return (cache.y_m * weighted') .* (2 * pi * cache.weight)
+end
+
 """
     build_basic_state_operators(basic_state::BasicState{T},
                                  op::LinearStabilityOperator{T},

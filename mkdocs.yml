@@ -1,0 +1,130 @@
+site_name: Cross.jl Documentation
+site_description: High-performance Julia package for rotating convection and MHD stability analysis in spherical shells
+site_author: Subhajit Kar
+site_url: https://subhk.github.io/Cross.jl/
+
+repo_name: subhk/Cross.jl
+repo_url: https://github.com/subhk/Cross.jl
+
+theme:
+  name: material
+  logo: assets/cross-banner.svg
+  favicon: assets/cross-banner.svg
+  language: en
+  features:
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - tags
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - tables
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+      auto_title: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: subhk
+      repo: Cross.jl
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+extra_css:
+  - assets/styles/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/subhk/Cross.jl
+  generator: false
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting_started.md
+    - First Problem: problem_setup.md
+    - Examples: examples.md
+  - User Guide:
+    - Basic States: basic_states.md
+    - Tri-Global Analysis: triglobal.md
+    - MHD Extension: mhd_extension.md
+  - Theory:
+    - Mathematical Foundations: theory/mathematical_foundations.md
+    - Spectral Methods: theory/spectral_methods.md
+  - Reference:
+    - API Reference: reference.md
+    - FAQ: faq.md

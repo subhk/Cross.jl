@@ -68,9 +68,6 @@ end
     ultraspherical_conversion(λ::Real, N::Int) -> SparseMatrixCSC
 
 Sparse conversion matrix S^(λ) that maps C^(λ) coefficients to C^(λ+1).
-
-This matches Kore's `Slam` operator and keeps the banded structure needed by
-the ultraspherical method.
 """
 function ultraspherical_conversion(λ::Real, N::Int)
     rows = Int[]
@@ -245,8 +242,6 @@ Compute the first N Chebyshev coefficients (from 0 to N-1) of the function
     r(x)^power where r(x) = ri + (ro-ri)*(x+1)/2
 for x ∈ [-1,1].
 
-This follows Kore's chebco function (utils.py:251-269).
-
 For ricb=0, the Chebyshev domain [-1,1] is mapped to [-rcmb, rcmb].
 For ricb>0, the Chebyshev domain [-1,1] is mapped to [ricb, rcmb].
 """
@@ -366,7 +361,6 @@ end
     csl(svec, λ, j, k) -> Vector{Float64}
 
 Recursion for c_s^λ starting from c_svec[1]^λ(j,k).
-Following Kore utils.py:944-958.
 """
 function csl(svec::AbstractVector{Int}, λ::Real, j::Int, k::Int)
     out = zeros(length(svec))
@@ -393,8 +387,6 @@ end
 Construct the multiplication matrix M such that if u = Σ a_n C_n^(λ)(x)
 and we want to compute w = f(x) * u where f(x) = Σ b_k C_k^(λ)(x),
 then the coefficients of w in the C^(λ) basis are given by M * a.
-
-This implements Kore's Mlam function (utils.py:962-1059).
 
 Parameters:
 - a0: Chebyshev coefficients of the function to multiply by (in C^(λ) basis)
@@ -540,6 +532,55 @@ end
 # -----------------------------------------------------------------------------
 # Sparse radial operators
 # -----------------------------------------------------------------------------
+
+function _radial_scale(ri::Real, ro::Real)
+    return iszero(ri) ? 1.0 / ro : 2.0 / (ro - ri)
+end
+
+function _boundary_radius(ri::Real, ro::Real, boundary::Symbol)
+    if boundary === :outer
+        return ro
+    end
+    return iszero(ri) ? -ro : ri
+end
+
+function _chebyshev_boundary_values(N::Int, boundary::Symbol)
+    row = zeros(Float64, N + 1)
+    if boundary === :outer
+        fill!(row, 1.0)
+    else
+        @inbounds for n in 0:N
+            row[n + 1] = isodd(n) ? -1.0 : 1.0
+        end
+    end
+    return row
+end
+
+function _chebyshev_boundary_derivative(N::Int, boundary::Symbol)
+    row = zeros(Float64, N + 1)
+    if boundary === :outer
+        @inbounds for n in 1:N
+            row[n + 1] = n^2
+        end
+    else
+        @inbounds for n in 1:N
+            row[n + 1] = (isodd(n) ? 1.0 : -1.0) * n^2
+        end
+    end
+    return row
+end
+
+function _chebyshev_boundary_second_derivative(N::Int, boundary::Symbol)
+    row = zeros(Float64, N + 1)
+    @inbounds for n in 2:N
+        coeff = n^2 * (n^2 - 1) / 3
+        if boundary === :inner && isodd(n)
+            coeff = -coeff
+        end
+        row[n + 1] = coeff
+    end
+    return row
+end
 
 """
     sparse_radial_operator(power::Int, deriv_order::Int, N::Int,
@@ -700,7 +741,6 @@ r(x) = r_o \\cdot x
 - Olver & Townsend (2013), "A fast and well-conditioned spectral method",
   SIAM Review 55(3), 462-489
 - Boyd (2001), "Chebyshev and Fourier Spectral Methods", 2nd ed., Dover
-- Kore implementation: kore-main/bin/submatrices.py
 
 # See Also
 
@@ -711,67 +751,32 @@ r(x) = r_o \\cdot x
 """
 function sparse_radial_operator(power::Int, deriv_order::Int, N::Int,
                                 ri::Real, ro::Real)
-    # Change of variables: r = ((ro-ri)*x + (ro+ri))/2, x ∈ [-1,1]
-    # dr/dx = (ro-ri)/2
-    L = ro - ri
-    scale = 2.0 / L
+    scale = _radial_scale(ri, ro)
 
     # Start with identity in Chebyshev basis
-    D = sparse(1.0I, N+1, N+1)
+    D = sparse(1.0I, N + 1, N + 1)
 
     # Apply derivatives using ultraspherical chain
-    λ = 0.0
-    for k in 1:deriv_order
-        # Convert to ultraspherical basis C^(λ)
-        S = ultraspherical_conversion(λ, N)
-
-        # Differentiate in ultraspherical basis
+    λ = 0
+    for _ in 1:deriv_order
         Dλ = ultraspherical_derivative(λ, N)
-
-        # Chain: d/dr = (dx/dr) d/dx = scale * d/dx
-        D = (scale * Dλ) * S * D
-
-        # Next derivative is in C^(λ+1) basis
-        λ += 1.0
+        D = (scale * Dλ) * D
+        λ += 1
     end
 
-    # Kore's Dlam includes factorial scaling: (deriv_order-1)! * 2^(deriv_order-1)
-    # This is the TOTAL scaling for a deriv_order-th derivative
-    # Apply it once after composition (utils.py:893-904, line 901)
+    # Convert derivative back to Chebyshev basis if needed
     if deriv_order > 0
-        factorial_scale = factorial(deriv_order - 1) * 2.0^(deriv_order - 1)
-        D = factorial_scale * D
-    end
-
-    # If λ > 0, convert back to Chebyshev basis
-    if λ > 0
-        # Need inverse conversion
-        S_inv = ultraspherical_conversion(λ, N)
-        # Use sparse solve to keep sparsity
-        D = sparse(S_inv \ Matrix(D))
-    end
-
-    # Apply r^power multiplication using SPECTRAL multiplication (not physical!)
-    if power != 0
-        # Step 1: Get Chebyshev coefficients of r^power
-        # Need N+1 coefficients to match matrix size
-        r_coeffs = chebyshev_coefficients(power, N+1, ri, ro)
-
-        # Step 2: Convert r^power coefficients to current Gegenbauer basis C^(λ)
-        # If λ = 0, r_coeffs are already in the right basis
-        # If λ > 0, we need to convert through the ultraspherical chain
-        r_coeffs_lambda = r_coeffs
-        for lam in 0:(Int(λ)-1)
-            S = ultraspherical_conversion(lam, N)
-            r_coeffs_lambda = S * r_coeffs_lambda
+        S_chain = sparse(1.0I, N + 1, N + 1)
+        for lam in 0:(deriv_order - 1)
+            S_chain = ultraspherical_conversion(lam, N) * S_chain
         end
+        D = sparse(S_chain \ Matrix(D))
+    end
 
-        # Step 3: Build multiplication matrix in C^(λ) basis
-        # vector_parity = 0 for inner core case (ricb > 0)
-        # This is the proper spectral multiplication operator
-        M = multiplication_matrix(r_coeffs_lambda, λ, N+1; vector_parity=0)
-
-        # Step 4: Apply multiplication: D_new = M * D
+    # Apply r^power multiplication in Chebyshev basis
+    if power != 0
+        r_coeffs = chebyshev_coefficients(power, N + 1, ri, ro)
+        M = multiplication_matrix(r_coeffs, 0.0, N + 1; vector_parity=0)
         D = M * D
     end
 
@@ -787,7 +792,7 @@ Apply boundary conditions by replacing rows in the matrices A and B.
 bc_type can be:
   - :dirichlet → u = 0
   - :neumann → du/dr = 0
-  - :neumann2 → d²u/dr² = 0 (for stress-free)
+  - :neumann2 → r · d²u/dr² = 0 (for stress-free)
   - :no_slip → u = du/dr = 0 (for poloidal)
   - :stress_free → u = d²u/dr² - 2u/r² = 0
 """
@@ -795,6 +800,7 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
                                    bc_rows::Vector{Int}, bc_type::Symbol,
                                    N::Int, ri::Real, ro::Real)
     # Tau method: replace rows corresponding to boundary conditions
+    scale = _radial_scale(ri, ro)
 
     for row in bc_rows
         # Zero out the row
@@ -805,43 +811,24 @@ function apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
         local_idx = (row - 1) % (N + 1) + 1
         block_start = (row - local_idx) + 1
         block_range = block_start:(block_start + N)
+        boundary = local_idx <= 2 ? :outer : :inner
 
         if bc_type == :dirichlet
             # u(r_boundary) = 0
             # Set row to evaluation at boundary point
-            if local_idx == 1 || local_idx == 2  # Outer boundary (x = 1, r = ro)
-                for n in 0:N
-                    Tn = cos(n * 0.0)  # T_n(1) = 1 for all n
-                    A[row, block_start + n] = Tn
-                end
-            elseif local_idx == N || local_idx == N + 1  # Inner boundary (x = -1, r = ri)
-                for n in 0:N
-                    Tn = cos(n * π)  # T_n(-1) = (-1)^n
-                    A[row, block_start + n] = Tn
-                end
-            end
+            row_vals = _chebyshev_boundary_values(N, boundary)
+            A[row, block_range] = row_vals
 
         elseif bc_type == :neumann
             # du/dr(r_boundary) = 0
-            # Use first derivative operator
-            D1 = sparse_radial_operator(0, 1, N, ri, ro)
-            # Extract the appropriate boundary row
-            if local_idx == 1 || local_idx == 2  # Outer boundary
-                A[row, block_range] = D1[1, :]
-            elseif local_idx == N || local_idx == N + 1  # Inner boundary
-                A[row, block_range] = D1[N+1, :]
-            end
+            row_vals = scale * _chebyshev_boundary_derivative(N, boundary)
+            A[row, block_range] = row_vals
 
         elseif bc_type == :neumann2
-            # d²u/dr²(r_boundary) = 0
-            # Use second derivative operator
-            D2 = sparse_radial_operator(0, 2, N, ri, ro)
-            # Extract the appropriate boundary row
-            if local_idx == 1 || local_idx == 2  # Outer boundary
-                A[row, block_range] = ro * D2[1, :]
-            elseif local_idx == N || local_idx == N + 1  # Inner boundary
-                A[row, block_range] = ri * D2[N+1, :]
-            end
+            # r · d²u/dr²(r_boundary) = 0
+            r_boundary = _boundary_radius(ri, ro, boundary)
+            row_vals = r_boundary * scale^2 * _chebyshev_boundary_second_derivative(N, boundary)
+            A[row, block_range] = row_vals
 
         # Additional BC types can be added here
         end

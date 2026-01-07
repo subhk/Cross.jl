@@ -879,9 +879,15 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
     # -------------------------------------------------------------------------
     # Toroidal velocity BCs
     # -------------------------------------------------------------------------
-    D1_toroidal = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, params.ricb, one(T))
-    outer_deriv_row = Vector(D1_toroidal[1, :])
-    inner_deriv_row = Vector(D1_toroidal[N+1, :])
+    scale = UltrasphericalSpectral._radial_scale(params.ricb, one(T))
+    outer_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :outer)
+    inner_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :inner)
+    outer_deriv = UltrasphericalSpectral._chebyshev_boundary_derivative(N, :outer)
+    inner_deriv = UltrasphericalSpectral._chebyshev_boundary_derivative(N, :inner)
+    r_outer = UltrasphericalSpectral._boundary_radius(params.ricb, one(T), :outer)
+    r_inner = UltrasphericalSpectral._boundary_radius(params.ricb, one(T), :inner)
+    outer_row = @. -r_outer * scale * outer_deriv + outer_vals
+    inner_row = @. -r_inner * scale * inner_deriv + inner_vals
 
     for (k, l) in enumerate(op.ll_bot)
         row_base = (nb_top + k - 1) * n_per_mode
@@ -897,11 +903,7 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             A[row, :] .= 0.0
             B[row, :] .= 0.0
             block_start = row_base + 1
-            for n in 0:N
-                idx = block_start + n
-                A[row, idx] = -outer_deriv_row[n+1]
-                A[row, idx] += 1.0
-            end
+            A[row, block_start:(block_start + N)] = outer_row
         end
 
         # Inner boundary (r = ri = ricb)
@@ -915,11 +917,7 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
             A[row, :] .= 0.0
             B[row, :] .= 0.0
             block_start = row_base + 1
-            for n in 0:N
-                idx = block_start + n
-                A[row, idx] = -params.ricb * inner_deriv_row[n+1]
-                A[row, idx] += (-1.0)^n
-            end
+            A[row, block_start:(block_start + N)] = inner_row
         end
     end
 

@@ -663,38 +663,28 @@ function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int
         return spzeros(Float64, N + 1, N + 1)
     end
 
-    L = ro - ri
-    scale = 2.0 / L
+    scale = UltrasphericalSpectral._radial_scale(ri, ro)
 
     D = sparse(1.0I, N + 1, N + 1)
-    λ = 0.0
+    λ = 0
     for _ in 1:deriv_order
-        S = ultraspherical_conversion(λ, N)
         Dλ = ultraspherical_derivative(λ, N)
-        D = (scale * Dλ) * S * D
-        λ += 1.0
+        D = (scale * Dλ) * D
+        λ += 1
     end
 
     if deriv_order > 0
-        factorial_scale = factorial(deriv_order - 1) * 2.0^(deriv_order - 1)
-        D = factorial_scale * D
-    end
-
-    if λ > 0
-        S_inv = ultraspherical_conversion(λ, N)
-        D = sparse(S_inv \ Matrix(D))
+        S_chain = sparse(1.0I, N + 1, N + 1)
+        for lam in 0:(deriv_order - 1)
+            S_chain = ultraspherical_conversion(lam, N) * S_chain
+        end
+        D = sparse(S_chain \ Matrix(D))
     end
 
     coeffs = chebyshev_coefficients(r -> background_profile_value(r, B0_type, h_order, r_power),
                                     N + 1, ri, ro)
 
-    coeffs_lambda = coeffs
-    for lam in 0:(Int(λ) - 1)
-        S = ultraspherical_conversion(lam, N)
-        coeffs_lambda = S * coeffs_lambda
-    end
-
-    M = multiplication_matrix(coeffs_lambda, λ, N + 1; vector_parity=0)
+    M = multiplication_matrix(coeffs, 0.0, N + 1; vector_parity=0)
     return sparse(M * D)
 end
 

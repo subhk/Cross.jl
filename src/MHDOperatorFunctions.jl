@@ -813,7 +813,7 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
 
         return coef * combo
     else
-        error("offset must be ±1 for induction off-diagonal")
+        error("offset must be -1, 0, or 1 for induction from u")
     end
 end
 
@@ -1122,7 +1122,7 @@ The tau method replaces matrix rows with boundary condition equations:
 1. **Zero out row**: Set A[row,:] = 0 and B[row,:] = 0
 2. **Build constraint**: Evaluate boundary condition using Chebyshev basis
    - Function values: Tₙ(1) = 1 at CMB, Tₙ(-1) = (-1)ⁿ at ICB
-   - Derivatives: Use pre-computed spectral derivative matrices D1, D2
+   - Derivatives: Evaluate Chebyshev derivatives at the boundary points
 3. **Set row**: A[row,:] = boundary constraint, B[row,:] = 0
 
 # Arguments

@@ -406,6 +406,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
 
             # =====================================================================
             # 1. Azimuthal advection: (ū_φ/(r sin θ)) ∂/∂φ = im·m × ū_φ/(r sin θ)
+            #    The 1/sinθ factor is accounted for by the quadrature-based coupling.
             # =====================================================================
             if adv_coupling_matrix !== nothing && m != 0
                 idx_in = ℓ_input - m + 1

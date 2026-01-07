@@ -123,73 +123,29 @@ For axisymmetric basic state (m2 = 0), this simplifies to:
                                         ⎝0   0   0 ⎠ ⎝m1  0   -m1⎠
 """
 function compute_gaunt_coefficient(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int, ℓ3::Int, m3::Int)
-    # Selection rules
+    # Selection rules for ⟨Y_{ℓ1,m1} Y_{ℓ2,m2} Y_{ℓ3,m3}*⟩
     if m1 + m2 != m3
         return 0.0
     end
-
+    if abs(m1) > ℓ1 || abs(m2) > ℓ2 || abs(m3) > ℓ3
+        return 0.0
+    end
     if !((abs(ℓ1 - ℓ2) <= ℓ3 <= ℓ1 + ℓ2))
         return 0.0
     end
-
-    # Triangle inequality
     if (ℓ1 + ℓ2 + ℓ3) % 2 != 0
         return 0.0
     end
 
-    # Additional selection rules for second Wigner 3j
-    if abs(m1) > ℓ1 || abs(m2) > ℓ2 || abs(m3) > ℓ3
-        return 0.0
-    end
-
-    # For m2 = 0 (axisymmetric basic state), the formula simplifies
-    # since m1 = m3, the second Wigner 3j symbol is:
-    # ⎛ℓ1  ℓ2  ℓ3 ⎞ = (-1)^(ℓ1-ℓ3+m1) × ⎛ℓ1  ℓ3  ℓ2⎞
-    # ⎝m1  0   -m1⎠                     ⎝m1  -m1 0 ⎠
-
-    # For special case ℓ2 = 0 (conduction state only)
-    if ℓ2 == 0
-        if ℓ1 == ℓ3 && m1 == m3 && m2 == 0
-            return sqrt((2*ℓ1 + 1) / (4*π))
-        else
-            return 0.0
-        end
-    end
-
-    # Compute normalization factor
-    norm_factor = sqrt((2*ℓ1 + 1) * (2*ℓ2 + 1) * (2*ℓ3 + 1) / (4*π))
-
-    # Compute first Wigner 3j symbol (all m=0)
     w3j_1 = wigner3j_000(ℓ1, ℓ2, ℓ3)
+    abs(w3j_1) < 1e-14 && return 0.0
 
-    if abs(w3j_1) < 1e-14
-        return 0.0
-    end
+    w3j_2 = Float64(WignerSymbols.wigner3j(ℓ1, ℓ2, ℓ3, m1, m2, -m3))
+    abs(w3j_2) < 1e-14 && return 0.0
 
-    # For second Wigner 3j symbol with m2=0, we can use symmetry relations
-    # This is a simplified calculation - for full accuracy would need
-    # complete Wigner 3j implementation
-
-    # For now, use the fact that for small m1 and m2=0, the dominant
-    # contribution comes from the (ℓ1 ℓ2 ℓ3; 0 0 0) term
-
-    # Approximate the (ℓ1 ℓ2 ℓ3; m1 0 -m1) term
-    # For m2=0, this has additional selection rules and can be computed
-    # using the general Wigner 3j recursion
-
-    # Simple approximation: reduce by factor related to m quantum numbers
-    if m1 == 0
-        w3j_2 = w3j_1  # Same as first term when all m=0
-    else
-        # Use approximate reduction factor for m1 ≠ 0
-        # This is approximate but captures the scaling behavior
-        m_factor = exp(-abs(m1) / (ℓ1 + 1.0))
-        w3j_2 = w3j_1 * m_factor
-    end
-
-    gaunt = norm_factor * w3j_1 * w3j_2
-
-    return gaunt
+    norm_factor = sqrt((2 * ℓ1 + 1) * (2 * ℓ2 + 1) * (2 * ℓ3 + 1) / (4 * π))
+    phase = isodd(m3) ? -1.0 : 1.0
+    return phase * norm_factor * w3j_1 * w3j_2
 end
 
 
@@ -218,6 +174,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
     # Extract radial operators
     r = collect(op.r)  # Radial collocation points
     Nr = length(r)
+    r_inv2 = 1.0 ./ (r .^ 2)
 
     # Radial differentiation operator (from Chebyshev differentiation structure)
     Dr = op.cd.D1
@@ -310,7 +267,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # 2. Radial shear: -u'_r × ∂ū_φ/∂r
                 # =====================================================================
                 if uphi_max > 1e-14
-                    shear_op = -coupling_coeff * Diagonal(duphi_dr)
+                    shear_op = -L_input * coupling_coeff * Diagonal(duphi_dr .* r_inv2)
 
                     if !haskey(shear_radial_blocks, (ℓ_output, ℓ_input))
                         shear_radial_blocks[(ℓ_output, ℓ_input)] = Matrix(shear_op)
@@ -333,7 +290,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # =====================================================================
                 # u'_r ~ ℓ(ℓ+1)/r² × P for poloidal potential P
                 if theta_max > 1e-14
-                    temp_grad_op = -L_input * coupling_coeff * Diagonal(dtheta_dr)
+                    temp_grad_op = -L_input * coupling_coeff * Diagonal(dtheta_dr .* r_inv2)
 
                     if !haskey(temp_grad_radial_blocks, (ℓ_output, ℓ_input))
                         temp_grad_radial_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_op)
@@ -459,4 +416,3 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
 
     return nothing
 end
-

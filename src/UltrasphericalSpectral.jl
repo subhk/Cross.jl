@@ -69,60 +69,42 @@ end
 """
     ultraspherical_conversion(λ::Real, N::Int) -> SparseMatrixCSC
 
-Sparse conversion matrix S^(λ) that converts Chebyshev T_n coefficients
-to ultraspherical C_n^(λ) coefficients.
+Sparse conversion matrix S^(λ) that maps C^(λ) coefficients to C^(λ+1).
 
-If u = Σ a_n T_n(x), then u = Σ b_n C_n^(λ)(x) where b = S^(λ) * a.
-
-For λ = 1/2, C_n^(1/2) are the Chebyshev polynomials of the second kind U_n.
-For λ = 1, C_n^(1) are related to Legendre polynomials.
+This matches Kore's `Slam` operator and keeps the banded structure needed by
+the ultraspherical method.
 """
 function ultraspherical_conversion(λ::Real, N::Int)
-    # Build sparse conversion matrix
-    # This uses the recurrence relations between Chebyshev and ultraspherical
-
     rows = Int[]
     cols = Int[]
     vals = Float64[]
 
     if λ == 0.0
-        # Identity: C_n^(0) = T_n / (2n) for n > 0
+        # Special Chebyshev → C^(1) conversion (Kore Slam with λ=0)
         for n in 0:N
-            push!(rows, n+1)
-            push!(cols, n+1)
-            push!(vals, n == 0 ? 1.0 : 1.0 / (2.0 * n))
+            push!(rows, n + 1)
+            push!(cols, n + 1)
+            push!(vals, n == 0 ? 1.0 : 0.5)
+        end
+        for n in 0:(N - 2)
+            push!(rows, n + 1)
+            push!(cols, n + 3)
+            push!(vals, -0.5)
         end
     else
-        # General ultraspherical conversion
-        # Based on: T_n = (1/2^λ) * Σ_{k=0}^{floor(n/2)} ...
-        # For efficiency, we use the sparse structure
-
         for n in 0:N
-            if n == 0
-                push!(rows, 1)
-                push!(cols, 1)
-                push!(vals, 1.0)
-            elseif n == 1
-                push!(rows, 2)
-                push!(cols, 2)
-                push!(vals, 1.0 / (2.0 * λ))
-            else
-                # Diagonal term
-                push!(rows, n+1)
-                push!(cols, n+1)
-                push!(vals, 1.0 / (2.0 * λ))
-
-                # Off-diagonal term C_{n-2}^(λ)
-                if n >= 2
-                    push!(rows, n+1)
-                    push!(cols, n-1)
-                    push!(vals, -1.0 / (2.0 * λ))
-                end
-            end
+            push!(rows, n + 1)
+            push!(cols, n + 1)
+            push!(vals, λ / (λ + n))
+        end
+        for n in 0:(N - 2)
+            push!(rows, n + 1)
+            push!(cols, n + 3)
+            push!(vals, -λ / (λ + n + 2))
         end
     end
 
-    return sparse(rows, cols, vals, N+1, N+1)
+    return sparse(rows, cols, vals, N + 1, N + 1)
 end
 
 """
@@ -149,7 +131,10 @@ The derivative is:
 
 where the coefficients are related by:
 ```math
-b_n = 2(n+\\lambda) a_{n+1}
+b_n = \\begin{cases}
+(n+1) a_{n+1}, & \\lambda = 0 \\\\
+2\\lambda\\, a_{n+1}, & \\lambda > 0
+\\end{cases}
 ```
 
 This matrix D^(λ) implements this transformation: **b = D^(λ) · a**
@@ -213,7 +198,7 @@ D^(0) = [0  2  0  0  0  0]
         [0  0  0  0  0  0]
 ```
 
-Entry D[n,n+1] = 2(n+λ) for n = 0,...,N-1
+Entry D[n,n+1] = n+1 for λ=0, and D[n,n+1] = 2λ for λ>0
 
 # Computational Cost
 
@@ -238,13 +223,13 @@ function ultraspherical_derivative(λ::Real, N::Int)
     vals = Float64[]
 
     for n in 0:(N-1)
-        # d/dx C_n^(λ) = 2λ C_{n-1}^(λ+1)  for n >= 1
-        # But in coefficient space: if u = Σ a_k C_k^(λ)
-        # then du/dx = Σ b_k C_k^(λ+1) where b_k = 2(k+λ) a_{k+1}
-
         push!(rows, n+1)
         push!(cols, n+2)  # b_n comes from a_{n+1}
-        push!(vals, 2.0 * (n + λ))
+        if λ == 0.0
+            push!(vals, n + 1)
+        else
+            push!(vals, 2.0 * λ)
+        end
     end
 
     return sparse(rows, cols, vals, N+1, N+1)

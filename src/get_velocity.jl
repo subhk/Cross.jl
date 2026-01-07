@@ -11,22 +11,6 @@ import ..Cross: ChebyshevDiffn
 #  Internal helpers                                                            #
 # -----------------------------------------------------------------------------#
 
-@inline function _mode_length(lmax::Int, m::Int)
-    return lmax - m + 1
-end
-
-function _extract_mode!(buffer::AbstractVector{ComplexF64},
-                        coeffs::AbstractArray{<:Number,3},
-                        ir::Int,
-                        m::Int,
-                        lmax::Int)
-    @assert length(buffer) == _mode_length(lmax, m)
-    for (idx, ℓ) in enumerate(m:lmax)
-        buffer[idx] = complex(coeffs[ir, ℓ + 1, m + 1])
-    end
-    return buffer
-end
-
 function _default_radial_derivative(r::AbstractVector{<:Real})
     nr = length(r)
     domain = (minimum(r), maximum(r))
@@ -54,10 +38,6 @@ function _ensure_complex_array(data::AbstractArray{<:Number,3})
         out[idx] = complex(data[idx])
     end
     return out
-end
-
-function _phi_phases(cfg::SHTConfig, m::Int)
-    return exp.(im * m .* cfg.φ)
 end
 
 # -----------------------------------------------------------------------------#
@@ -116,77 +96,46 @@ function velocity_fields_from_poloidal_toroidal(cfg::SHTConfig,
 
     nlat, nlon = cfg.nlat, cfg.nlon
     out_type = real_output ? Float64 : ComplexF64
-    ur = zeros(out_type, nr, nlat, nlon)
-    uθ = zeros(out_type, nr, nlat, nlon)
-    uφ = zeros(out_type, nr, nlat, nlon)
+    ur = Array{out_type}(undef, nr, nlat, nlon)
+    uθ = Array{out_type}(undef, nr, nlat, nlon)
+    uφ = Array{out_type}(undef, nr, nlat, nlon)
 
-    Sl = Vector{ComplexF64}(undef, cfg.lmax + 1)
-    Tl = similar(Sl)
-    Ql = similar(Sl)
+    lmax = cfg.lmax
+    mmax = cfg.mmax
+    l_factors = Vector{Float64}(undef, lmax + 1)
+    @inbounds for ℓ in 0:lmax
+        l_factors[ℓ + 1] = ℓ * (ℓ + 1)
+    end
 
-    for m in 0:cfg.mmax
-        phase = _phi_phases(cfg, m)
-        len_mode = _mode_length(cfg.lmax, m)
-        resize!(Sl, len_mode)
-        resize!(Tl, len_mode)
-        resize!(Ql, len_mode)
+    Slm = Matrix{ComplexF64}(undef, lmax + 1, mmax + 1)
+    Tlm = similar(Slm)
+    Qlm = similar(Slm)
 
-        for ir in 1:nr
-            r_i = r[ir]
-            r_inv = 1.0 / r_i
-            r_inv2 = r_inv^2
-            _extract_mode!(Sl, dP, ir, m, cfg.lmax)
-            _extract_mode!(Tl, toroidal_c, ir, m, cfg.lmax)
-            _extract_mode!(Ql, poloidal_c, ir, m, cfg.lmax)
+    for ir in 1:nr
+        fill!(Slm, 0.0 + 0.0im)
+        fill!(Tlm, 0.0 + 0.0im)
+        fill!(Qlm, 0.0 + 0.0im)
 
-            @inbounds begin
-                for idx in eachindex(Sl)
-                    ℓ = m + idx - 1
-                    Sl[idx] *= r_inv
-                    Tl[idx] *= -r_inv
-                    Ql[idx] *= ℓ * (ℓ + 1) * r_inv2
-                end
-            end
+        r_i = r[ir]
+        r_inv = 1.0 / r_i
+        r_inv2 = r_inv * r_inv
 
-            Vt_m, Vp_m = SHsphtor_to_spat_ml(cfg, m, Sl, Tl, cfg.lmax)
-            Vr_m = SH_to_spat_ml(cfg, m, Ql, cfg.lmax)
-
-            uθ_slice = view(uθ, ir, :, :)
-            uφ_slice = view(uφ, ir, :, :)
-            ur_slice = view(ur, ir, :, :)
-
-            if real_output && m == 0
-                @inbounds for j in 1:nlon
-                    phase_j = phase[j]
-                    for i in 1:nlat
-                        valθ = Vt_m[i] * phase_j
-                        valφ = Vp_m[i] * phase_j
-                        valr = Vr_m[i] * phase_j
-                        uθ_slice[i, j] = real(valθ)
-                        uφ_slice[i, j] = real(valφ)
-                        ur_slice[i, j] = real(valr)
-                    end
-                end
-            else
-                for j in 1:nlon
-                    phase_j = phase[j]
-                    for i in 1:nlat
-                        valθ = Vt_m[i] * phase_j
-                        valφ = Vp_m[i] * phase_j
-                        valr = Vr_m[i] * phase_j
-                        if real_output
-                            uθ_slice[i, j] += 2 * real(valθ)
-                            uφ_slice[i, j] += 2 * real(valφ)
-                            ur_slice[i, j] += 2 * real(valr)
-                        else
-                            uθ_slice[i, j] += valθ
-                            uφ_slice[i, j] += valφ
-                            ur_slice[i, j] += valr
-                        end
-                    end
-                end
+        @inbounds for ℓ in 0:lmax
+            ll1 = l_factors[ℓ + 1]
+            mcap = min(mmax, ℓ)
+            for m in 0:mcap
+                Slm[ℓ + 1, m + 1] = dP[ir, ℓ + 1, m + 1] * r_inv
+                Tlm[ℓ + 1, m + 1] = -toroidal_c[ir, ℓ + 1, m + 1] * r_inv
+                Qlm[ℓ + 1, m + 1] = poloidal_c[ir, ℓ + 1, m + 1] * ll1 * r_inv2
             end
         end
+
+        Vt, Vp = SHsphtor_to_spat(cfg, Slm, Tlm; real_output=real_output)
+        Vr = synthesis(cfg, Qlm; real_output=real_output)
+
+        copyto!(view(uθ, ir, :, :), Vt)
+        copyto!(view(uφ, ir, :, :), Vp)
+        copyto!(view(ur, ir, :, :), Vr)
     end
 
     return ur, uθ, uφ
@@ -209,38 +158,13 @@ function temperature_field_from_coefficients(cfg::SHTConfig,
 
     temp_c = _ensure_complex_array(temperature_coeffs)
     nlat, nlon = cfg.nlat, cfg.nlon
-    out = zeros(real_output ? Float64 : ComplexF64, nr, nlat, nlon)
+    out_type = real_output ? Float64 : ComplexF64
+    out = Array{out_type}(undef, nr, nlat, nlon)
 
-    for m in 0:cfg.mmax
-        phase = _phi_phases(cfg, m)
-        len_mode = _mode_length(cfg.lmax, m)
-        coeff_mode = Vector{ComplexF64}(undef, len_mode)
-
-        for ir in 1:nr
-            _extract_mode!(coeff_mode, temp_c, ir, m, cfg.lmax)
-            Vr_m = SH_to_spat_ml(cfg, m, coeff_mode, cfg.lmax)
-            slice = view(out, ir, :, :)
-            if real_output && m == 0
-                for j in 1:nlon
-                    phase_j = phase[j]
-                    for i in 1:nlat
-                        slice[i, j] = real(Vr_m[i] * phase_j)
-                    end
-                end
-            else
-                for j in 1:nlon
-                    phase_j = phase[j]
-                    for i in 1:nlat
-                        val = Vr_m[i] * phase_j
-                        if real_output
-                            slice[i, j] += 2 * real(val)
-                        else
-                            slice[i, j] += val
-                        end
-                    end
-                end
-            end
-        end
+    for ir in 1:nr
+        coeffs_slice = view(temp_c, ir, :, :)
+        field = synthesis(cfg, coeffs_slice; real_output=real_output)
+        copyto!(view(out, ir, :, :), field)
     end
 
     return out

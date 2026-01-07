@@ -1,16 +1,15 @@
 using LinearAlgebra
 
 # =============================================================================
-#  Chebyshev Differentiation Matrices (Kore-compatible)
+#  Chebyshev Differentiation Matrices 
 #
-#  This module constructs spectral differentiation matrices whose discrete
-#  derivatives exactly match the coefficient-based formulation used in Kore.
+#  This module constructs spectral differentiation matrices
 #  The approach:
 #    1. Work with Chebyshev–Gauss–Lobatto nodes on [-1, 1].
 #    2. Build the Vandermonde matrix V relating Chebyshev coefficients to
 #       values at those nodes.
 #    3. Form derivative operators in coefficient space via the recursive
-#       Dcheb algorithm (ported from kore-main/bin/utils.py).
+#       Dcheb algorithm 
 #    4. Convert coefficient derivatives back to value space:
 #           Dₖ = V * Dₖ^(coeff) * V⁻¹
 #    5. Apply affine scaling for arbitrary physical domains [a, b].

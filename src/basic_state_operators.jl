@@ -174,7 +174,6 @@ function build_basic_state_operators(basic_state::BasicState{T},
     # Extract radial operators
     r = collect(op.r)  # Radial collocation points
     Nr = length(r)
-    r_inv2 = 1.0 ./ (r .^ 2)
 
     # Radial differentiation operator (from Chebyshev differentiation structure)
     Dr = op.cd.D1
@@ -267,7 +266,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # 2. Radial shear: -u'_r × ∂ū_φ/∂r
                 # =====================================================================
                 if uphi_max > 1e-14
-                    shear_op = -L_input * coupling_coeff * Diagonal(duphi_dr .* r_inv2)
+                    shear_op = -L_input * coupling_coeff * Diagonal(duphi_dr)
 
                     if !haskey(shear_radial_blocks, (ℓ_output, ℓ_input))
                         shear_radial_blocks[(ℓ_output, ℓ_input)] = Matrix(shear_op)
@@ -290,7 +289,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # =====================================================================
                 # u'_r ~ ℓ(ℓ+1)/r² × P for poloidal potential P
                 if theta_max > 1e-14
-                    temp_grad_op = -L_input * coupling_coeff * Diagonal(dtheta_dr .* r_inv2)
+                    temp_grad_op = -L_input * coupling_coeff * Diagonal(dtheta_dr)
 
                     if !haskey(temp_grad_radial_blocks, (ℓ_output, ℓ_input))
                         temp_grad_radial_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_op)

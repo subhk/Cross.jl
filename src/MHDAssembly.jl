@@ -661,10 +661,10 @@ function apply_velocity_boundary_conditions!(A, B, op)
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + 1
-            A[row, :] .= 0.0
-            B[row, :] .= 0.0
+            A[row, :] .= zero(ComplexF64)
+            B[row, :] .= zero(ComplexF64)
             block_start = row_base + 1
-            A[row, block_start:(block_start + N)] = outer_row
+            A[row, block_start:(block_start + N)] = ComplexF64.(outer_row)
         end
 
         # Inner boundary (r = ri = ricb)
@@ -675,10 +675,10 @@ function apply_velocity_boundary_conditions!(A, B, op)
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + n_per_mode
-            A[row, :] .= 0.0
-            B[row, :] .= 0.0
+            A[row, :] .= zero(ComplexF64)
+            B[row, :] .= zero(ComplexF64)
             block_start = row_base + 1
-            A[row, block_start:(block_start + N)] = inner_row
+            A[row, block_start:(block_start + N)] = ComplexF64.(inner_row)
         end
     end
 end

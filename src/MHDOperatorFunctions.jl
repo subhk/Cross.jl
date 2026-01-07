@@ -1177,11 +1177,20 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
     nb_v = length(op.ll_v)
     nb_f = length(op.ll_f)
     nb_g = length(op.ll_g)
+    scale = UltrasphericalSpectral._radial_scale(ri, ro)
+    r_outer = UltrasphericalSpectral._boundary_radius(ri, ro, :outer)
+    r_inner = UltrasphericalSpectral._boundary_radius(ri, ro, :inner)
+    outer_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :outer)
+    inner_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :inner)
+    outer_deriv = scale * UltrasphericalSpectral._chebyshev_boundary_derivative(N, :outer)
+    inner_deriv = scale * UltrasphericalSpectral._chebyshev_boundary_derivative(N, :inner)
+    inner_second = scale^2 * UltrasphericalSpectral._chebyshev_boundary_second_derivative(N, :inner)
 
     if section == :f  # Poloidal magnetic field
         for (k, l) in enumerate(op.ll_f)
             # Offset to f section: after u and v sections
             row_base = (nb_u + nb_v + k - 1) * n_per_mode
+            block_range = (row_base + 1):(row_base + n_per_mode)
 
             # ----------------------------------------------------------------
             # Outer boundary (CMB, r = ro = 1)
@@ -1197,31 +1206,13 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 B[row_cmb, :] .= 0.0
 
                 # Build constraint: (l+1)·f + ro·f'
-                # f evaluated at boundary (Chebyshev at x=1)
-                for n in 0:N
-                    col = row_base + n + 1
-                    Tn_at_1 = 1.0  # T_n(1) = 1 for all n
-                    A[row_cmb, col] = (l + 1) * Tn_at_1
-                end
-
-                # f' at boundary: use derivative operator
-                # Get first derivative operator (from UltrasphericalSpectral module)
-                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
-
-                # Add ro·f' term (ro = 1)
-                for n in 0:N
-                    col = row_base + n + 1
-                    A[row_cmb, col] += ro * D1[1, n+1]  # First row = outer boundary
-                end
+                A[row_cmb, block_range] = (l + 1) * outer_vals + r_outer * outer_deriv
 
             else
                 # Perfectly conducting: f = 0 (no penetration)
                 A[row_cmb, :] .= 0.0
                 B[row_cmb, :] .= 0.0
-                for n in 0:N
-                    col = row_base + n + 1
-                    A[row_cmb, col] = 1.0  # T_n(1) = 1
-                end
+                A[row_cmb, block_range] = outer_vals
             end
 
             # ----------------------------------------------------------------
@@ -1238,21 +1229,7 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 B[row_icb, :] .= 0.0
 
                 # Build constraint: l·f - ri·f'
-                # f evaluated at ICB (Chebyshev at x=-1)
-                for n in 0:N
-                    col = row_base + n + 1
-                    Tn_at_minus1 = (-1.0)^n  # T_n(-1) = (-1)^n
-                    A[row_icb, col] = l * Tn_at_minus1
-                end
-
-                # f' at boundary: use derivative operator (from UltrasphericalSpectral module)
-                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
-
-                # Subtract ri·f' term (note the MINUS sign, different from CMB!)
-                for n in 0:N
-                    col = row_base + n + 1
-                    A[row_icb, col] -= ri * D1[N+1, n+1]  # Last row = inner boundary
-                end
+                A[row_icb, block_range] = l * inner_vals - r_inner * inner_deriv
 
             elseif params.bci_magnetic == 1
                 freq = params.forcing_frequency
@@ -1265,24 +1242,15 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 if freq == 0
                     A[row_icb, :] .= 0.0
                     B[row_icb, :] .= 0.0
-                    for n in 0:N
-                        col = row_base + n + 1
-                        A[row_icb, col] = ComplexF64((-1.0)^n)
-                    end
+                    A[row_icb, block_range] = ComplexF64.(inner_vals)
                 else
                     k = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, k * ri)
 
-                    D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
-
                     A[row_icb, :] .= 0.0
                     B[row_icb, :] .= 0.0
-                    for n in 0:N
-                        col = row_base + n + 1
-                        Tn_at_minus1 = (-1.0)^n
-                        deriv = D1[N+1, n+1]
-                        A[row_icb, col] = ComplexF64(Tn_at_minus1) - k * dlog * ComplexF64(deriv)
-                    end
+                    A[row_icb, block_range] = ComplexF64.(inner_vals) .-
+                                             k * dlog .* ComplexF64.(inner_deriv)
                 end
 
             elseif params.bci_magnetic == 2
@@ -1296,11 +1264,7 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Row 1: f(ri) = 0
                 A[row_icb, :] .= 0.0
                 B[row_icb, :] .= 0.0
-                for n in 0:N
-                    col = row_base + n + 1
-                    Tn_at_minus1 = (-1.0)^n  # T_n(-1) = (-1)^n
-                    A[row_icb, col] = Tn_at_minus1
-                end
+                A[row_icb, block_range] = inner_vals
 
                 # Row 2: Em·(-f'' - (2/ri)·f' + (L/ri²)·f) = 0
                 # We need to use the row BEFORE row_icb (row_icb-1) for the second BC
@@ -1310,36 +1274,16 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Zero out row
                 A[row_icb2, :] .= 0.0
                 B[row_icb2, :] .= 0.0
-
-                # Get derivative operators
-                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
-                D2 = UltrasphericalSpectral.sparse_radial_operator(0, 2, N, ri, ro)
-
-                # Em·(-f'' - (2/ri)·f' + (L/ri²)·f) at ICB
-                for n in 0:N
-                    col = row_base + n + 1
-                    Tn_at_minus1 = (-1.0)^n
-
-                    # Value term: (L/ri²)·f
-                    value_term = (L / ri^2) * Tn_at_minus1
-
-                    # First derivative term: -(2/ri)·f'
-                    deriv1_term = -(2.0 / ri) * D1[N+1, n+1]
-
-                    # Second derivative term: -f''
-                    deriv2_term = -D2[N+1, n+1]
-
-                    A[row_icb2, col] = params.Em * (value_term + deriv1_term + deriv2_term)
-                end
+                value_term = (L / ri^2) .* inner_vals
+                deriv1_term = -(2.0 / ri) .* inner_deriv
+                deriv2_term = -inner_second
+                A[row_icb2, block_range] = params.Em * (value_term + deriv1_term + deriv2_term)
 
             else
                 # Simple conducting: f = 0 (no penetration)
                 A[row_icb, :] .= 0.0
                 B[row_icb, :] .= 0.0
-                for n in 0:N
-                    col = row_base + n + 1
-                    A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
-                end
+                A[row_icb, block_range] = inner_vals
             end
         end
 
@@ -1347,6 +1291,7 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
         for (k, l) in enumerate(op.ll_g)
             # Offset to g section: after u, v, f sections
             row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
+            block_range = (row_base + 1):(row_base + n_per_mode)
 
             # ----------------------------------------------------------------
             # Outer boundary (CMB): g = 0 (for all BC types)
@@ -1355,10 +1300,7 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
             row_cmb = row_base + 1
             A[row_cmb, :] .= 0.0
             B[row_cmb, :] .= 0.0
-            for n in 0:N
-                col = row_base + n + 1
-                A[row_cmb, col] = 1.0  # T_n(1) = 1
-            end
+            A[row_cmb, block_range] = outer_vals
 
             # ----------------------------------------------------------------
             # Inner boundary (ICB)
@@ -1369,10 +1311,7 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Insulating: g = 0
                 A[row_icb, :] .= 0.0
                 B[row_icb, :] .= 0.0
-                for n in 0:N
-                    col = row_base + n + 1
-                    A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
-                end
+                A[row_icb, block_range] = inner_vals
 
             elseif params.bci_magnetic == 1
                 freq = params.forcing_frequency
@@ -1384,23 +1323,15 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 if freq == 0
                     A[row_icb, :] .= 0.0
                     B[row_icb, :] .= 0.0
-                    for n in 0:N
-                        col = row_base + n + 1
-                        A[row_icb, col] = ComplexF64((-1.0)^n)
-                    end
+                    A[row_icb, block_range] = ComplexF64.(inner_vals)
                 else
                     k = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, k * ri)
-                    D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
 
                     A[row_icb, :] .= 0.0
                     B[row_icb, :] .= 0.0
-                    for n in 0:N
-                        col = row_base + n + 1
-                        Tn_at_minus1 = (-1.0)^n
-                        deriv = D1[N+1, n+1]
-                        A[row_icb, col] = ComplexF64(Tn_at_minus1) - k * dlog * ComplexF64(deriv)
-                    end
+                    A[row_icb, block_range] = ComplexF64.(inner_vals) .-
+                                             k * dlog .* ComplexF64.(inner_deriv)
                 end
 
             elseif params.bci_magnetic == 2
@@ -1410,29 +1341,15 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Zero out row
                 A[row_icb, :] .= 0.0
                 B[row_icb, :] .= 0.0
-
-                # Get first derivative operator
-                D1 = UltrasphericalSpectral.sparse_radial_operator(0, 1, N, ri, ro)
-
-                # Em·(-g' - (1/ri)·g) at ICB
-                for n in 0:N
-                    col = row_base + n + 1
-                    Tn_at_minus1 = (-1.0)^n
-
-                    value_term = -(1.0 / ri) * Tn_at_minus1
-                    deriv1_term = -D1[N+1, n+1]
-
-                    A[row_icb, col] = params.Em * ComplexF64(value_term + deriv1_term)
-                end
+                value_term = -(1.0 / ri) .* inner_vals
+                deriv1_term = -inner_deriv
+                A[row_icb, block_range] = params.Em * ComplexF64.(value_term + deriv1_term)
 
             else
                 # Default: g = 0
                 A[row_icb, :] .= 0.0
                 B[row_icb, :] .= 0.0
-                for n in 0:N
-                    col = row_base + n + 1
-                    A[row_icb, col] = (-1.0)^n  # T_n(-1) = (-1)^n
-                end
+                A[row_icb, block_range] = inner_vals
             end
         end
     end

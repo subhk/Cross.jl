@@ -318,6 +318,11 @@ function build_basic_state_operators(basic_state::BasicState{T},
     perturbation_modes = sort(collect(keys(op.index_map)))
     ℓ_pert_modes = unique([ℓ for (ℓ, field) in perturbation_modes])
     ℓ_pert_set = Set(ℓ_pert_modes)
+    lmax_pert = maximum(ℓ_pert_modes)
+    lmax_bs = maximum(ℓ_bs_modes)
+    coupling_tol = 1e-14
+
+    azimuthal_cache = m == 0 ? nothing : _build_azimuthal_coupling_cache(m, lmax_pert, lmax_bs)
 
     println("Building basic state operators...")
     println("  Basic state modes (ℓ_bs): ", ℓ_bs_modes)
@@ -327,16 +332,22 @@ function build_basic_state_operators(basic_state::BasicState{T},
     # Loop over all basic state modes
     for ℓ_bs in ℓ_bs_modes
         # Get basic state coefficients
+        theta_coeff = basic_state.theta_coeffs[ℓ_bs]
         uphi_coeff = basic_state.uphi_coeffs[ℓ_bs]
         duphi_dr = basic_state.duphi_dr_coeffs[ℓ_bs]
         dtheta_dr = basic_state.dtheta_dr_coeffs[ℓ_bs]
 
         uphi_max = maximum(abs.(uphi_coeff))
-        theta_max = maximum(abs.(basic_state.theta_coeffs[ℓ_bs]))
+        theta_max = maximum(abs.(theta_coeff))
 
         # Skip if this mode is negligible
         if theta_max < 1e-14 && uphi_max < 1e-14
             continue
+        end
+
+        adv_coupling_matrix = nothing
+        if azimuthal_cache !== nothing && uphi_max > coupling_tol
+            adv_coupling_matrix = _azimuthal_coupling_matrix(azimuthal_cache, ℓ_bs)
         end
 
         # Loop over input perturbation modes
@@ -348,10 +359,6 @@ function build_basic_state_operators(basic_state::BasicState{T},
             # Compute spherical harmonic coupling:
             # Product Y_ℓ_input,m × Y_ℓ_bs,0 → Σ_ℓ' coupling[ℓ'] × Y_ℓ',m
             coupling_coeffs = compute_spherical_harmonic_coupling(ℓ_input, ℓ_bs, m)
-
-            if isempty(coupling_coeffs)
-                continue
-            end
 
             # Loop over all OUTPUT modes that receive coupling
             for (ℓ_output, coupling_coeff) in coupling_coeffs
@@ -369,24 +376,6 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 L_input = T(ℓ_input * (ℓ_input + 1))
 
                 # =====================================================================
-                # 1. Advection operator: (ū_φ/(r sin θ)) ∂/∂φ = im·m × ū_φ/(r sin θ)
-                # =====================================================================
-                # This advects perturbation mode ℓ_input by zonal flow ℓ_bs
-                # and projects onto output mode ℓ_output
-                if uphi_max > 1e-14
-                    # Advection term (radial dependence only)
-                    # The 1/sin(θ) is absorbed into the Gaunt coefficient
-                    adv_operator = im * m * coupling_coeff * Diagonal(uphi_coeff ./ r)
-
-                    # Initialize or accumulate (multiple ℓ_bs can contribute)
-                    if !haskey(advection_blocks, (ℓ_output, ℓ_input))
-                        advection_blocks[(ℓ_output, ℓ_input)] = Matrix(adv_operator)
-                    else
-                        advection_blocks[(ℓ_output, ℓ_input)] .+= Matrix(adv_operator)
-                    end
-                end
-
-                # =====================================================================
                 # 2. Radial shear: -u'_r × ∂ū_φ/∂r
                 # =====================================================================
                 if uphi_max > 1e-14
@@ -397,15 +386,6 @@ function build_basic_state_operators(basic_state::BasicState{T},
                     else
                         shear_radial_blocks[(ℓ_output, ℓ_input)] .+= Matrix(shear_op)
                     end
-                end
-
-                # =====================================================================
-                # 3. Theta shear: -u'_θ × (1/r) ∂ū_φ/∂θ
-                # =====================================================================
-                # This requires the θ-derivative of Y_ℓbs,0, which couples to Y_ℓbs±1,0
-                # For now, use simplified approximation (set to zero)
-                if !haskey(shear_theta_blocks, (ℓ_output, ℓ_input))
-                    shear_theta_blocks[(ℓ_output, ℓ_input)] = zeros(ComplexF64, Nr, Nr)
                 end
 
                 # =====================================================================
@@ -422,12 +402,67 @@ function build_basic_state_operators(basic_state::BasicState{T},
                     end
                 end
 
-                # =====================================================================
-                # 5. Theta temperature gradient: -u'_θ × (1/r) ∂θ̄/∂θ
-                # =====================================================================
-                # Similar to theta shear, requires θ-derivative coupling
-                if !haskey(temp_grad_theta_blocks, (ℓ_output, ℓ_input))
-                    temp_grad_theta_blocks[(ℓ_output, ℓ_input)] = zeros(ComplexF64, Nr, Nr)
+            end
+
+            # =====================================================================
+            # 1. Azimuthal advection: (ū_φ/(r sin θ)) ∂/∂φ = im·m × ū_φ/(r sin θ)
+            # =====================================================================
+            if adv_coupling_matrix !== nothing && m != 0
+                idx_in = ℓ_input - m + 1
+                for ℓ_output in ℓ_pert_modes
+                    if ℓ_output < m
+                        continue
+                    end
+                    idx_out = ℓ_output - m + 1
+                    adv_coupling = adv_coupling_matrix[idx_out, idx_in]
+                    abs(adv_coupling) < coupling_tol && continue
+
+                    if !((ℓ_output, ℓ_input) in coupling_structure)
+                        push!(coupling_structure, (ℓ_output, ℓ_input))
+                    end
+
+                    adv_operator = im * m * adv_coupling * Diagonal(uphi_coeff ./ r)
+
+                    if !haskey(advection_blocks, (ℓ_output, ℓ_input))
+                        advection_blocks[(ℓ_output, ℓ_input)] = Matrix(adv_operator)
+                    else
+                        advection_blocks[(ℓ_output, ℓ_input)] .+= Matrix(adv_operator)
+                    end
+                end
+            end
+
+            # =====================================================================
+            # 3/5. Meridional shear and temperature-gradient terms
+            # =====================================================================
+            if uphi_max > coupling_tol || theta_max > coupling_tol
+                for ℓ_output in ℓ_pert_modes
+                    if ℓ_output < m
+                        continue
+                    end
+                    meridional_coeff = _meridional_coupling(ℓ_input, ℓ_bs, ℓ_output, m)
+                    abs(meridional_coeff) < coupling_tol && continue
+
+                    if !((ℓ_output, ℓ_input) in coupling_structure)
+                        push!(coupling_structure, (ℓ_output, ℓ_input))
+                    end
+
+                    if uphi_max > coupling_tol
+                        shear_theta_op = -meridional_coeff * (Diagonal(uphi_coeff) * Dr)
+                        if !haskey(shear_theta_blocks, (ℓ_output, ℓ_input))
+                            shear_theta_blocks[(ℓ_output, ℓ_input)] = Matrix(shear_theta_op)
+                        else
+                            shear_theta_blocks[(ℓ_output, ℓ_input)] .+= Matrix(shear_theta_op)
+                        end
+                    end
+
+                    if theta_max > coupling_tol
+                        temp_grad_theta_op = -meridional_coeff * (Diagonal(theta_coeff) * Dr)
+                        if !haskey(temp_grad_theta_blocks, (ℓ_output, ℓ_input))
+                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_theta_op)
+                        else
+                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] .+= Matrix(temp_grad_theta_op)
+                        end
+                    end
                 end
             end
         end
@@ -523,6 +558,17 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
         end
 
         # =====================================================================
+        # 2b. Add meridional temperature gradient term
+        #     ∂θ'_ℓ_output/∂t term: -(u'_θ/r) × ∂θ̄/∂θ
+        # =====================================================================
+        if Θ_out_idx !== nothing
+            if haskey(basic_state_ops.temp_grad_theta_blocks, (ℓ_output, ℓ_input))
+                temp_grad_theta_block = basic_state_ops.temp_grad_theta_blocks[(ℓ_output, ℓ_input)]
+                A[Θ_out_idx, P_in_idx] .+= temp_grad_theta_block
+            end
+        end
+
+        # =====================================================================
         # 3. Add radial shear to toroidal equation
         #    ∂u'_φ,ℓ_output/∂t term: -u'_r,ℓ_input × ∂ū_φ/∂r
         #    This couples P_ℓ_input → T_ℓ_output
@@ -531,6 +577,17 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
             if haskey(basic_state_ops.shear_radial_blocks, (ℓ_output, ℓ_input))
                 shear_block = basic_state_ops.shear_radial_blocks[(ℓ_output, ℓ_input)]
                 A[T_out_idx, P_in_idx] .+= shear_block
+            end
+        end
+
+        # =====================================================================
+        # 3b. Add meridional shear to toroidal equation
+        #     ∂u'_φ,ℓ_output/∂t term: -(u'_θ/r) × ∂ū_φ/∂θ
+        # =====================================================================
+        if T_out_idx !== nothing
+            if haskey(basic_state_ops.shear_theta_blocks, (ℓ_output, ℓ_input))
+                shear_theta_block = basic_state_ops.shear_theta_blocks[(ℓ_output, ℓ_input)]
+                A[T_out_idx, P_in_idx] .+= shear_theta_block
             end
         end
     end

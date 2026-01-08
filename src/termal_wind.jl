@@ -57,14 +57,17 @@ function build_thermal_wind(fθ::AbstractVector,
     Ubar = (0.5 .* r2_minus) .* rhs' ./ r         # (N_r x N_θ)
     dU_dr = rhs' .- (Ubar ./ r)                   # by definition
 
-    # flatten in (r,θ) lexicographic order  (θ fastest as in main script)
+    # flatten in (r,θ) lexicographic order (r fastest: column-major from N_r × N_θ matrix)
+    # Index pattern: (r₁,θ₁), (r₂,θ₁), ..., (r_Nr,θ₁), (r₁,θ₂), ...
     Uvec   = vec(Ubar)
     dUvec  = vec(dU_dr)
-    dfvec  = repeat(df_dθ', outer=N_r)          # ∂θ f  on tensor grid
 
-    # helpers for sinθ and r*sinθ
-    rs     = repeat(r, inner=N_θ)
-    sint   = repeat(sinθ', outer=N_r)
+    # Repeat patterns for r-fastest ordering:
+    # - rs: each r value appears once, then repeats for each θ: [r₁,r₂,...,r_Nr, r₁,r₂,...,r_Nr, ...]
+    # - sint/dfvec: each θ value repeats N_r times: [s₁,s₁,...,s₁, s₂,s₂,...,s₂, ...]
+    rs     = repeat(r, outer=N_θ)              # r values repeated for each θ block
+    sint   = repeat(vec(sinθ), inner=N_r)      # sin(θ) repeated N_r times per θ value
+    dfvec  = repeat(vec(df_dθ), inner=N_r)     # ∂θf repeated N_r times per θ value
 
     im_m      = im * m
     U_m = spdiagm(0 => (-Uvec .* im_m) ./ (rs .* sint))   # −Ū ∂φ
@@ -77,7 +80,9 @@ end
 """
 Example:
 U_m, S_r, S_θ = build_thermal_wind(fθ, r;
-                                Dθ=Dθ, m=m, Ek=Ek,
-                                gα_2Ω=1.0,  # already scaled
-                                r_i=r_i)
+                                Dθ=Dθ, m=m,
+                                gα_2Ω=Ra * E^2 / (2 * Pr),
+                                r_i=r_i,
+                                r_o=r_o,
+                                sintheta=sintheta)
 """

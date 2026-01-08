@@ -119,7 +119,7 @@ Cross.jl is organized into modular components for flexibility and extensibility:
 | `Cross.jl` | Package entry point | Exports public API |
 | `linear_stability.jl` | Onset operator assembly | `OnsetParams`, `LinearStabilityOperator` |
 | `basic_state.jl` | Base state construction | `BasicState`, `BasicState3D` |
-| `triglobal_stability.jl` | Coupled-mode analysis | `TriGlobalParams`, `CoupledModeProblem` |
+| `triglobal_stability.jl` | Coupled-mode analysis | `TriglobalParams`, `CoupledModeProblem` |
 | `CompleteMHD.jl` | MHD dynamo extension | `MHDParams`, `MHDStabilityOperator` |
 | `UltrasphericalSpectral.jl` | Sparse spectral operators | Ultraspherical differentiation matrices |
 | `Chebyshev.jl` | Radial discretization | `ChebyshevDiffn` |

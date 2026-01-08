@@ -81,7 +81,7 @@ module Cross
         # =================================================================
         # Triglobal Stability (Non-Axisymmetric Mean Flow)
         # =================================================================
-        TriGlobalParams,
+        TriglobalParams,
         setup_coupled_mode_problem,
         estimate_triglobal_problem_size,
         solve_triglobal_eigenvalue_problem,

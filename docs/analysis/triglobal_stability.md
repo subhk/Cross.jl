@@ -294,7 +294,7 @@ bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
 ### Step 2: Define Triglobal Parameters
 
 ```julia
-params_triglobal = TriGlobalParams(
+params_triglobal = TriglobalParams(
     # Physical parameters
     E = E,
     Pr = Pr,
@@ -494,7 +494,7 @@ for amp in amplitudes
     bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
         lmax_bs = 8, mmax_bs = 4, boundary_modes)
 
-    params = TriGlobalParams(
+    params = TriglobalParams(
         E = E, Pr = Pr, Ra = Ra, χ = χ,
         m_range = -2:2, lmax = 40, Nr = Nr,
         basic_state_3d = bs3d,
@@ -519,14 +519,14 @@ Begin with narrow mode range and increase:
 
 ```julia
 # Quick test run
-params_test = TriGlobalParams(...,
+params_test = TriglobalParams(...,
     m_range = -1:1,
     lmax = 25,
     Nr = 32,
 )
 
 # Verify before production run
-params_full = TriGlobalParams(...,
+params_full = TriglobalParams(...,
     m_range = -3:3,
     lmax = 50,
     Nr = 64,
@@ -601,7 +601,7 @@ bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
     lmax_bs = 8, mmax_bs = 4, boundary_modes)
 
 # === Triglobal Setup ===
-params = TriGlobalParams(
+params = TriglobalParams(
     E = E, Pr = Pr, Ra = Ra, χ = χ,
     m_range = -2:2,
     lmax = 35,

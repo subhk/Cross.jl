@@ -344,7 +344,7 @@ bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
 )
 
 # Use with tri-global analysis
-tri_params = TriGlobalParams(
+tri_params = TriglobalParams(
     E = E, Pr = Pr, Ra = Ra, χ = χ,
     m_range = -3:3,
     lmax = 40,

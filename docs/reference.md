@@ -56,12 +56,12 @@ params = ShellParams(
 
 ---
 
-#### `TriGlobalParams{T}`
+#### `TriglobalParams{T}`
 
 Parameters for tri-global mode-coupled analysis.
 
 ```julia
-@with_kw struct TriGlobalParams{T}
+@with_kw struct TriglobalParams{T}
     E::T
     Pr::T
     Ra::T
@@ -136,7 +136,7 @@ Block-structured problem for tri-global analysis.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `params` | `TriGlobalParams` | Problem parameters |
+| `params` | `TriglobalParams` | Problem parameters |
 | `coupling_graph` | `Dict{Int, Vector{Int}}` | Mode coupling structure |
 | `block_indices` | `Dict{Int, UnitRange}` | Eigenvector index ranges per m |
 | `A` | `SparseMatrixCSC` | Assembled A matrix |
@@ -320,7 +320,7 @@ Ra_c, ω_c, eigvec = find_critical_rayleigh(
 Build the coupled mode eigenvalue problem.
 
 ```julia
-problem = setup_coupled_mode_problem(params::TriGlobalParams)
+problem = setup_coupled_mode_problem(params::TriglobalParams)
 ```
 
 **Returns:** `CoupledModeProblem`
@@ -334,7 +334,7 @@ problem = setup_coupled_mode_problem(params::TriGlobalParams)
 Estimate memory and DOF requirements.
 
 ```julia
-report = estimate_triglobal_problem_size(params::TriGlobalParams)
+report = estimate_triglobal_problem_size(params::TriglobalParams)
 ```
 
 **Returns:** Named tuple with `total_modes`, `total_dofs`, `matrix_size`, `memory_estimate_gb`
@@ -582,7 +582,7 @@ Cross.jl
 │   ├── OnsetParams, ShellParams
 │   ├── LinearStabilityOperator
 │   ├── BasicState, BasicState3D
-│   ├── TriGlobalParams, CoupledModeProblem
+│   ├── TriglobalParams, CoupledModeProblem
 │   └── Exported functions
 │
 ├── CompleteMHD (MHD extension)

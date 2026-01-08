@@ -65,7 +65,7 @@ bs3d = nonaxisymmetric_basic_state(
 ### Step 2: Define Tri-Global Parameters
 
 ```julia
-params_triglobal = TriGlobalParams(
+params_triglobal = TriglobalParams(
     # Physical parameters
     E = 1e-5,
     Pr = 1.0,
@@ -275,7 +275,7 @@ for amp in amplitudes
     bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
         lmax_bs = 8, mmax_bs = 4, boundary_modes)
 
-    params = TriGlobalParams(
+    params = TriglobalParams(
         E = E, Pr = Pr, Ra = Ra, χ = χ,
         m_range = -2:2, lmax = 40, Nr = 64,
         basic_state_3d = bs3d,
@@ -296,10 +296,10 @@ Begin with narrow `m_range` and increase gradually:
 
 ```julia
 # Quick test
-params_test = TriGlobalParams(..., m_range=-1:1, lmax=20, Nr=32)
+params_test = TriglobalParams(..., m_range=-1:1, lmax=20, Nr=32)
 
 # Production run
-params_full = TriGlobalParams(..., m_range=-3:3, lmax=50, Nr=64)
+params_full = TriglobalParams(..., m_range=-3:3, lmax=50, Nr=64)
 ```
 
 ### Use Sparse Storage
@@ -356,7 +356,7 @@ bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
     lmax_bs = 8, mmax_bs = 4, boundary_modes)
 
 # === Tri-Global Setup ===
-params = TriGlobalParams(
+params = TriglobalParams(
     E = E, Pr = Pr, Ra = Ra, χ = χ,
     m_range = -2:2,
     lmax = 35,
@@ -396,7 +396,7 @@ end
 
 Before running tri-global analysis:
 
-- [ ] `TriGlobalParams` uses m-range consistent with basic state content
+- [ ] `TriglobalParams` uses m-range consistent with basic state content
 - [ ] Coupling graph matches physical expectations
 - [ ] Estimated problem size is feasible for available memory
 - [ ] Basic state satisfies reality conditions

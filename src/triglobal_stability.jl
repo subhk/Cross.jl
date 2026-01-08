@@ -23,11 +23,11 @@ using WignerSymbols
 import ..Cross: LinearStabilityOperator, OnsetParams, BasicState, assemble_matrices
 
 """
-    TriGlobalParams{T<:Real}
+    TriglobalParams{T<:Real}
 
 Parameters for tri-global instability analysis with non-axisymmetric basic state.
 
-Unlike OnsetParams which solves for a single azimuthal mode m, TriGlobalParams
+Unlike OnsetParams which solves for a single azimuthal mode m, TriglobalParams
 solves for MULTIPLE coupled modes simultaneously.
 
 Fields:
@@ -45,7 +45,7 @@ Fields:
 Note: The size of the eigenvalue problem is ~ length(m_range) × lmax × Nr × 3
 which can become very large. Use sparse methods and Krylov subspace solvers.
 """
-@with_kw struct TriGlobalParams{T<:Real}
+@with_kw struct TriglobalParams{T<:Real}
     E::T
     Pr::T
     Ra::T
@@ -139,7 +139,7 @@ end
 
 
 """
-    estimate_triglobal_problem_size(params::TriGlobalParams{T}) where T
+    estimate_triglobal_problem_size(params::TriglobalParams{T}) where T
 
 Estimate the size of the tri-global eigenvalue problem.
 
@@ -151,7 +151,7 @@ Returns:
 
 Useful for assessing computational requirements before attempting to solve.
 """
-function estimate_triglobal_problem_size(params::TriGlobalParams{T}) where T
+function estimate_triglobal_problem_size(params::TriglobalParams{T}) where T
     num_modes = length(params.m_range)
     lmax = params.lmax
     Nr = params.Nr
@@ -187,7 +187,7 @@ end
 Data structure for the coupled-mode eigenvalue problem.
 
 Fields:
-- `params::TriGlobalParams{T}` - Problem parameters
+- `params::TriglobalParams{T}` - Problem parameters
 - `m_range::UnitRange{Int}` - Range of coupled modes
 - `coupling_graph::Dict{Int,Vector{Int}}` - Mode coupling structure
 - `block_indices::Dict{Int,UnitRange{Int}}` - Index ranges for each mode block
@@ -200,7 +200,7 @@ where A_coupled has diagonal blocks (single-mode operators) and off-diagonal
 blocks (mode coupling through basic state).
 """
 @with_kw struct CoupledModeProblem{T<:Real}
-    params::TriGlobalParams{T}
+    params::TriglobalParams{T}
     m_range::UnitRange{Int}
     coupling_graph::Dict{Int,Vector{Int}}
     all_m_bs::Vector{Int}
@@ -210,7 +210,7 @@ end
 
 
 """
-    setup_coupled_mode_problem(params::TriGlobalParams{T}) where T
+    setup_coupled_mode_problem(params::TriglobalParams{T}) where T
 
 Initialize the coupled-mode eigenvalue problem structure.
 
@@ -221,7 +221,7 @@ This analyzes the basic state to determine:
 
 Returns a CoupledModeProblem structure.
 """
-function setup_coupled_mode_problem(params::TriGlobalParams{T}) where T
+function setup_coupled_mode_problem(params::TriglobalParams{T}) where T
     m_range = params.m_range
     basic_state = params.basic_state_3d
 
@@ -1032,7 +1032,7 @@ end
 # =============================================================================
 
 """
-    solve_triglobal_eigenvalue_problem(params::TriGlobalParams{T};
+    solve_triglobal_eigenvalue_problem(params::TriglobalParams{T};
                                        σ_target=0.0, nev=6, verbose=true) where T
 
 Solve the tri-global eigenvalue problem to find growth rates and eigenmodes.
@@ -1052,7 +1052,7 @@ Returns:
 - `eigenvalues` - Complex growth rates λ = σ + iω (sorted by real part, descending)
 - `eigenvectors` - Corresponding eigenmodes (columns of matrix)
 """
-function solve_triglobal_eigenvalue_problem(params::TriGlobalParams{T};
+function solve_triglobal_eigenvalue_problem(params::TriglobalParams{T};
                                             σ_target=0.0, nev=6, verbose=true) where T
     # Setup problem structure
     problem = setup_coupled_mode_problem(params)
@@ -1179,7 +1179,7 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
         println("Testing bounds...")
     end
 
-    params_low = TriGlobalParams(
+    params_low = TriglobalParams(
         E=E, Pr=Pr, Ra=Ra_low, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
         basic_state_3d=basic_state_3d,
         mechanical_bc=mechanical_bc, thermal_bc=thermal_bc
@@ -1187,7 +1187,7 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
     vals_low, _ = solve_triglobal_eigenvalue_problem(params_low; nev=3, verbose=false)
     σ_low = real(vals_low[1])
 
-    params_high = TriGlobalParams(
+    params_high = TriglobalParams(
         E=E, Pr=Pr, Ra=Ra_high, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
         basic_state_3d=basic_state_3d,
         mechanical_bc=mechanical_bc, thermal_bc=thermal_bc
@@ -1227,7 +1227,7 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
     for iter in 1:max_iter
         Ra_mid = 0.5 * (Ra_low + Ra_high)
 
-        params_mid = TriGlobalParams(
+        params_mid = TriglobalParams(
             E=E, Pr=Pr, Ra=Ra_mid, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
             basic_state_3d=basic_state_3d,
             mechanical_bc=mechanical_bc, thermal_bc=thermal_bc
@@ -1265,7 +1265,7 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
 
     # Max iterations reached
     Ra_mid = 0.5 * (Ra_low + Ra_high)
-    params_mid = TriGlobalParams(
+    params_mid = TriglobalParams(
         E=E, Pr=Pr, Ra=Ra_mid, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
         basic_state_3d=basic_state_3d,
         mechanical_bc=mechanical_bc, thermal_bc=thermal_bc

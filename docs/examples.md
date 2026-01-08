@@ -149,7 +149,7 @@ bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
 **Purpose:** Framework for mode-coupled stability problems.
 
 **What it does:**
-- Sets up `TriGlobalParams`
+- Sets up `TriglobalParams`
 - Builds coupled mode problem
 - Estimates problem size
 - (Optional) Solves eigenvalue problem

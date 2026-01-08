@@ -29,11 +29,13 @@ Biglobal analysis is appropriate when:
 The axisymmetric base state consists of:
 
 **Temperature field:**
+
 $$
 \bar{T}(r, \theta) = \bar{T}_0(r) + \sum_{\ell=2,4,...} \bar{\Theta}_{\ell 0}(r) Y_\ell^0(\theta)
 $$
 
 **Zonal flow:**
+
 $$
 \bar{u}_\phi(r, \theta) = \sum_{\ell=1,3,...} \bar{u}_{\phi,\ell 0}(r) Y_\ell^0(\theta)
 $$

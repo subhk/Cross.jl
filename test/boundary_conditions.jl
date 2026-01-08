@@ -3,44 +3,47 @@ using LinearAlgebra: I
 
 include("../src/boundary_conditions.jl")
 
-struct DummyOpNoInvR{T}
+struct DummyOpNoInvR{T,S}
     Dr::Matrix{T}
     Dθ::Matrix{T}
     Lθ::Matrix{T}
-    r::Vector{T}
-    sintheta::Vector{T}
+    r::Vector{S}
+    sintheta::Vector{S}
     m::Int
 end
 
-struct DummyOpWithInvR{T}
+struct DummyOpWithInvR{T,S,R}
     Dr::Matrix{T}
     Dθ::Matrix{T}
     Lθ::Matrix{T}
-    r::Vector{T}
-    sintheta::Vector{T}
+    r::Vector{S}
+    sintheta::Vector{S}
     m::Int
-    inv_r::Matrix{T}
+    inv_r::Matrix{R}
 end
 
 function build_test_data()
     nr = 4
     ntheta = 3
 
+    # Matrices operate on complex fields
     Dr = Matrix{ComplexF64}(I, nr, nr)
     Dtheta = Matrix{ComplexF64}(I, ntheta, ntheta)
     Ltheta = 2.0 .* Matrix{ComplexF64}(I, ntheta, ntheta)
 
-    r_desc = ComplexF64[1.0, 0.8, 0.6, 0.4]
+    # Physical coordinates remain real (needed for isless comparison in _boundary_indices)
+    r_desc = Float64[1.0, 0.8, 0.6, 0.4]
     r_asc = reverse(r_desc)
-    sin_theta = ComplexF64[0.5, 1.0, 0.5]
+    sin_theta = Float64[0.5, 1.0, 0.5]
 
+    # Field arrays are complex (due to im*m factor in velocity calculation)
     poloidal = reshape(ComplexF64.(collect(1.0:12.0)), nr, ntheta)
     toroidal = reshape(ComplexF64.(collect(13.0:24.0)), nr, ntheta)
 
     op_desc = DummyOpNoInvR(Dr, Dtheta, Ltheta, r_desc, sin_theta, 2)
     op_asc = DummyOpNoInvR(Dr, Dtheta, Ltheta, r_asc, sin_theta, 2)
 
-    inv_r_matrix = (1.0 ./ r_desc) * ones(ComplexF64, 1, ntheta)
+    inv_r_matrix = (1.0 ./ r_desc) * ones(1, ntheta)
     op_desc_inv = DummyOpWithInvR(Dr, Dtheta, Ltheta, r_desc, sin_theta, 2, inv_r_matrix)
 
     return (

@@ -36,6 +36,38 @@ Cross.jl is a Julia package for analyzing the onset of convection and magnetohyd
 
 </div>
 
+## Three Analysis Modes
+
+Cross.jl supports three progressively complex stability analysis approaches:
+
+<div class="grid cards" markdown>
+
+-   :material-waves:{ .lg .middle } **[Onset Convection (No Mean Flow)](analysis/onset_convection.md)**
+
+    ---
+
+    Classical linear stability analysis with a conductive temperature profile and zero background flow. Find critical Rayleigh numbers, azimuthal wavenumbers, and drift frequencies for the onset of thermal convection.
+
+    **Use when**: Studying fundamental convection onset without pre-existing flows.
+
+-   :material-rotate-orbit:{ .lg .middle } **[Biglobal (Axisymmetric Mean Flow)](analysis/biglobal_stability.md)**
+
+    ---
+
+    Stability analysis with axisymmetric ($m=0$) background states including thermal wind, differential rotation, and zonal jets. Each perturbation mode $m$ remains decoupled but is modified by the mean flow.
+
+    **Use when**: Background has latitudinal variations but no longitudinal structure.
+
+-   :material-sphere:{ .lg .middle } **[Triglobal (Non-Axisymmetric Mean Flow)](analysis/triglobal_stability.md)**
+
+    ---
+
+    Full 3-D stability analysis with non-axisymmetric basic states. Mode coupling links perturbations at different azimuthal wavenumbers through Gaunt coefficients derived from Wigner 3j symbols.
+
+    **Use when**: Background has longitudinal variations (e.g., CMB heat flux heterogeneity).
+
+</div>
+
 ## What You Can Do With Cross.jl
 
 - **Convection Onset**: Evaluate the onset of convection in rotating spherical shells with flexible mechanical and thermal boundary conditions
@@ -150,13 +182,24 @@ This translates to:
 
 ## Documentation Guide
 
-1. **[Getting Started](getting_started.md)** - Installation, environment setup, and first run
+### Getting Started
+1. **[Installation](getting_started.md)** - Environment setup and first run
 2. **[First Problem](problem_setup.md)** - Assemble an onset problem and find critical Rayleigh numbers
-3. **[Basic States](basic_states.md)** - Construct custom temperature and flow profiles
-4. **[Tri-Global Analysis](triglobal.md)** - Mode coupling for non-axisymmetric backgrounds
-5. **[MHD Extension](mhd_extension.md)** - Magnetic field effects and dynamo problems
-6. **[API Reference](reference.md)** - Complete function and type documentation
-7. **[FAQ](faq.md)** - Troubleshooting and common questions
+3. **[Examples](examples.md)** - Ready-to-run example scripts
+
+### Analysis Modes
+4. **[Onset Convection](analysis/onset_convection.md)** - Classical onset with no mean flow
+5. **[Biglobal Stability](analysis/biglobal_stability.md)** - Axisymmetric mean flows (thermal wind)
+6. **[Triglobal Stability](analysis/triglobal_stability.md)** - Non-axisymmetric mean flows with mode coupling
+
+### Advanced Topics
+7. **[Basic States](basic_states.md)** - Construct custom temperature and flow profiles
+8. **[Tri-Global Analysis](triglobal.md)** - Technical details of mode coupling
+9. **[MHD Extension](mhd_extension.md)** - Magnetic field effects and dynamo problems
+
+### Reference
+10. **[API Reference](reference.md)** - Complete function and type documentation
+11. **[FAQ](faq.md)** - Troubleshooting and common questions
 
 ## Requirements
 

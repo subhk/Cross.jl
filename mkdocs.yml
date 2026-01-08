@@ -118,6 +118,11 @@ nav:
     - Installation: getting_started.md
     - First Problem: problem_setup.md
     - Examples: examples.md
+  - Analysis Modes:
+    - Overview: analysis/index.md
+    - Onset Convection (No Mean Flow): analysis/onset_convection.md
+    - Biglobal (Axisymmetric Mean Flow): analysis/biglobal_stability.md
+    - Triglobal (Non-Axisymmetric Mean Flow): analysis/triglobal_stability.md
   - User Guide:
     - Basic States: basic_states.md
     - Tri-Global Analysis: triglobal.md

@@ -17,8 +17,7 @@
 
 using Test
 using LinearAlgebra
-using Cross: ChebyshevDiffn, BasicState, meridional_basic_state,
-             conduction_basic_state, solve_thermal_wind_balance!
+using Cross
 
 # =============================================================================
 #  Helper Functions for Analytical Solutions
@@ -175,7 +174,7 @@ end
     Pr = 1.0
 
     # Create Chebyshev grid
-    cd = ChebyshevDiffn(Nr, [r_i, r_o], 4)
+    cd = Cross.ChebyshevDiffn(Nr, [r_i, r_o], 4)
     r = cd.x
 
     @testset "Axisymmetric (Biglobal) - Constant θ̄₂₀" begin
@@ -204,7 +203,7 @@ end
         end
 
         # Solve thermal wind
-        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+        Cross.solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                     cd, r_i, r_o, Ra, Pr;
                                     mechanical_bc=:no_slip, E=E)
 
@@ -265,7 +264,7 @@ end
             duphi_dr_coeffs[ℓ] = zeros(Nr)
         end
 
-        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+        Cross.solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                     cd, r_i, r_o, Ra, Pr;
                                     mechanical_bc=:no_slip, E=E)
 
@@ -313,7 +312,7 @@ end
             duphi_dr_coeffs[ℓ] = zeros(Nr)
         end
 
-        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+        Cross.solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                     cd, r_i, r_o, Ra, Pr;
                                     mechanical_bc=:no_slip, E=E)
 
@@ -349,7 +348,7 @@ end
                 duphi_dr_coeffs[ℓ] = zeros(Nr)
             end
 
-            solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+            Cross.solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                         cd, r_i, r_o, Ra_test, Pr_test;
                                         mechanical_bc=:no_slip, E=E_test)
 
@@ -387,7 +386,7 @@ end
         uphi_coeffs = Dict(ℓ => zeros(Nr) for ℓ in 0:lmax_bs)
         duphi_dr_coeffs = Dict(ℓ => zeros(Nr) for ℓ in 0:lmax_bs)
 
-        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+        Cross.solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                     cd, r_i, r_o, Ra, Pr; E=E)
 
         # L=1 and L=3 should be non-zero
@@ -404,7 +403,7 @@ end
         uphi_coeffs = Dict(ℓ => zeros(Nr) for ℓ in 0:lmax_bs)
         duphi_dr_coeffs = Dict(ℓ => zeros(Nr) for ℓ in 0:lmax_bs)
 
-        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+        Cross.solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                     cd, r_i, r_o, Ra, Pr; E=E)
 
         @test maximum(abs.(uphi_coeffs[3])) > 1e-14
@@ -429,7 +428,7 @@ end
             duphi_dr_coeffs[ℓ] = zeros(Nr)
         end
 
-        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+        Cross.solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                     cd, r_i, r_o, Ra, Pr; E=E)
 
         # All velocity modes should be zero (∂Y_00/∂θ = 0)
@@ -441,7 +440,7 @@ end
     @testset "Conduction basic state API" begin
         # Test that conduction_basic_state produces zero zonal flow
 
-        bs = conduction_basic_state(cd, χ, 6)
+        bs = Cross.conduction_basic_state(cd, χ, 6)
 
         for (ℓ, uphi) in bs.uphi_coeffs
             @test maximum(abs.(uphi)) < 1e-14
@@ -452,7 +451,7 @@ end
         # Test the meridional_basic_state function
 
         amplitude = 0.1
-        bs = meridional_basic_state(cd, χ, E, Ra, Pr, 6, amplitude;
+        bs = Cross.meridional_basic_state(cd, χ, E, Ra, Pr, 6, amplitude;
                                     mechanical_bc=:no_slip)
 
         # Should have non-zero ℓ=2 temperature
@@ -521,7 +520,7 @@ end  # @testset "Thermal Wind Balance"
     Ra = 1e6
     Pr = 1.0
 
-    cd = ChebyshevDiffn(Nr, [r_i, r_o], 4)
+    cd = Cross.ChebyshevDiffn(Nr, [r_i, r_o], 4)
     r = cd.x
 
     @testset "m=0 reduces to axisymmetric" begin
@@ -540,7 +539,7 @@ end  # @testset "Thermal Wind Balance"
         uphi_axi = Dict(ℓ => zeros(Nr) for ℓ in 0:lmax_bs)
         duphi_axi = Dict(ℓ => zeros(Nr) for ℓ in 0:lmax_bs)
 
-        solve_thermal_wind_balance!(uphi_axi, duphi_axi, theta_axi,
+        Cross.solve_thermal_wind_balance!(uphi_axi, duphi_axi, theta_axi,
                                     cd, r_i, r_o, Ra, Pr; E=E)
 
         # 3D solve with m_bs=0
@@ -631,7 +630,7 @@ end  # @testset "Triglobal"
     lmax_bs = 4
     mmax_bs = 2
 
-    cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
+    cd = Cross.ChebyshevDiffn(Nr, [χ, 1.0], 4)
 
     @testset "nonaxisymmetric_basic_state produces valid flow" begin
         # Create a 3D basic state with mixed modes
@@ -667,7 +666,7 @@ end  # @testset "Triglobal"
                                                   lmax_bs, mmax_bs, amplitudes)
 
         # Should match the axisymmetric result
-        bs_axi = meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, 0.1)
+        bs_axi = Cross.meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, 0.1)
 
         # Compare L=1 velocity (should be similar)
         if haskey(bs3d.uphi_coeffs, (1, 0)) && haskey(bs_axi.uphi_coeffs, 1)

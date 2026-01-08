@@ -48,33 +48,33 @@ Uses sparse ultraspherical spectral discretization.
 - `bci_thermal::Int`: Inner thermal BC (0=fixed temp, 1=fixed flux)
 - `bco_thermal::Int`: Outer thermal BC (0=fixed temp, 1=fixed flux)
 """
-@with_kw struct SparseOnsetParams{T<:Real}
+struct SparseOnsetParams{T<:Real}
     # Dimensionless parameters
     E::T                           # Ekman number
-    Pr::T = one(T)                 # Prandtl number
+    Pr::T                          # Prandtl number
     Ra::T                          # Rayleigh number
     ricb::T                        # Inner radius (ro = 1.0)
 
     # Wave parameters
     m::Int                         # Azimuthal wavenumber
     lmax::Int                      # Max spherical harmonic degree
-    symm::Int = 1                  # Equatorial symmetry (±1)
+    symm::Int                      # Equatorial symmetry (±1)
 
     # Resolution
     N::Int                         # Chebyshev truncation
 
     # Boundary conditions
-    bci::Int = 1                   # Inner mechanical BC (1=no-slip)
-    bco::Int = 1                   # Outer mechanical BC (1=no-slip)
-    bci_thermal::Int = 0           # Inner thermal BC (0=fixed temp)
-    bco_thermal::Int = 0           # Outer thermal BC (0=fixed temp)
+    bci::Int                       # Inner mechanical BC (1=no-slip)
+    bco::Int                       # Outer mechanical BC (1=no-slip)
+    bci_thermal::Int               # Inner thermal BC (0=fixed temp)
+    bco_thermal::Int               # Outer thermal BC (0=fixed temp)
 
     # Heating type
-    heating::Symbol = :differential # :internal or :differential
+    heating::Symbol                # :internal or :differential
 
     # Derived quantities
-    L::T = one(T) - ricb           # Shell thickness
-    Etherm::T = E / Pr             # Thermal Ekman number
+    L::T                           # Shell thickness
+    Etherm::T                      # Thermal Ekman number
 
     function SparseOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
                                 bci, bco, bci_thermal, bco_thermal, heating,

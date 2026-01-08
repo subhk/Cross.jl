@@ -43,7 +43,6 @@ The first run downloads packages including:
 | `KrylovKit` | Krylov subspace eigenvalue solvers |
 | `ArnoldiMethod` | Arnoldi iteration eigenvalue solver |
 | `JLD2` | HDF5-based file I/O |
-| `SHTnsKit` | Spherical harmonic transforms |
 | `WignerSymbols` | Wigner 3j symbols for mode coupling |
 | `Parameters` | Keyword argument macros |
 
@@ -140,8 +139,6 @@ Cross.jl recognizes several environment variables:
 |----------|---------|---------|
 | `CROSS_VERBOSE` | Enable verbose output | `"1"` |
 | `CROSS_THETA_POINTS` | Default meridional resolution | `"96"` |
-| `MKL_DEBUG_CPU_TYPE` | Intel MKL CPU type | `"5"` |
-| `SHTNSKIT_PATH` | Custom SHTnsKit location | `"/path/to/SHTnsKit.jl"` |
 
 ## Building Documentation Locally
 

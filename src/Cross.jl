@@ -29,9 +29,6 @@ module Cross
         # Core utilities
         ChebyshevDiffn,
         potentials_to_velocity,
-        velocity_fields_from_poloidal_toroidal,
-        temperature_field_from_coefficients,
-        fields_from_coefficients,
         print_cross_header,
         CROSS_BANNER,
 

@@ -568,8 +568,6 @@ The `which` parameter controls eigenvalue selection:
 |----------|---------|---------|
 | `CROSS_VERBOSE` | Enable verbose output | `"0"` |
 | `CROSS_THETA_POINTS` | Default meridional resolution | `"96"` |
-| `MKL_DEBUG_CPU_TYPE` | Intel MKL optimization | - |
-| `SHTNSKIT_PATH` | Custom SHTnsKit location | - |
 
 ---
 

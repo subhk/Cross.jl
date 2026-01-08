@@ -209,13 +209,6 @@ $$
 \mathcal{L} Y_\ell^m = \ell(\ell+1) Y_\ell^m
 $$
 
-### SHTnsKit Integration
-
-Cross.jl uses SHTnsKit.jl for spherical harmonic transforms:
-- Fast synthesis: coefficients → grid values
-- Fast analysis: grid values → coefficients
-- Utilizes optimized SHTns C library
-
 ## Boundary Condition Implementation
 
 ### Tau Method

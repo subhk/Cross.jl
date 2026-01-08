@@ -207,7 +207,7 @@ This translates to:
 ## Requirements
 
 - **Julia**: 1.10 or newer
-- **Dependencies**: LinearAlgebra, SparseArrays, KrylovKit, ArnoldiMethod, JLD2, SHTnsKit, WignerSymbols
+- **Dependencies**: LinearAlgebra, SparseArrays, KrylovKit, ArnoldiMethod, JLD2, WignerSymbols
 
 ## Citation
 

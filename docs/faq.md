@@ -40,30 +40,6 @@ julia -e 'using Pkg; Pkg.activate("."); Pkg.instantiate()'
 
 ---
 
-### Q: SHTnsKit fails to load
-
-**Error:**
-```
-ERROR: LoadError: could not load library "libshtns"
-```
-
-**Solution:**
-1. Ensure the SHTns C library is installed on your system
-2. Set the path explicitly:
-   ```bash
-   export SHTNSKIT_PATH="/path/to/SHTnsKit.jl"
-   ```
-3. Or install via your package manager:
-   ```bash
-   # macOS
-   brew install shtns
-
-   # Ubuntu
-   apt-get install libshtns-dev
-   ```
-
----
-
 ## Running Examples
 
 ### Q: Example script throws `MethodError`

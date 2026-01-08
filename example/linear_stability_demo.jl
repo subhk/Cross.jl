@@ -8,14 +8,6 @@
 repo_root = normpath(joinpath(@__DIR__, ".."))
 push!(LOAD_PATH, repo_root)
 
-# Allow overriding the SHTnsKit location through an environment variable
-sht_local = get(ENV, "SHTNSKIT_PATH", joinpath(repo_root, "..", "SHTnsKit.jl"))
-if isdir(sht_local)
-    push!(LOAD_PATH, joinpath(sht_local, "src"))
-else
-    @warn "SHTnsKit path not found" sht_local
-end
-
 using Cross
 using Printf
 

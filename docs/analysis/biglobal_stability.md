@@ -31,45 +31,45 @@ The axisymmetric base state consists of:
 **Temperature field:**
 
 $$
-\bar{T}(r, \theta) = \bar{T}_0(r) + \sum_{\ell=2,4,...} \bar{\Theta}_{\ell 0}(r) Y_\ell^0(\theta)
+\overline{T}(r, \theta) = \overline{T}_0(r) + \sum_{\ell=2,4,...} \overline{\Theta}_{\ell 0}(r) Y_\ell^0(\theta)
 $$
 
 **Zonal flow:**
 
 $$
-\bar{u}_\phi(r, \theta) = \sum_{\ell=1,3,...} \bar{u}_{\phi,\ell 0}(r) Y_\ell^0(\theta)
+\overline{u}_\phi(r, \theta) = \sum_{\ell=1,3,...} \overline{u}_{\phi,\ell 0}(r) Y_\ell^0(\theta)
 $$
 
-The zonal flow has different parity than temperature: odd-$\ell$ for $\bar{u}_\phi$ and even-$\ell$ for temperature perturbations (for equatorially symmetric basic states).
+The zonal flow has different parity than temperature: odd-$\ell$ for $\overline{u}_\phi$ and even-$\ell$ for temperature perturbations (for equatorially symmetric basic states).
 
 ### Thermal Wind Balance
 
 When temperature varies with latitude, geostrophic balance requires a zonal flow. The thermal wind equation:
 
 $$
-2\Omega \cos\theta \frac{\partial \bar{u}_\phi}{\partial z} = -\frac{g \alpha}{r} \frac{\partial \bar{T}}{\partial \theta}
+2\Omega \cos\theta \frac{\partial \overline{u}_\phi}{\partial z} = -\frac{g \alpha}{r} \frac{\partial \overline{T}}{\partial \theta}
 $$
 
 In spherical coordinates with our non-dimensionalization:
 
 $$
-2 \cos\theta \frac{\partial \bar{u}_\phi}{\partial r} = -\frac{Ra \cdot E^2}{Pr \cdot r} \frac{\partial \bar{\Theta}}{\partial \theta}
+2 \cos\theta \frac{\partial \overline{u}_\phi}{\partial r} = -\frac{Ra \cdot E^2}{Pr \cdot r} \frac{\partial \overline{\Theta}}{\partial \theta}
 $$
 
 This relates the vertical shear of zonal flow to the horizontal temperature gradient.
 
 ### Modified Linearized Equations
 
-With an axisymmetric basic state $(\bar{\mathbf{u}}, \bar{T})$, the linearized perturbation equations become:
+With an axisymmetric basic state $(\overline{\mathbf{u}}, \overline{T})$, the linearized perturbation equations become:
 
 **Momentum:**
 $$
-\frac{\partial \mathbf{u}'}{\partial t} + 2\hat{\mathbf{z}} \times \mathbf{u}' + \underbrace{(\mathbf{u}' \cdot \nabla)\bar{\mathbf{u}} + (\bar{\mathbf{u}} \cdot \nabla)\mathbf{u}'}_{\text{advection by/of mean flow}} = -\nabla p' + E \nabla^2 \mathbf{u}' + \frac{Ra \cdot E^2}{Pr} \Theta' \hat{\mathbf{r}}
+\frac{\partial \mathbf{u}'}{\partial t} + 2\hat{\mathbf{z}} \times \mathbf{u}' + \underbrace{(\mathbf{u}' \cdot \nabla)\overline{\mathbf{u}} + (\overline{\mathbf{u}} \cdot \nabla)\mathbf{u}'}_{\text{advection by/of mean flow}} = -\nabla p' + E \nabla^2 \mathbf{u}' + \frac{Ra \cdot E^2}{Pr} \Theta' \hat{\mathbf{r}}
 $$
 
 **Energy:**
 $$
-\frac{\partial \Theta'}{\partial t} + u_r' \frac{\partial \bar{T}}{\partial r} + \underbrace{\mathbf{u}' \cdot \nabla \bar{\Theta} + \bar{\mathbf{u}} \cdot \nabla \Theta'}_{\text{advection terms}} = \frac{E}{Pr} \nabla^2 \Theta'
+\frac{\partial \Theta'}{\partial t} + u_r' \frac{\partial \overline{T}}{\partial r} + \underbrace{\mathbf{u}' \cdot \nabla \overline{\Theta} + \overline{\mathbf{u}} \cdot \nabla \Theta'}_{\text{advection terms}} = \frac{E}{Pr} \nabla^2 \Theta'
 $$
 
 ### Azimuthal Mode Decoupling

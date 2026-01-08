@@ -132,4 +132,5 @@ nav:
     - Spectral Methods: theory/spectral_methods.md
   - Reference:
     - API Reference: reference.md
+    - Codebase Structure: codebase_structure.md
     - FAQ: faq.md

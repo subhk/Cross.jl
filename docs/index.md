@@ -112,17 +112,19 @@ println("Drift frequency: ", imag(eigenvalues[1]))
 
 ## Architecture Overview
 
-Cross.jl is organized into modular components for flexibility and extensibility:
+Cross.jl is organized into modular components for flexibility and extensibility. See [Codebase Structure](codebase_structure.md) for full details.
 
 | Module | Purpose | Key Types |
 |--------|---------|-----------|
 | `Cross.jl` | Package entry point | Exports public API |
-| `linear_stability.jl` | Onset operator assembly | `OnsetParams`, `LinearStabilityOperator` |
-| `basic_state.jl` | Base state construction | `BasicState`, `BasicState3D` |
-| `triglobal_stability.jl` | Coupled-mode analysis | `TriglobalParams`, `CoupledModeProblem` |
-| `CompleteMHD.jl` | MHD dynamo extension | `MHDParams`, `MHDStabilityOperator` |
-| `UltrasphericalSpectral.jl` | Sparse spectral operators | Ultraspherical differentiation matrices |
 | `Chebyshev.jl` | Radial discretization | `ChebyshevDiffn` |
+| `linear_stability.jl` | Core stability analysis | `OnsetParams`, `LinearStabilityOperator` |
+| `basic_state.jl` | Base state construction | `BasicState`, `BasicState3D` |
+| `onset_convection.jl` | Mode 1: No mean flow | `OnsetConvectionParams` |
+| `biglobal_stability.jl` | Mode 2: Axisymmetric mean flow | `BiglobalParams` |
+| `triglobal_stability.jl` | Mode 3: Non-axisymmetric | `TriglobalParams`, `CoupledModeProblem` |
+| `SparseOperator.jl` | Sparse ultraspherical method | `SparseOnsetParams` |
+| `CompleteMHD.jl` | MHD dynamo extension | `MHDParams`, `MHDStabilityOperator` |
 
 ## Physical Problem
 
@@ -199,7 +201,8 @@ This translates to:
 
 ### Reference
 10. **[API Reference](reference.md)** - Complete function and type documentation
-11. **[FAQ](faq.md)** - Troubleshooting and common questions
+11. **[Codebase Structure](codebase_structure.md)** - Source code organization and architecture
+12. **[FAQ](faq.md)** - Troubleshooting and common questions
 
 ## Requirements
 
@@ -254,10 +257,10 @@ Cross.jl builds upon the mathematical foundations established by:
 
     Complete function documentation
 
--   :material-help-circle:{ .lg .middle } **[FAQ](faq.md)**
+-   :material-file-tree:{ .lg .middle } **[Codebase Structure](codebase_structure.md)**
 
     ---
 
-    Common questions and troubleshooting
+    Source code organization for developers
 
 </div>

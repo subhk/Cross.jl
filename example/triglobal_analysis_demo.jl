@@ -136,7 +136,7 @@ println()
 # Create tri-global parameters
 lmax = 50  # Max ℓ for perturbations
 
-params_triglobal = TriGlobalParams(
+params_triglobal = TriglobalParams(
     E = E,
     Pr = Pr,
     Ra = Ra,

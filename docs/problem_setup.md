@@ -53,6 +53,8 @@ params = ShellParams(
 | `Nr` | Int | Radial resolution | $Nr \geq 4$ |
 | `mechanical_bc` | Symbol | Velocity boundary condition | `:no_slip` or `:stress_free` |
 | `thermal_bc` | Symbol | Temperature boundary condition | `:fixed_temperature` or `:fixed_flux` |
+| `use_sparse_weighting` | Bool | Use sparse tau weighting | `true` or `false` |
+| `equatorial_symmetry` | Symbol | Equatorial parity filter | `:both`, `:symmetric`, or `:antisymmetric` |
 
 ### Boundary Conditions
 
@@ -61,7 +63,7 @@ params = ShellParams(
 | Type | Symbol | Physical Meaning | Mathematical Form |
 |------|--------|------------------|-------------------|
 | No-slip | `:no_slip` | Fluid sticks to boundary | $\mathbf{u} = 0$ |
-| Stress-free | `:stress_free` | Zero tangential stress | $u_r = 0$, $\partial(u_\theta/r)/\partial r = 0$ |
+| Stress-free | `:stress_free` | Zero tangential stress | $P=0$, $r \partial_r^2 P = 0$, $-r \partial_r T + T = 0$ |
 
 #### Thermal Boundary Conditions
 
@@ -78,9 +80,9 @@ Build the linear stability operator and examine its properties:
 op = LinearStabilityOperator(params)
 
 println("Total degrees of freedom: ", op.total_dof)
-println("ℓ-sets (poloidal): ", op.l_sets[:poloidal])
-println("ℓ-sets (toroidal): ", op.l_sets[:toroidal])
-println("ℓ-sets (temperature): ", op.l_sets[:temperature])
+println("ℓ-sets (poloidal): ", op.l_sets[:P])
+println("ℓ-sets (toroidal): ", op.l_sets[:T])
+println("ℓ-sets (temperature): ", op.l_sets[:Θ])
 ```
 
 ### Understanding Degrees of Freedom
@@ -184,29 +186,32 @@ eigenvalues, eigenvectors, _, info = leading_modes(params;
 Convert spectral eigenvectors back to physical space:
 
 ```julia
-# Extract poloidal and toroidal potentials from eigenvector
-poloidal, toroidal, temperature = extract_fields(op, eigenvectors[:, 1])
+# Extract poloidal, toroidal, and temperature coefficients
+eigvec = eigenvectors[1]
 
-# Convert to velocity components
-u_r, u_θ, u_φ = potentials_to_velocity(op, poloidal, toroidal)
+poloidal = Dict{Int, Vector{ComplexF64}}()
+toroidal = Dict{Int, Vector{ComplexF64}}()
+temperature = Dict{Int, Vector{ComplexF64}}()
 
-# Or use the combined helper for full 3D reconstruction
-fields = fields_from_coefficients(op, eigenvectors[:, 1]; nθ=128, nφ=256)
+for ℓ in op.l_sets[:P]
+    poloidal[ℓ] = eigvec[op.index_map[(ℓ, :P)]]
+end
+for ℓ in op.l_sets[:T]
+    toroidal[ℓ] = eigvec[op.index_map[(ℓ, :T)]]
+end
+for ℓ in op.l_sets[:Θ]
+    temperature[ℓ] = eigvec[op.index_map[(ℓ, :Θ)]]
+end
 
-# Access individual components
-r_grid = fields.radius
-θ_grid = fields.colatitude
-T_amplitude = fields.temperature_amplitude
+# If you already have P(r,θ) and T(r,θ) on a grid, you can compute velocities:
+# u_r, u_θ, u_φ = potentials_to_velocity(P, T; Dr, Dθ, Lθ, r, sintheta, m)
 ```
 
 ### Field Reconstruction Functions
 
 | Function | Output | Description |
 |----------|--------|-------------|
-| `potentials_to_velocity` | `(u_r, u_θ, u_φ)` | Velocity from poloidal/toroidal potentials |
-| `velocity_fields_from_poloidal_toroidal` | Full velocity | With spherical harmonic synthesis |
-| `temperature_field_from_coefficients` | Temperature | 3D temperature perturbation |
-| `fields_from_coefficients` | Named tuple | All fields with grid metadata |
+| `potentials_to_velocity` | `(u_r, u_θ, u_φ)` | Velocity from grid-based poloidal/toroidal potentials |
 
 ## Step 6: Save and Load Results
 

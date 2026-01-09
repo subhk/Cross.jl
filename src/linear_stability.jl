@@ -115,7 +115,11 @@ end
 
 function compute_l_sets(p::OnsetParams{T}) where {T<:Real}
     if p.equatorial_symmetry === :both
-        ls = collect(p.m:p.lmax)
+        if p.m == 0
+            ls = collect(1:(p.lmax + 1))
+        else
+            ls = collect(p.m:p.lmax)
+        end
         return Dict(:P => ls, :T => ls, :Θ => ls)
     end
 

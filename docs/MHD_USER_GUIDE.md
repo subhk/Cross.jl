@@ -201,7 +201,7 @@ params = MHDParams(..., bci=1, bco=1)  # No-slip both boundaries
 
 **Mathematical conditions:**
 - Poloidal: u = 0, ∂²u/∂r² = 0
-- Toroidal: ∂v/∂r = 0
+- Toroidal: -r ∂v/∂r + v = 0
 
 **When to use:**
 - Free surfaces (liquid-gas interfaces)
@@ -611,7 +611,7 @@ decomp, history = partialschur(A_int, B_int,
 |---------|----------------|-------------------|-----------|
 | **Velocity** |
 | No-slip | bci/bco = 1 | Rigid boundaries | u=0, ∂u/∂r=0 (pol); v=0 (tor) |
-| Stress-free | bci/bco = 0 | Free surface | u=0, ∂²u/∂r²=0 (pol); ∂v/∂r=0 (tor) |
+| Stress-free | bci/bco = 0 | Free surface | u=0, ∂²u/∂r²=0 (pol); -r ∂v/∂r + v = 0 (tor) |
 | **Thermal** |
 | Fixed T | bci/bco_thermal = 0 | High conductivity | T = 0 |
 | Fixed flux | bci/bco_thermal = 1 | Insulating | ∂T/∂r = 0 |

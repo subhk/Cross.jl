@@ -60,8 +60,9 @@ function potentials_to_velocity(P::AbstractMatrix,
                                 m::Int)
     Nr, Nθ = size(P)
     size(T) == size(P) || throw(DimensionMismatch("P and T must have same size"))
-    @assert size(Dr, 1) == Nr
-    @assert size(Dθ, 1) == Nθ
+    @assert size(Dr, 1) == Nr && size(Dr, 2) == Nr
+    @assert size(Dθ, 1) == Nθ && size(Dθ, 2) == Nθ
+    @assert size(Lθ, 1) == Nθ && size(Lθ, 2) == Nθ
     @assert length(r) == Nr
     @assert length(sintheta) == Nθ
 
@@ -69,22 +70,21 @@ function potentials_to_velocity(P::AbstractMatrix,
     inv_r2 = inv_r .^ 2
     inv_sinθ = 1.0 ./ sintheta
 
-    dθ_P = P * Dθ'
     dθ_T = T * Dθ'
     lap_ang_P = P * Lθ'
     dP_dr = Dr * P
+    inv_r_sinθ = inv_r .* inv_sinθ'
 
     # u_r = -L²P / r² (L² applied via Lθ operator)
     ur = -lap_ang_P .* inv_r2
 
     # u_θ = (1/r) ∂²P/∂r∂θ + (im/r sinθ) T
-    uθ = dP_dr * Dθ'
-    uθ .= uθ .* inv_r .* (ones(Nr) * ones(Nθ)')
-    uθ .+= (im * m) .* T .* (inv_r * inv_sinθ')
+    uθ = (dP_dr * Dθ') .* inv_r
+    uθ .+= (im * m) .* T .* inv_r_sinθ
 
     # u_φ = (im/r sinθ) ∂P/∂r - (1/r) ∂T/∂θ
-    uφ = (im * m) .* dP_dr .* (inv_r * inv_sinθ')
-    uφ .-= dθ_T .* (inv_r * ones(1, Nθ))
+    uφ = (im * m) .* dP_dr .* inv_r_sinθ
+    uφ .-= dθ_T .* inv_r
 
     return ur, uθ, uφ
 end

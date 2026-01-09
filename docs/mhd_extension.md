@@ -109,6 +109,10 @@ op = MHDStabilityOperator(params)
 # Assemble matrices
 A, B, interior_dofs, info = assemble_mhd_matrices(op)
 
+# Load the sparse A·x = σ·B·x solver
+include("src/OnsetEigenvalueSolver.jl")
+using .OnsetEigenvalueSolver: solve_eigenvalue_problem
+
 # Solve eigenvalue problem
 A_int = A[interior_dofs, interior_dofs]
 B_int = B[interior_dofs, interior_dofs]

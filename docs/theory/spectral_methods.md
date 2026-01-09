@@ -79,14 +79,15 @@ Where $c_j = 2$ for $j = 0, N-1$ and $c_j = 1$ otherwise.
 ### ChebyshevDiffn Structure
 
 ```julia
-struct ChebyshevDiffn{T}
+struct ChebyshevDiffn{T<:AbstractFloat}
+    n::Int              # Number of points
+    domain::Tuple{T,T}  # Physical domain [a, b]
+    max_order::Int      # Highest derivative order
     x::Vector{T}        # Collocation points
-    N::Int              # Number of points
     D1::Matrix{T}       # First derivative matrix
     D2::Matrix{T}       # Second derivative matrix
     D3::Matrix{T}       # Third derivative matrix
     D4::Matrix{T}       # Fourth derivative matrix
-    domain::Tuple{T,T}  # Physical domain [a, b]
 end
 ```
 

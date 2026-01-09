@@ -301,19 +301,23 @@ At onset, the convective modes are quasi-geostrophic **thermal Rossby waves**:
 ### Reconstructing Physical Fields
 
 ```julia
-# Extract fields from eigenvector
-poloidal, toroidal, temperature = extract_fields(op, eigvec)
+# Slice eigenvector into spectral coefficients
+poloidal = Dict{Int, Vector{ComplexF64}}()
+toroidal = Dict{Int, Vector{ComplexF64}}()
+temperature = Dict{Int, Vector{ComplexF64}}()
 
-# Convert to velocity components
-u_r, u_θ, u_φ = potentials_to_velocity(op, poloidal, toroidal)
+for ℓ in op.l_sets[:P]
+    poloidal[ℓ] = eigvec[op.index_map[(ℓ, :P)]]
+end
+for ℓ in op.l_sets[:T]
+    toroidal[ℓ] = eigvec[op.index_map[(ℓ, :T)]]
+end
+for ℓ in op.l_sets[:Θ]
+    temperature[ℓ] = eigvec[op.index_map[(ℓ, :Θ)]]
+end
 
-# Full 3D reconstruction
-fields = fields_from_coefficients(op, eigvec; nθ=128, nφ=256)
-
-# Access components
-r_grid = fields.radius
-θ_grid = fields.colatitude
-temp_amp = fields.temperature_amplitude
+# If you already have P(r,θ) and T(r,θ) on a grid, you can compute velocities:
+# u_r, u_θ, u_φ = potentials_to_velocity(P, T; Dr, Dθ, Lθ, r, sintheta, m)
 ```
 
 ## Complete Example

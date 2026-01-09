@@ -88,20 +88,13 @@ Cross.jl uses the `BasicState` type to store axisymmetric background profiles:
 
 ```julia
 struct BasicState{T}
-    # Radial grid
-    r::Vector{T}
-    Nr::Int
-
-    # Temperature coefficients θ̄_ℓ0(r) for ℓ = 0, 2, 4, ...
-    theta_coeffs::Dict{Int, Vector{T}}
-    dtheta_dr_coeffs::Dict{Int, Vector{T}}
-
-    # Zonal flow coefficients ū_φ,ℓ0(r) for ℓ = 1, 3, 5, ...
-    uphi_coeffs::Dict{Int, Vector{T}}
-    duphi_dr_coeffs::Dict{Int, Vector{T}}
-
-    # Maximum spherical harmonic degree in basic state
     lmax_bs::Int
+    Nr::Int
+    r::Vector{T}
+    theta_coeffs::Dict{Int, Vector{T}}
+    uphi_coeffs::Dict{Int, Vector{T}}
+    dtheta_dr_coeffs::Dict{Int, Vector{T}}
+    duphi_dr_coeffs::Dict{Int, Vector{T}}
 end
 ```
 
@@ -189,10 +182,19 @@ dtheta_dr_coeffs[0] = cd.D1 * theta_coeffs[0]
 dtheta_dr_coeffs[2] = cd.D1 * theta_coeffs[2]
 
 # Build thermal wind from temperature
-uphi_coeffs, duphi_dr_coeffs = build_thermal_wind(
-    theta_coeffs, dtheta_dr_coeffs,
-    r, E, Ra, Pr
+solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+    cd, χ, 1.0, Ra, Pr;
+    mechanical_bc = :no_slip,
+    E = E,
 )
+
+# Ensure all ℓ modes are populated
+for ℓ in 0:lmax_bs
+    theta_coeffs[ℓ] = get(theta_coeffs, ℓ, zeros(Nr))
+    dtheta_dr_coeffs[ℓ] = get(dtheta_dr_coeffs, ℓ, zeros(Nr))
+    uphi_coeffs[ℓ] = get(uphi_coeffs, ℓ, zeros(Nr))
+    duphi_dr_coeffs[ℓ] = get(duphi_dr_coeffs, ℓ, zeros(Nr))
+end
 
 # Construct BasicState
 bs = BasicState(

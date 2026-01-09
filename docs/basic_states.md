@@ -19,20 +19,13 @@ Axisymmetric cases keep only spherical harmonic modes with azimuthal index $m = 
 
 ```julia
 struct BasicState{T}
-    # Radial grid
-    r::Vector{T}
-    Nr::Int
-
-    # Temperature coefficients θ̄_ℓ0(r)
-    theta_coeffs::Dict{Int, Vector{T}}
-    dtheta_dr_coeffs::Dict{Int, Vector{T}}
-
-    # Zonal flow coefficients ū_φ,ℓ0(r)
-    uphi_coeffs::Dict{Int, Vector{T}}
-    duphi_dr_coeffs::Dict{Int, Vector{T}}
-
-    # Metadata
     lmax_bs::Int
+    Nr::Int
+    r::Vector{T}
+    theta_coeffs::Dict{Int, Vector{T}}
+    uphi_coeffs::Dict{Int, Vector{T}}
+    dtheta_dr_coeffs::Dict{Int, Vector{T}}
+    duphi_dr_coeffs::Dict{Int, Vector{T}}
 end
 ```
 
@@ -88,15 +81,17 @@ $$
 2\Omega \cos\theta \frac{\partial \bar{u}_\phi}{\partial r} = -\frac{Ra \cdot E^2}{Pr \cdot r} \frac{\partial \bar{\Theta}}{\partial \theta}
 $$
 
-The `build_thermal_wind()` function integrates this equation:
+This balance is handled internally by `meridional_basic_state`. For custom
+axisymmetric profiles, you can call the solver directly:
 
 ```julia
-include("src/thermal_wind.jl")
-
-uphi_coeffs = build_thermal_wind(
-    dtheta_dtheta_coeffs,  # d(θ̄)/dθ coefficients
-    r,                      # Radial grid
-    E, Ra, Pr,
+solve_thermal_wind_balance!(
+    uphi_coeffs,
+    duphi_dr_coeffs,
+    theta_coeffs,
+    cd, χ, 1.0, Ra, Pr;
+    mechanical_bc = :no_slip,
+    E = E,
 )
 ```
 

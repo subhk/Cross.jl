@@ -16,13 +16,16 @@ Internal parameter structure for onset problems. Use `ShellParams` for construct
     Pr::T                   # Prandtl number
     Ra::T                   # Rayleigh number
     χ::T                    # Radius ratio r_i/r_o
-    ri::T                   # Inner radius
-    ro::T                   # Outer radius
     m::Int                  # Azimuthal wavenumber
     lmax::Int               # Maximum spherical harmonic degree
     Nr::Int                 # Radial resolution
+    ri::T                   # Inner radius
+    ro::T                   # Outer radius
+    L::T                    # Gap width (ro - ri)
     mechanical_bc::Symbol   # :no_slip or :stress_free
     thermal_bc::Symbol      # :fixed_temperature or :fixed_flux
+    use_sparse_weighting::Bool
+    equatorial_symmetry::Symbol  # :both, :symmetric, or :antisymmetric
     basic_state::BS         # Optional BasicState or nothing
 end
 ```
@@ -48,6 +51,8 @@ params = ShellParams(
     ro = 1.0,
     mechanical_bc = :no_slip,
     thermal_bc = :fixed_temperature,
+    use_sparse_weighting = true,
+    equatorial_symmetry = :both,
     basic_state = nothing,
 )
 ```
@@ -103,7 +108,13 @@ Parameters for MHD stability problems.
     bco_thermal::Int        # Outer thermal BC
     bci_magnetic::Int       # Inner magnetic BC
     bco_magnetic::Int       # Outer magnetic BC
+    forcing_frequency::T
     heating::Symbol         # :differential or :internal
+
+    # Derived quantities
+    L::T
+    Etherm::T
+    Em::T
 end
 ```
 
@@ -120,11 +131,12 @@ Pre-assembled linear stability operator with cached matrices.
 | Field | Type | Description |
 |-------|------|-------------|
 | `params` | `OnsetParams` | Problem parameters |
-| `total_dof` | `Int` | Total degrees of freedom |
-| `l_sets` | `Dict` | ℓ mode sets by field type |
+| `cd` | `ChebyshevDiffn` | Radial grid and derivative matrices |
+| `r` | `Vector` | Radial collocation points |
 | `index_map` | `Dict` | (ℓ, field) → index mapping |
-| `A` | `SparseMatrixCSC` | Physics operator |
-| `B` | `SparseMatrixCSC` | Mass operator |
+| `l_sets` | `Dict` | ℓ mode sets by field type |
+| `total_dof` | `Int` | Total degrees of freedom |
+| `radial_cache` | `Dict` | Cached radial operators |
 
 **Source:** `src/linear_stability.jl`
 
@@ -137,10 +149,11 @@ Block-structured problem for tri-global analysis.
 | Field | Type | Description |
 |-------|------|-------------|
 | `params` | `TriglobalParams` | Problem parameters |
+| `m_range` | `UnitRange{Int}` | Coupled azimuthal modes |
 | `coupling_graph` | `Dict{Int, Vector{Int}}` | Mode coupling structure |
+| `all_m_bs` | `Vector{Int}` | Non-zero basic-state azimuthal modes |
 | `block_indices` | `Dict{Int, UnitRange}` | Eigenvector index ranges per m |
-| `A` | `SparseMatrixCSC` | Assembled A matrix |
-| `B` | `SparseMatrixCSC` | Assembled B matrix |
+| `total_dofs` | `Int` | Total degrees of freedom |
 
 **Source:** `src/triglobal_stability.jl`
 
@@ -169,12 +182,12 @@ Axisymmetric (m=0) basic state.
 
 ```julia
 struct BasicState{T}
-    r::Vector{T}
-    Nr::Int
     lmax_bs::Int
+    Nr::Int
+    r::Vector{T}
     theta_coeffs::Dict{Int, Vector{T}}
-    dtheta_dr_coeffs::Dict{Int, Vector{T}}
     uphi_coeffs::Dict{Int, Vector{T}}
+    dtheta_dr_coeffs::Dict{Int, Vector{T}}
     duphi_dr_coeffs::Dict{Int, Vector{T}}
 end
 ```
@@ -189,10 +202,10 @@ Non-axisymmetric 3D basic state.
 
 ```julia
 struct BasicState3D{T}
-    r::Vector{T}
-    Nr::Int
     lmax_bs::Int
     mmax_bs::Int
+    Nr::Int
+    r::Vector{T}
     theta_coeffs::Dict{Tuple{Int,Int}, Vector{T}}
     dtheta_dr_coeffs::Dict{Tuple{Int,Int}, Vector{T}}
     ur_coeffs::Dict{Tuple{Int,Int}, Vector{T}}
@@ -213,14 +226,15 @@ end
 Chebyshev differentiation matrices and grid.
 
 ```julia
-struct ChebyshevDiffn{T}
+struct ChebyshevDiffn{T<:AbstractFloat}
+    n::Int              # Number of points
+    domain::Tuple{T,T}  # Physical domain [a, b]
+    max_order::Int      # Highest derivative order
     x::Vector{T}        # Collocation points
-    N::Int              # Number of points
     D1::Matrix{T}       # First derivative
     D2::Matrix{T}       # Second derivative
     D3::Matrix{T}       # Third derivative (if computed)
     D4::Matrix{T}       # Fourth derivative (if computed)
-    domain::Tuple{T,T}  # Physical domain [a, b]
 end
 ```
 
@@ -240,22 +254,22 @@ cd = ChebyshevDiffn(N, [a, b], max_order)
 Solve the generalized eigenvalue problem $A\mathbf{x} = \sigma B\mathbf{x}$.
 
 ```julia
+op = LinearStabilityOperator(params)
 eigenvalues, eigenvectors, info = solve_eigenvalue_problem(
-    A, B;
+    op;
     nev = 6,              # Number of eigenvalues
-    which = :LR,          # Selection: :LR, :LM, :SR, :SM
+    which = :LR,          # Selection: :LR, :LI, :LM
     tol = 1e-8,           # Convergence tolerance
     maxiter = 100,        # Maximum iterations
-    sigma = nothing,      # Shift for shift-invert
 )
 ```
 
 **Returns:**
 - `eigenvalues::Vector{ComplexF64}` - Sorted eigenvalues
-- `eigenvectors::Matrix{ComplexF64}` - Corresponding eigenvectors
+- `eigenvectors::Vector{Vector{ComplexF64}}` - Corresponding eigenvectors
 - `info::Dict` - Solver diagnostics
 
-**Source:** `src/OnsetEigenvalueSolver.jl`
+**Source:** `src/linear_stability.jl`
 
 ---
 
@@ -331,13 +345,13 @@ problem = setup_coupled_mode_problem(params::TriglobalParams)
 
 ### `estimate_triglobal_problem_size`
 
-Estimate memory and DOF requirements.
+Estimate DOF and matrix size requirements.
 
 ```julia
 report = estimate_triglobal_problem_size(params::TriglobalParams)
 ```
 
-**Returns:** Named tuple with `total_modes`, `total_dofs`, `matrix_size`, `memory_estimate_gb`
+**Returns:** Named tuple with `total_dofs`, `matrix_size`, `num_modes`, `dofs_per_mode`
 
 **Source:** `src/triglobal_stability.jl`
 
@@ -348,15 +362,15 @@ report = estimate_triglobal_problem_size(params::TriglobalParams)
 Solve the tri-global eigenvalue problem.
 
 ```julia
-solution = solve_triglobal_eigenvalue_problem(
-    problem;
+eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(
+    params;
     nev = 12,
-    which = :LR,
-    tol = 1e-6,
+    σ_target = 0.0,
+    verbose = true,
 )
 ```
 
-**Returns:** Named tuple with `values`, `vectors`, `metadata`
+**Returns:** `eigenvalues` vector and `eigenvectors` matrix (columns are modes)
 
 **Source:** `src/triglobal_stability.jl`
 
@@ -433,22 +447,14 @@ bs3d = nonaxisymmetric_basic_state(
 Convert poloidal/toroidal potentials to velocity.
 
 ```julia
-u_r, u_θ, u_φ = potentials_to_velocity(op, poloidal, toroidal)
-```
-
-**Source:** `src/get_velocity.jl`
-
----
-
-### `velocity_fields_from_poloidal_toroidal`
-
-Full 3D velocity reconstruction with spherical harmonic synthesis.
-
-```julia
-u_r, u_θ, u_φ = velocity_fields_from_poloidal_toroidal(
-    cfg, r, pol, tor;
-    Dr = nothing,
-    real_output = true,
+u_r, u_θ, u_φ = potentials_to_velocity(
+    P, T;
+    Dr = Dr,
+    Dθ = Dθ,
+    Lθ = Lθ,
+    r = r,
+    sintheta = sintheta,
+    m = m,
 )
 ```
 
@@ -456,38 +462,29 @@ u_r, u_θ, u_φ = velocity_fields_from_poloidal_toroidal(
 
 ---
 
-### `temperature_field_from_coefficients`
+### Eigenvector slicing
 
-Reconstruct 3D temperature field.
-
-```julia
-T = temperature_field_from_coefficients(cfg, r, Theta_coeffs; Dr=nothing)
-```
-
-**Source:** `src/get_velocity.jl`
-
----
-
-### `fields_from_coefficients`
-
-Combined field reconstruction returning named tuple.
+`LinearStabilityOperator` stores spectral coefficients by `(ℓ, field)` in
+`op.index_map`. Eigenvectors returned by `solve_eigenvalue_problem` are full
+vectors that can be sliced into per-ℓ radial coefficients:
 
 ```julia
-fields = fields_from_coefficients(op, eigenvector; nθ=128, nφ=256)
+eigvec = eigenvectors[1]
 
-# Access fields
-fields.radius
-fields.colatitude
-fields.longitude
-fields.u_r
-fields.u_theta
-fields.u_phi
-fields.temperature_amplitude
+P_coeffs = Dict{Int, Vector{ComplexF64}}()
+T_coeffs = Dict{Int, Vector{ComplexF64}}()
+Θ_coeffs = Dict{Int, Vector{ComplexF64}}()
+
+for ℓ in op.l_sets[:P]
+    P_coeffs[ℓ] = eigvec[op.index_map[(ℓ, :P)]]
+end
+for ℓ in op.l_sets[:T]
+    T_coeffs[ℓ] = eigvec[op.index_map[(ℓ, :T)]]
+end
+for ℓ in op.l_sets[:Θ]
+    Θ_coeffs[ℓ] = eigvec[op.index_map[(ℓ, :Θ)]]
+end
 ```
-
-**Source:** `src/get_velocity.jl`
-
----
 
 ## MHD Functions
 

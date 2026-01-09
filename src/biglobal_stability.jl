@@ -97,6 +97,24 @@ See also: [`solve_biglobal_problem`](@ref), [`create_thermal_wind_basic_state`](
         @assert Nr >= 4 "Need at least 4 radial points"
         @assert mechanical_bc in (:no_slip, :stress_free) "Invalid mechanical BC"
         @assert thermal_bc in (:fixed_temperature, :fixed_flux) "Invalid thermal BC"
+        @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
+        @assert basic_state.Nr == Nr "basic_state.Nr must match Nr"
+        @assert length(basic_state.r) == Nr "basic_state.r must have length Nr"
+        tol = sqrt(eps(float(T)))
+        @assert isapprox(first(basic_state.r), χ; rtol=tol, atol=tol) "basic_state.r must start at χ"
+        @assert isapprox(last(basic_state.r), one(T); rtol=tol, atol=tol) "basic_state.r must end at 1"
+        for coeffs in values(basic_state.theta_coeffs)
+            @assert length(coeffs) == Nr "basic_state.theta_coeffs entries must have length Nr"
+        end
+        for coeffs in values(basic_state.uphi_coeffs)
+            @assert length(coeffs) == Nr "basic_state.uphi_coeffs entries must have length Nr"
+        end
+        for coeffs in values(basic_state.dtheta_dr_coeffs)
+            @assert length(coeffs) == Nr "basic_state.dtheta_dr_coeffs entries must have length Nr"
+        end
+        for coeffs in values(basic_state.duphi_dr_coeffs)
+            @assert length(coeffs) == Nr "basic_state.duphi_dr_coeffs entries must have length Nr"
+        end
 
         new{T}(E, Pr, Ra, χ, m, lmax, Nr, basic_state,
                mechanical_bc, thermal_bc, equatorial_symmetry)
@@ -186,8 +204,7 @@ end
 
 
 """
-    create_custom_basic_state(θ_profile, uphi_profile, r_grid;
-                              lmax_bs=6, compute_derivatives=true)
+    create_custom_basic_state(θ_profile, uphi_profile, r_grid; lmax_bs=6, χ=r_grid[1])
 
 Create a basic state from custom radial profiles.
 
@@ -197,9 +214,8 @@ analytical solutions.
 # Arguments
 - `θ_profile::Function` - Temperature profile θ̄(r, ℓ) returning θ̄_ℓ0(r)
 - `uphi_profile::Function` - Zonal flow profile ū_φ(r, ℓ) returning ū_φ,ℓ0(r)
-- `r_grid::Vector` - Radial collocation points
+- `r_grid::Vector` - Radial collocation points (Chebyshev nodes for [χ, 1])
 - `lmax_bs::Int` - Maximum ℓ for basic state
-- `compute_derivatives::Bool` - Compute radial derivatives numerically
 
 # Returns
 - `BasicState` - Custom basic state
@@ -223,6 +239,8 @@ function create_custom_basic_state(θ_profile::Function,
 
     # Build Chebyshev for derivatives
     cd = ChebyshevDiffn(Nr, [χ, one(T)], 4)
+    tol = sqrt(eps(float(T)))
+    @assert maximum(abs.(r_grid .- cd.x)) <= tol "r_grid must match Chebyshev nodes for [χ, 1]"
 
     # Initialize coefficient dictionaries
     theta_coeffs = Dict{Int, Vector{T}}()

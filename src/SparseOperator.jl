@@ -87,6 +87,10 @@ struct SparseOnsetParams{T<:Real}
         @assert N >= 4 && iseven(N) "N must be even and >= 4"
         @assert symm in (-1, 1) "symm must be ±1"
         @assert heating in (:internal, :differential) "heating must be :internal or :differential"
+        @assert bci in (0, 1) "bci must be 0 (stress-free) or 1 (no-slip)"
+        @assert bco in (0, 1) "bco must be 0 (stress-free) or 1 (no-slip)"
+        @assert bci_thermal in (0, 1) "bci_thermal must be 0 (fixed temperature) or 1 (fixed flux)"
+        @assert bco_thermal in (0, 1) "bco_thermal must be 0 (fixed temperature) or 1 (fixed flux)"
 
         new{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
                bci, bco, bci_thermal, bco_thermal, heating, L, Etherm)
@@ -293,7 +297,7 @@ function estimate_sparsity(N::Int, n_poloidal::Int, n_toroidal::Int)
     # Average coupling: ~5 l-modes per row
     # Each operator contributes ~O(N) nonzeros per radial mode
     nl_modes = n_poloidal + n_toroidal
-    nnz_estimate = 5 * nl_modes * N^2
+    nnz_estimate = 5 * nl_modes * (N + 1)^2
 
     # Total entries: (N+1) blocks for poloidal, toroidal, temperature
     total_size = (2 * n_poloidal + n_toroidal) * (N + 1)
@@ -821,7 +825,7 @@ Apply boundary conditions by replacing appropriate rows in A and B matrices.
 Uses the tau method.
 
 Mechanical BCs (controlled by bci/bco):
-- 0 = stress-free: u = 0, ∂²u/∂r² = 0 (poloidal); ∂v/∂r = 0 (toroidal)
+- 0 = stress-free: u = 0, r·∂²u/∂r² = 0 (poloidal); -r·∂v/∂r + v = 0 (toroidal)
 - 1 = no-slip: u = 0, ∂u/∂r = 0 (poloidal); v = 0 (toroidal)
 
 Thermal BCs (controlled by bci_thermal/bco_thermal):

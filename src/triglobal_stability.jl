@@ -112,6 +112,11 @@ function build_mode_coupling_structure(m_range::UnitRange{Int},
             push!(all_m_bs, m_bs)
         end
     end
+    for ((ℓ, m_bs), uphi_coeff) in basic_state.uphi_coeffs
+        if m_bs != 0 && maximum(abs.(uphi_coeff)) > 1e-14
+            push!(all_m_bs, m_bs)
+        end
+    end
     all_m_bs = sort(unique(all_m_bs))
 
     # Build coupling graph
@@ -228,14 +233,15 @@ function setup_coupled_mode_problem(params::TriglobalParams{T}) where T
     # Analyze coupling structure
     coupling_graph, all_m_bs = build_mode_coupling_structure(m_range, basic_state)
 
-    # Compute index ranges for each mode
-    # Each mode m has (lmax - |m| + 1) × 3 × Nr DOFs
+    # Compute index ranges for each mode (interior DOFs only).
+    # Each mode m has (lmax - |m| + 1) × (3*Nr - 8) DOFs after removing
+    # boundary rows: P has 4 tau rows, T and Θ each have 2.
     block_indices = Dict{Int,UnitRange{Int}}()
     current_idx = 1
 
     for m in m_range
         num_ell = params.lmax - abs(m) + 1
-        block_size = num_ell * 3 * params.Nr
+        block_size = num_ell * (3 * params.Nr - 8)
 
         block_indices[m] = current_idx:(current_idx + block_size - 1)
         current_idx += block_size
@@ -299,13 +305,14 @@ end
 
 Build single-mode linear stability operators for each azimuthal mode m.
 
-Returns a dictionary mapping m => (A_m, B_m, op_m) where:
-- A_m, B_m are the LHS and RHS matrices for mode m
-- op_m is the LinearStabilityOperator for mode m
+Returns a dictionary mapping m to a NamedTuple with:
+- `A`, `B` - interior-DOF matrices for mode m
+- `op` - LinearStabilityOperator for mode m
+- `idx_map` - reduced index map for (ℓ, field) radial locations
 """
 function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bool) where T
     params_tri = problem.params
-    single_mode_ops = Dict{Int, Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Any}}()
+    single_mode_ops = Dict{Int, NamedTuple{(:A, :B, :op, :idx_map), Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Any, Dict{Tuple{Int,Symbol}, Vector{Int}}}}}()
     basic_state_axis = axisymmetric_basic_state(params_tri.basic_state_3d)
     has_axisymmetric = _has_nonzero_basic_state(basic_state_axis)
 
@@ -330,13 +337,20 @@ function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bo
 
         # Create operator and assemble matrices
         op_m = LinearStabilityOperator(params_m)
-        A_m, B_m, _, _ = assemble_matrices(op_m)
+        A_m, B_m, interior_dofs, _ = assemble_matrices(op_m)
+        expected_dofs = length(problem.block_indices[m])
+        if length(interior_dofs) != expected_dofs
+            error("Interior DOF count mismatch for m=$m: got $(length(interior_dofs)), expected $expected_dofs")
+        end
+        idx_map = _reduced_index_map(op_m, interior_dofs)
+        A_m = A_m[interior_dofs, interior_dofs]
+        B_m = B_m[interior_dofs, interior_dofs]
         if m < 0
             A_m = conj(A_m)
             B_m = conj(B_m)
         end
 
-        single_mode_ops[m] = (A_m, B_m, op_m)
+        single_mode_ops[m] = (A = A_m, B = B_m, op = op_m, idx_map = idx_map)
 
         if verbose && abs(m) <= 2
             println("$(size(A_m, 1)) DOFs")
@@ -415,18 +429,74 @@ function _basic_state_mode_scale(m_bs::Int, ::Type{T}) where {T<:Real}
     return phase * scale
 end
 
+function _theta_derivative_coeff(l::Int, m::Int)
+    if l < abs(m)
+        return (0.0, 0.0)
+    end
+
+    c_plus = 0.0
+    c_minus = 0.0
+
+    if l > 0
+        num_plus = (l + 1)^2 - m^2
+        den_plus = (2l + 1) * (2l + 3)
+        c_plus = l * sqrt(num_plus / den_plus)
+    end
+
+    if l > abs(m)
+        num_minus = l^2 - m^2
+        den_minus = (2l - 1) * (2l + 1)
+        c_minus = -(l + 1) * sqrt(num_minus / den_minus)
+    end
+
+    return (c_plus, c_minus)
+end
+
+function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int,
+                              m_from::Int, m_bs::Int, m_to::Int)
+    c_plus, c_minus = _theta_derivative_coeff(l_bs, abs(m_bs))
+    coupling = 0.0
+
+    if abs(c_plus) > 1e-14
+        l_temp = l_bs + 1
+        coupling += c_plus * compute_sh_coupling_coefficient(
+            l_input, m_from, l_temp, m_bs, l_output, m_to
+        )
+    end
+    if abs(c_minus) > 1e-14 && l_bs > 0
+        l_temp = l_bs - 1
+        coupling += c_minus * compute_sh_coupling_coefficient(
+            l_input, m_from, l_temp, m_bs, l_output, m_to
+        )
+    end
+
+    return coupling
+end
+
+function _reduced_index_map(op::LinearStabilityOperator, interior_dofs::Vector{Int})
+    full_to_reduced = zeros(Int, op.total_dof)
+    for (i, idx) in enumerate(interior_dofs)
+        full_to_reduced[idx] = i
+    end
+
+    idx_map = Dict{Tuple{Int,Symbol}, Vector{Int}}()
+    for (key, idx_range) in op.index_map
+        idx_map[key] = [full_to_reduced[i] for i in idx_range]
+    end
+
+    return idx_map
+end
+
 function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                                         single_mode_ops::Dict,
                                         verbose::Bool) where T
     coupling_ops = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     params = problem.params
     basic_state = params.basic_state_3d
-    Nr = params.Nr
-    lmax = params.lmax
 
     # Get radial grid from one of the single-mode operators
     first_m = first(problem.m_range)
-    _, _, op_ref = single_mode_ops[first_m]
+    op_ref = single_mode_ops[first_m].op
     r = op_ref.r
     cd = op_ref.cd
 
@@ -437,10 +507,18 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
     needs_interpolation = (length(r_bs) != length(r)) || (maximum(abs.(r_bs .- r)) > 1e-10)
 
     # Cache interpolated coefficients
+    theta_interp = Dict{Tuple{Int,Int}, Vector{T}}()
     uphi_interp = Dict{Tuple{Int,Int}, Vector{T}}()
     duphi_dr_interp = Dict{Tuple{Int,Int}, Vector{T}}()
     dtheta_dr_interp = Dict{Tuple{Int,Int}, Vector{T}}()
 
+    for (key, coeff) in basic_state.theta_coeffs
+        if needs_interpolation
+            theta_interp[key] = interpolate_to_grid(coeff, r_bs, r)
+        else
+            theta_interp[key] = coeff
+        end
+    end
     for (key, coeff) in basic_state.uphi_coeffs
         if needs_interpolation
             uphi_interp[key] = interpolate_to_grid(coeff, r_bs, r)
@@ -507,8 +585,10 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
             end
 
             # Get sizes of the from and to blocks
-            _, _, op_from = single_mode_ops[m_from]
-            _, _, op_to = single_mode_ops[m_to]
+            op_from = single_mode_ops[m_from].op
+            op_to = single_mode_ops[m_to].op
+            idx_map_from = single_mode_ops[m_from].idx_map
+            idx_map_to = single_mode_ops[m_to].idx_map
             n_from = length(problem.block_indices[m_from])
             n_to = length(problem.block_indices[m_to])
 
@@ -523,28 +603,40 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                 if m_to == m_from + m_bs
                     # Forward coupling: m_from + m_bs = m_to
                     m_bs_eff = m_bs
-                    add_advection_coupling!(C, op_from, op_to,
+                    add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                            m_from, m_to, ℓ_bs, m_bs_eff,
                                            r, uphi_interp, params)
-                    add_temperature_gradient_coupling!(C, op_from, op_to,
+                    add_temperature_gradient_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                                        m_from, m_to, ℓ_bs, m_bs_eff,
                                                        r, dtheta_dr_interp, params)
-                    add_shear_coupling!(C, op_from, op_to,
+                    add_shear_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                        m_from, m_to, ℓ_bs, m_bs_eff,
                                        r, duphi_dr_interp, params)
+                    add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                              m_from, m_to, ℓ_bs, m_bs_eff,
+                                                              r, theta_interp, cd.D1, params)
+                    add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                              m_from, m_to, ℓ_bs, m_bs_eff,
+                                              r, uphi_interp, cd.D1, params)
                 elseif m_to == m_from - m_bs
                     # Backward coupling: m_from - m_bs = m_to → m_from + (-m_bs) = m_to
                     # Need to use -m_bs in the Gaunt coefficient (complex conjugate of Y_{ℓ,m})
                     m_bs_eff = -m_bs
-                    add_advection_coupling!(C, op_from, op_to,
+                    add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                            m_from, m_to, ℓ_bs, m_bs_eff,
                                            r, uphi_interp, params)
-                    add_temperature_gradient_coupling!(C, op_from, op_to,
+                    add_temperature_gradient_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                                        m_from, m_to, ℓ_bs, m_bs_eff,
                                                        r, dtheta_dr_interp, params)
-                    add_shear_coupling!(C, op_from, op_to,
+                    add_shear_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                        m_from, m_to, ℓ_bs, m_bs_eff,
                                        r, duphi_dr_interp, params)
+                    add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                              m_from, m_to, ℓ_bs, m_bs_eff,
+                                                              r, theta_interp, cd.D1, params)
+                    add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                              m_from, m_to, ℓ_bs, m_bs_eff,
+                                              r, uphi_interp, cd.D1, params)
                 end
             end
 
@@ -580,6 +672,8 @@ Arguments:
 """
 function add_advection_coupling!(C::Matrix{ComplexF64},
                                   op_from, op_to,
+                                  idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                  idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                   m_from::Int, m_to::Int,
                                   ℓ_bs::Int, m_bs::Int,
                                   r::Vector{T},
@@ -634,21 +728,15 @@ function add_advection_coupling!(C::Matrix{ComplexF64},
             end
 
             # Get index ranges
-            idx_from = op_from.index_map[(ℓ_from, :Θ)]
-            idx_to = op_to.index_map[(ℓ_to, :Θ)]
+            idx_from = idx_map_from[(ℓ_from, :Θ)]
+            idx_to = idx_map_to[(ℓ_to, :Θ)]
 
-            # Map to global block indices
-            # The op indices are local; we need to find offset within the block
-            from_offset = first(idx_from) - 1
-            to_offset = first(idx_to) - 1
-
-            # Add diagonal coupling (radial operator)
+            # Add diagonal coupling (radial operator) on interior DOFs
             for i in 1:Nr
-                row = to_offset + i
-                col = from_offset + i
-                if row <= size(C, 1) && col <= size(C, 2)
-                    C[row, col] += coupling_coeff * adv_coeff[i]
-                end
+                row = idx_to[i]
+                col = idx_from[i]
+                (row == 0 || col == 0) && continue
+                C[row, col] += coupling_coeff * adv_coeff[i]
             end
         end
     end
@@ -668,6 +756,8 @@ Arguments:
 """
 function add_temperature_gradient_coupling!(C::Matrix{ComplexF64},
                                              op_from, op_to,
+                                             idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                             idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                              m_from::Int, m_to::Int,
                                              ℓ_bs::Int, m_bs::Int,
                                              r::Vector{T},
@@ -690,8 +780,8 @@ function add_temperature_gradient_coupling!(C::Matrix{ComplexF64},
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
 
-    # The coupling is: u'_r × ∂θ̄_bs/∂r
-    # where u'_r = ℓ(ℓ+1)/r² × P (from poloidal potential)
+    # The coupling is: u'_r × ∂θ̄_bs/∂r with the same radial weighting
+    # used in the single-mode operator assembly.
 
     for (ℓ_from, field_from) in keys(op_from.index_map)
         if field_from != :P
@@ -721,21 +811,17 @@ function add_temperature_gradient_coupling!(C::Matrix{ComplexF64},
             end
 
             # Get index ranges
-            idx_from = op_from.index_map[(ℓ_from, :P)]
-            idx_to = op_to.index_map[(ℓ_to, :Θ)]
+            idx_from = idx_map_from[(ℓ_from, :P)]
+            idx_to = idx_map_to[(ℓ_to, :Θ)]
 
-            from_offset = first(idx_from) - 1
-            to_offset = first(idx_to) - 1
-
-            # Coupling coefficient: L_from/r² × ∂θ̄_bs/∂r
-            temp_grad_coeff = L_from .* (bs_scale .* dtheta_dr_bs) ./ (r.^2)
+            # Coupling coefficient: -L_from × ∂θ̄_bs/∂r
+            temp_grad_coeff = -L_from .* (bs_scale .* dtheta_dr_bs)
 
             for i in 1:Nr
-                row = to_offset + i
-                col = from_offset + i
-                if row <= size(C, 1) && col <= size(C, 2)
-                    C[row, col] += coupling_coeff * temp_grad_coeff[i]
-                end
+                row = idx_to[i]
+                col = idx_from[i]
+                (row == 0 || col == 0) && continue
+                C[row, col] += coupling_coeff * temp_grad_coeff[i]
             end
         end
     end
@@ -755,6 +841,8 @@ Arguments:
 """
 function add_shear_coupling!(C::Matrix{ComplexF64},
                               op_from, op_to,
+                              idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                              idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
                               m_from::Int, m_to::Int,
                               ℓ_bs::Int, m_bs::Int,
                               r::Vector{T},
@@ -806,20 +894,140 @@ function add_shear_coupling!(C::Matrix{ComplexF64},
                 continue
             end
 
-            idx_from = op_from.index_map[(ℓ_from, :P)]
-            idx_to = op_to.index_map[(ℓ_to, :T)]
+            idx_from = idx_map_from[(ℓ_from, :P)]
+            idx_to = idx_map_to[(ℓ_to, :T)]
 
-            from_offset = first(idx_from) - 1
-            to_offset = first(idx_to) - 1
-
-            # Coupling: L_from/r² × ∂ū_φ/∂r
-            shear_coeff = L_from .* (bs_scale .* duphi_dr_bs) ./ (r.^2)
+            # Coupling: -L_from × ∂ū_φ/∂r
+            shear_coeff = -L_from .* (bs_scale .* duphi_dr_bs)
 
             for i in 1:Nr
-                row = to_offset + i
-                col = from_offset + i
-                if row <= size(C, 1) && col <= size(C, 2)
-                    C[row, col] += coupling_coeff * shear_coeff[i]
+                row = idx_to[i]
+                col = idx_from[i]
+                (row == 0 || col == 0) && continue
+                C[row, col] += coupling_coeff * shear_coeff[i]
+            end
+        end
+    end
+end
+
+function add_temperature_gradient_theta_coupling!(C::Matrix{ComplexF64},
+                                                   op_from, op_to,
+                                                   idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                                   idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                                   m_from::Int, m_to::Int,
+                                                   ℓ_bs::Int, m_bs::Int,
+                                                   r::Vector{T},
+                                                   theta_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
+                                                   Dr::Matrix{T},
+                                                   params) where T
+    Nr = length(r)
+    m_pert_from = abs(m_from)
+    m_pert_to = abs(m_to)
+
+    key_bs = (ℓ_bs, abs(m_bs))
+    if !haskey(theta_coeffs, key_bs)
+        return
+    end
+    theta_bs = theta_coeffs[key_bs]
+    if maximum(abs.(theta_bs)) < 1e-14
+        return
+    end
+    bs_scale = _basic_state_mode_scale(m_bs, T)
+    theta_scaled = bs_scale .* theta_bs
+
+    for (ℓ_from, field_from) in keys(op_from.index_map)
+        if field_from != :P
+            continue
+        end
+        if ℓ_from < m_pert_from
+            continue
+        end
+
+        for (ℓ_to, field_to) in keys(op_to.index_map)
+            if field_to != :Θ
+                continue
+            end
+            if ℓ_to < m_pert_to
+                continue
+            end
+
+            meridional_coeff = _meridional_coupling(ℓ_from, ℓ_bs, ℓ_to, m_from, m_bs, m_to)
+            if abs(meridional_coeff) < 1e-14
+                continue
+            end
+
+            idx_from = idx_map_from[(ℓ_from, :P)]
+            idx_to = idx_map_to[(ℓ_to, :Θ)]
+
+            for i in 1:Nr
+                row = idx_to[i]
+                row == 0 && continue
+                for j in 1:Nr
+                    col = idx_from[j]
+                    col == 0 && continue
+                    C[row, col] += -meridional_coeff * theta_scaled[i] * Dr[i, j]
+                end
+            end
+        end
+    end
+end
+
+function add_shear_theta_coupling!(C::Matrix{ComplexF64},
+                                    op_from, op_to,
+                                    idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                    idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                    m_from::Int, m_to::Int,
+                                    ℓ_bs::Int, m_bs::Int,
+                                    r::Vector{T},
+                                    uphi_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
+                                    Dr::Matrix{T},
+                                    params) where T
+    Nr = length(r)
+    m_pert_from = abs(m_from)
+    m_pert_to = abs(m_to)
+
+    key_bs = (ℓ_bs, abs(m_bs))
+    if !haskey(uphi_coeffs, key_bs)
+        return
+    end
+    uphi_bs = uphi_coeffs[key_bs]
+    if maximum(abs.(uphi_bs)) < 1e-14
+        return
+    end
+    bs_scale = _basic_state_mode_scale(m_bs, T)
+    uphi_scaled = bs_scale .* uphi_bs
+
+    for (ℓ_from, field_from) in keys(op_from.index_map)
+        if field_from != :P
+            continue
+        end
+        if ℓ_from < m_pert_from
+            continue
+        end
+
+        for (ℓ_to, field_to) in keys(op_to.index_map)
+            if field_to != :T
+                continue
+            end
+            if ℓ_to < m_pert_to
+                continue
+            end
+
+            meridional_coeff = _meridional_coupling(ℓ_from, ℓ_bs, ℓ_to, m_from, m_bs, m_to)
+            if abs(meridional_coeff) < 1e-14
+                continue
+            end
+
+            idx_from = idx_map_from[(ℓ_from, :P)]
+            idx_to = idx_map_to[(ℓ_to, :T)]
+
+            for i in 1:Nr
+                row = idx_to[i]
+                row == 0 && continue
+                for j in 1:Nr
+                    col = idx_from[j]
+                    col == 0 && continue
+                    C[row, col] += -meridional_coeff * uphi_scaled[i] * Dr[i, j]
                 end
             end
         end
@@ -918,7 +1126,8 @@ function assemble_block_matrices(problem::CoupledModeProblem{T},
 
     # Fill in diagonal blocks (single-mode operators)
     for m in problem.m_range
-        A_m, B_m, _ = single_mode_ops[m]
+        A_m = single_mode_ops[m].A
+        B_m = single_mode_ops[m].B
         block_range = problem.block_indices[m]
 
         A_coupled[block_range, block_range] .= A_m
@@ -926,7 +1135,6 @@ function assemble_block_matrices(problem::CoupledModeProblem{T},
     end
 
     # Fill in off-diagonal blocks (coupling operators)
-    # Currently empty due to diagonal approximation
     for ((m_from, m_to), C) in coupling_ops
         if !isempty(C)
             range_from = problem.block_indices[m_from]

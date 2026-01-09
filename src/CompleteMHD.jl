@@ -28,13 +28,6 @@ using .MHDOperator: background_operator
 
 # Include hydrodynamic operators from SparseOperator (needed for velocity and temperature)
 include("SparseOperator.jl")
-using .SparseOperator: operator_u, operator_coriolis_diagonal, operator_coriolis_offdiag,
-                       operator_viscous_diffusion, operator_buoyancy,
-                       operator_coriolis_v_to_u, operator_u_toroidal,
-                       operator_coriolis_toroidal, operator_viscous_toroidal,
-                       operator_theta, operator_thermal_diffusion,
-                       operator_thermal_advection,
-                       apply_boundary_conditions!
 
 # Include MHD operator functions
 include("MHDOperatorFunctions.jl")

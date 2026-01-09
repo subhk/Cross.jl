@@ -242,6 +242,7 @@ The global critical Rayleigh number is the minimum Ra_c across all m:
 - `Ra_guess::Real` - Initial guess for Ra_c (default: 1e6)
 - `tol::Real` - Tolerance for each m (default: 1e-6)
 - `verbose::Bool` - Print progress (default: true)
+- `equatorial_symmetry::Symbol` - :both, :symmetric, or :antisymmetric
 
 # Returns
 - `m_c::Int` - Critical azimuthal wavenumber
@@ -270,7 +271,10 @@ function find_global_critical_onset(; E::T, Pr::T, χ::T, lmax::Int, Nr::Int,
                                      tol::T=T(1e-6),
                                      mechanical_bc::Symbol=:no_slip,
                                      thermal_bc::Symbol=:fixed_temperature,
+                                     equatorial_symmetry::Symbol=:both,
                                      verbose::Bool=true) where {T<:Real}
+    @assert all(m -> m >= 0, m_range) "m_range must be non-negative for onset analysis"
+    @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
 
     if verbose
         println("="^60)
@@ -299,7 +303,8 @@ function find_global_critical_onset(; E::T, Pr::T, χ::T, lmax::Int, Nr::Int,
                 Ra_guess=Ra_guess,
                 tol=tol,
                 mechanical_bc=mechanical_bc,
-                thermal_bc=thermal_bc
+                thermal_bc=thermal_bc,
+                equatorial_symmetry=equatorial_symmetry
             )
             results[m] = (Ra_c=Ra_c, ω_c=ω_c)
 
@@ -325,7 +330,7 @@ function find_global_critical_onset(; E::T, Pr::T, χ::T, lmax::Int, Nr::Int,
         error("No valid results found in the m_range")
     end
 
-    m_c = argmin(m -> results[m].Ra_c, keys(valid_results))
+    _, m_c = findmin(m -> results[m].Ra_c, keys(valid_results))
     Ra_c = results[m_c].Ra_c
     ω_c = results[m_c].ω_c
 
@@ -374,13 +379,22 @@ function estimate_onset_problem_size(params::OnsetConvectionParams)
     lmax = params.lmax
     Nr = params.Nr
 
-    # Number of ℓ modes: ℓ ∈ [m, lmax]
-    num_ell = lmax - m + 1
-
-    # DOFs per ℓ: 3 × Nr (poloidal, toroidal, temperature)
-    dofs_per_ell = 3 * Nr
-
-    total_dofs = num_ell * dofs_per_ell
+    # Account for equatorial symmetry when counting modes.
+    internal_params = OnsetParams(
+        E = params.E,
+        Pr = params.Pr,
+        Ra = params.Ra,
+        χ = params.χ,
+        m = params.m,
+        lmax = params.lmax,
+        Nr = params.Nr,
+        mechanical_bc = params.mechanical_bc,
+        thermal_bc = params.thermal_bc,
+        equatorial_symmetry = params.equatorial_symmetry,
+        basic_state = nothing
+    )
+    l_sets = compute_l_sets(internal_params)
+    total_dofs = (length(l_sets[:P]) + length(l_sets[:T]) + length(l_sets[:Θ])) * Nr
     matrix_size = total_dofs
 
     # Memory: A and B matrices (complex, dense for now)
@@ -391,7 +405,7 @@ function estimate_onset_problem_size(params::OnsetConvectionParams)
     return (
         total_dofs = total_dofs,
         matrix_size = matrix_size,
-        num_ell_modes = num_ell,
+        num_ell_modes = length(l_sets[:Θ]),
         memory_estimate_mb = memory_mb
     )
 end

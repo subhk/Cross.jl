@@ -164,11 +164,11 @@ end
 
 Create a basic state with meridional temperature variation at the outer boundary.
 
-The outer boundary temperature varies meridionally:
-    θ̄(r_o, θ) = 1 + amplitude × Y_20(θ)
-
 The inner boundary is held at uniform temperature:
-    θ̄(r_i, θ) = 0
+    θ̄(r_i, θ) = 1
+
+The outer boundary has zero-mean meridional variation:
+    θ̄(r_o, θ) = amplitude × Y_20(θ)
 
 This represents differential heating (e.g., equator hotter than poles).
 
@@ -222,13 +222,14 @@ function meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T
     # =========================================================================
     # Higher ℓ modes: zero (no higher-order boundary variations)
     # =========================================================================
-    for ℓ in [1, 3, 4]
-        if ℓ <= lmax_bs && ℓ != 2
-            theta_coeffs[ℓ] = zeros(T, Nr)
-            dtheta_dr_coeffs[ℓ] = zeros(T, Nr)
-            uphi_coeffs[ℓ] = zeros(T, Nr)
-            duphi_dr_coeffs[ℓ] = zeros(T, Nr)
+    for ℓ in 1:lmax_bs
+        if ℓ == 2
+            continue
         end
+        theta_coeffs[ℓ] = zeros(T, Nr)
+        dtheta_dr_coeffs[ℓ] = zeros(T, Nr)
+        uphi_coeffs[ℓ] = zeros(T, Nr)
+        duphi_dr_coeffs[ℓ] = zeros(T, Nr)
     end
 
     # =========================================================================
@@ -313,18 +314,108 @@ Returns:
 - `duphi_dtheta` - Meridional derivative ∂ū_φ/∂θ
 """
 function evaluate_basic_state(bs::BasicState{T}, r_eval::T, theta_eval::T) where T
-    # This would require interpolation and spherical harmonic evaluation
-    # For now, return zeros as placeholder
-    # TODO: Implement proper evaluation using spherical harmonics
+    rmin = min(first(bs.r), last(bs.r))
+    rmax = max(first(bs.r), last(bs.r))
+    if r_eval < rmin || r_eval > rmax
+        throw(ArgumentError("r_eval must be within [$rmin, $rmax]"))
+    end
+
+    lmax = bs.lmax_bs
+    x = cos(theta_eval)
+    P, dPdx = _legendre_values_and_derivs(lmax, x)
+    sinθ = sin(theta_eval)
+
+    norms = Vector{T}(undef, lmax + 1)
+    for ℓ in 0:lmax
+        norms[ℓ + 1] = sqrt(T(2 * ℓ + 1) / (T(4) * T(pi)))
+    end
+
+    theta_bar = zero(T)
+    uphi_bar = zero(T)
+    dtheta_dr = zero(T)
+    dtheta_dtheta = zero(T)
+    duphi_dr = zero(T)
+    duphi_dtheta = zero(T)
+
+    for (ℓ, coeffs) in bs.theta_coeffs
+        ℓ > lmax && continue
+        coeff = _linear_interpolate(bs.r, coeffs, r_eval)
+        Y = norms[ℓ + 1] * P[ℓ + 1]
+        dY_dtheta = -sinθ * norms[ℓ + 1] * dPdx[ℓ + 1]
+        theta_bar += coeff * Y
+        dtheta_dtheta += coeff * dY_dtheta
+        if haskey(bs.dtheta_dr_coeffs, ℓ)
+            dtheta_dr += _linear_interpolate(bs.r, bs.dtheta_dr_coeffs[ℓ], r_eval) * Y
+        end
+    end
+
+    for (ℓ, coeffs) in bs.uphi_coeffs
+        ℓ > lmax && continue
+        coeff = _linear_interpolate(bs.r, coeffs, r_eval)
+        Y = norms[ℓ + 1] * P[ℓ + 1]
+        dY_dtheta = -sinθ * norms[ℓ + 1] * dPdx[ℓ + 1]
+        uphi_bar += coeff * Y
+        duphi_dtheta += coeff * dY_dtheta
+        if haskey(bs.duphi_dr_coeffs, ℓ)
+            duphi_dr += _linear_interpolate(bs.r, bs.duphi_dr_coeffs[ℓ], r_eval) * Y
+        end
+    end
 
     return (
-        theta_bar = zero(T),
-        uphi_bar = zero(T),
-        dtheta_dr = zero(T),
-        dtheta_dtheta = zero(T),
-        duphi_dr = zero(T),
-        duphi_dtheta = zero(T)
+        theta_bar = theta_bar,
+        uphi_bar = uphi_bar,
+        dtheta_dr = dtheta_dr,
+        dtheta_dtheta = dtheta_dtheta,
+        duphi_dr = duphi_dr,
+        duphi_dtheta = duphi_dtheta
     )
+end
+
+function _legendre_values_and_derivs(lmax::Int, x::T) where T
+    P = zeros(T, lmax + 1)
+    dPdx = zeros(T, lmax + 1)
+    P[1] = one(T)
+    if lmax >= 1
+        P[2] = x
+    end
+    for l in 2:lmax
+        P[l + 1] = ((2 * l - 1) * x * P[l] - (l - 1) * P[l - 1]) / l
+    end
+
+    dPdx[1] = zero(T)
+    if lmax >= 1
+        denom = one(T) - x * x
+        tol = sqrt(eps(T))
+        for l in 1:lmax
+            if abs(denom) < tol
+                dPdx[l + 1] = zero(T)
+            else
+                dPdx[l + 1] = l * (P[l] - x * P[l + 1]) / denom
+            end
+        end
+    end
+
+    return P, dPdx
+end
+
+function _linear_interpolate(r::AbstractVector{T}, values::AbstractVector{T}, r_eval::T) where T
+    length(r) == length(values) || throw(DimensionMismatch("r and values must have same length"))
+    if r[1] <= r[end]
+        return _linear_interpolate_ascending(r, values, r_eval)
+    end
+    r_rev = reverse(r)
+    values_rev = reverse(values)
+    return _linear_interpolate_ascending(r_rev, values_rev, r_eval)
+end
+
+function _linear_interpolate_ascending(r::AbstractVector{T}, values::AbstractVector{T}, r_eval::T) where T
+    n = length(r)
+    r_eval <= r[1] && return values[1]
+    r_eval >= r[end] && return values[end]
+    j = searchsortedlast(r, r_eval)
+    j == n && (j = n - 1)
+    t = (r_eval - r[j]) / (r[j + 1] - r[j])
+    return (one(T) - t) * values[j] + t * values[j + 1]
 end
 
 
@@ -340,9 +431,11 @@ end
 
 Create a 3D basic state with both meridional and longitudinal temperature variations.
 
-The boundary temperature varies in both latitude and longitude:
-    θ̄(r_o, θ, φ) = 1 + Σ_{ℓ,m} amplitude_{ℓm} × Y_ℓm(θ,φ)
-    θ̄(r_i, θ, φ) = 0
+The inner boundary is held at uniform temperature:
+    θ̄(r_i, θ, φ) = 1
+
+The outer boundary has zero-mean variations:
+    θ̄(r_o, θ, φ) = Σ_{ℓ,m} amplitude_{ℓm} × Y_ℓm(θ,φ)
 
 This represents fully 3D differential heating scenarios, such as:
 - Longitudinally-varying solar heating

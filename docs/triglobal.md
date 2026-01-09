@@ -99,19 +99,19 @@ Before solving, check the computational requirements:
 size_report = estimate_triglobal_problem_size(params_triglobal)
 
 println("Problem size estimate:")
-println("  Total modes: ", size_report.total_modes)
+println("  Number of modes: ", size_report.num_modes)
 println("  Total DOFs: ", size_report.total_dofs)
 println("  Matrix size: ", size_report.matrix_size, " × ", size_report.matrix_size)
-println("  Estimated memory: ", size_report.memory_estimate_gb, " GB")
+println("  DOFs per mode: ", size_report.dofs_per_mode)
 ```
 
 ### Typical Problem Sizes
 
-| m_range | lmax | Nr | Approx DOFs | Memory |
-|---------|------|----|-------------|--------|
-| -1:1 | 30 | 32 | ~15,000 | ~2 GB |
-| -2:2 | 40 | 48 | ~100,000 | ~15 GB |
-| -4:4 | 50 | 64 | ~500,000 | ~100 GB |
+| m_range | lmax | Nr | Approx DOFs |
+|---------|------|----|-------------|
+| -1:1 | 30 | 32 | ~15,000 |
+| -2:2 | 40 | 48 | ~100,000 |
+| -4:4 | 50 | 64 | ~500,000 |
 
 ## Setting Up and Solving
 
@@ -153,16 +153,16 @@ Where:
 ### Solve the Eigenvalue Problem
 
 ```julia
-solution = solve_triglobal_eigenvalue_problem(
-    problem;
+eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(
+    params_triglobal;
     nev = 12,            # Number of eigenvalues
-    which = :LR,         # Largest real part
-    tol = 1e-6,
+    σ_target = 0.0,      # Shift-invert target
+    verbose = true,
 )
 
 # Leading eigenvalue
-σ₁ = real(solution.values[1])
-ω₁ = imag(solution.values[1])
+σ₁ = real(eigenvalues[1])
+ω₁ = imag(eigenvalues[1])
 
 println("Leading tri-global mode:")
 println("  Growth rate: ", σ₁)
@@ -188,30 +188,17 @@ function extract_mode(problem, eigenvector, target_m)
 end
 
 # Get the m=0 component of the leading mode
-mode0_vec = extract_mode(problem, solution.vectors[:, 1], 0)
+mode0_vec = extract_mode(problem, eigenvectors[:, 1], 0)
 ```
 
 ### Reconstruct Physical Fields
 
 ```julia
-# Reconstruct fields for each m component
-fields_by_m = Dict{Int, Any}()
-
+# Each block contains interior DOFs for (P, T, Θ) at that m.
+# Use block_indices to slice per-mode vectors:
 for m in problem.m_range
-    mode_vec = extract_mode(problem, solution.vectors[:, 1], m)
-
-    # Create temporary operator for this m
-    params_m = ShellParams(
-        E = params_triglobal.E,
-        Pr = params_triglobal.Pr,
-        Ra = params_triglobal.Ra,
-        χ = params_triglobal.χ,
-        m = m,
-        lmax = params_triglobal.lmax,
-        Nr = params_triglobal.Nr,
-    )
-
-    fields_by_m[m] = fields_from_coefficients(params_m, mode_vec; nθ=128, nφ=256)
+    mode_vec = extract_mode(problem, eigenvectors[:, 1], m)
+    # mode_vec contains interior DOFs for this m block.
 end
 ```
 
@@ -236,7 +223,7 @@ function mode_energy(eigenvector, problem)
     return energies
 end
 
-energy_dist = mode_energy(solution.vectors[:, 1], problem)
+energy_dist = mode_energy(eigenvectors[:, 1], problem)
 println("Energy distribution:")
 for m in sort(collect(keys(energy_dist)))
     println("  m = $m: ", round(100 * energy_dist[m], digits=1), "%")
@@ -281,10 +268,9 @@ for amp in amplitudes
         basic_state_3d = bs3d,
     )
 
-    problem = setup_coupled_mode_problem(params)
-    sol = solve_triglobal_eigenvalue_problem(problem; nev=4)
+    eigenvalues, _ = solve_triglobal_eigenvalue_problem(params; nev=4, verbose=false)
 
-    push!(results, (amplitude=amp, σ=real(sol.values[1]), ω=imag(sol.values[1])))
+    push!(results, (amplitude=amp, σ=real(eigenvalues[1]), ω=imag(eigenvalues[1])))
 end
 ```
 
@@ -312,20 +298,6 @@ boundary_modes = Dict((2, 2) => 0.1)
 
 # Avoid: Don't fill with zeros
 # boundary_modes = Dict((l, m) => 0.0 for l in 0:10, m in -l:l)
-```
-
-### Solver Fallback
-
-If the default solver stalls, try KrylovKit:
-
-```julia
-solution = solve_triglobal_eigenvalue_problem(
-    problem;
-    nev = 12,
-    solver = :krylov,    # Alternative solver
-    tol = 1e-5,
-    maxiter = 500,
-)
 ```
 
 ## Complete Example
@@ -368,24 +340,21 @@ params = TriglobalParams(
 
 # === Check Size ===
 size_report = estimate_triglobal_problem_size(params)
-@printf("Problem: %d DOFs, ~%.1f GB\n",
-    size_report.total_dofs, size_report.memory_estimate_gb)
+@printf("Problem: %d DOFs across %d modes\n",
+    size_report.total_dofs, size_report.num_modes)
 
 # === Solve ===
-println("Building coupled problem...")
-problem = setup_coupled_mode_problem(params)
-
 println("Solving eigenvalue problem...")
-solution = solve_triglobal_eigenvalue_problem(problem; nev=8)
+eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(params; nev=8)
 
 # === Results ===
 println("\n" * "="^50)
 println("Leading eigenvalues:")
-for (i, λ) in enumerate(solution.values[1:min(5, length(solution.values))])
+for (i, λ) in enumerate(eigenvalues[1:min(5, length(eigenvalues))])
     @printf("  %d: σ = %+.6e, ω = %+.6f\n", i, real(λ), imag(λ))
 end
 
-if real(solution.values[1]) > 0
+if real(eigenvalues[1]) > 0
     println("\nSystem is UNSTABLE")
 else
     println("\nSystem is STABLE")

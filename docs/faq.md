@@ -123,7 +123,8 @@ using Cross
 3. **For tri-global problems:**
    ```julia
    size_report = estimate_triglobal_problem_size(params)
-   println("Memory estimate: ", size_report.memory_estimate_gb, " GB")
+   println("Total DOFs: ", size_report.total_dofs)
+   println("DOFs per mode: ", size_report.dofs_per_mode)
    ```
 
 **Memory guidelines:**
@@ -147,9 +148,7 @@ using Cross
 
 1. **Add a small shift:**
    ```julia
-   eigenvalues, _, _ = solve_eigenvalue_problem(A, B;
-       sigma = 0.1 + 0.1im,  # Complex shift
-   )
+   eigenvalues, _, _ = solve_eigenvalue_problem(op; which = :LM)
    ```
 
 2. **Check matrix condition:**
@@ -408,7 +407,7 @@ using BenchmarkTools
 @btime op = LinearStabilityOperator($params)
 
 # Time eigenvalue solve
-@btime solve_eigenvalue_problem($A, $B; nev=4)
+@btime solve_eigenvalue_problem($op; nev=4)
 
 # Profile memory
 @allocated leading_modes(params; nev=4)

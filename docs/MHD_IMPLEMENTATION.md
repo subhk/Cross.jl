@@ -239,14 +239,18 @@ params = MHDParams(
 op = MHDStabilityOperator(params)
 A, B, interior_dofs, info = assemble_mhd_matrices(op)
 
+# Load the sparse A·x = σ·B·x solver
+include("src/OnsetEigenvalueSolver.jl")
+using .OnsetEigenvalueSolver: solve_eigenvalue_problem
+
 # Solve eigenvalue problem
 A_int = A[interior_dofs, interior_dofs]
 B_int = B[interior_dofs, interior_dofs]
-result = solve_eigenvalue_problem(A_int, B_int)
+eigenvalues, _, _ = solve_eigenvalue_problem(A_int, B_int)
 
 # Analyze results
-σ = result.σ
-ω = result.ω
+σ = real(eigenvalues[1])
+ω = imag(eigenvalues[1])
 if real(σ) > 0
     println("Unstable! Dynamo onset detected")
 end
@@ -263,9 +267,9 @@ for Ra in Ra_values
     params = MHDParams(E=1e-3, Pr=1.0, Pm=5.0, Ra=Ra, Le=Le, ...)
     op = MHDStabilityOperator(params)
     A, B, interior_dofs, _ = assemble_mhd_matrices(op)
-    result = solve_eigenvalue_problem(A[interior_dofs, interior_dofs],
-                                     B[interior_dofs, interior_dofs])
-    println("Ra = $Ra: σ = $(result.σ)")
+    eigenvalues, _, _ = solve_eigenvalue_problem(A[interior_dofs, interior_dofs],
+                                                B[interior_dofs, interior_dofs])
+    println("Ra = $Ra: σ = $(real(eigenvalues[1]))")
 end
 ```
 

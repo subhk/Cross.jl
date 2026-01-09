@@ -78,7 +78,10 @@ Chebyshev spectral differentiation for radial discretization.
 
 **Key Types:**
 ```julia
-struct ChebyshevDiffn{T<:Real}
+struct ChebyshevDiffn{T<:AbstractFloat}
+    n::Int            # Number of points
+    domain::Tuple{T,T}
+    max_order::Int
     x::Vector{T}      # Collocation points
     D1::Matrix{T}     # First derivative matrix
     D2::Matrix{T}     # Second derivative matrix
@@ -103,31 +106,37 @@ struct OnsetParams{T<:Real}
     m::Int            # Azimuthal wavenumber
     lmax::Int         # Maximum spherical harmonic degree
     Nr::Int           # Radial resolution
+    ri::T             # Inner radius
+    ro::T             # Outer radius
+    L::T              # Gap width (ro - ri)
     mechanical_bc::Symbol
     thermal_bc::Symbol
+    use_sparse_weighting::Bool
+    equatorial_symmetry::Symbol
+    basic_state
 end
 
 struct LinearStabilityOperator{T}
     params::OnsetParams{T}
-    A::Matrix{Complex{T}}  # Operator matrix
-    B::Matrix{Complex{T}}  # Mass matrix
-    # ... indices, operators
+    cd::ChebyshevDiffn{T}
+    r::Vector{T}
+    index_map::Dict{Tuple{Int,Symbol}, UnitRange{Int}}
+    l_sets::Dict{Symbol, Vector{Int}}
+    total_dof::Int
+    radial_cache::Dict{Tuple{Int,Int}, Matrix{T}}
 end
 ```
 
 **Key Functions:**
-- `assemble_matrices(params)` - Build A and B matrices
-- `solve_eigenvalue_problem(A, B; nev, which)` - Compute eigenvalues
-- `find_critical_rayleigh(params; tol)` - Find critical Ra
+- `assemble_matrices(op)` - Build A and B matrices
+- `solve_eigenvalue_problem(op; nev, which)` - Compute eigenvalues
+- `find_critical_rayleigh(E, Pr, χ, m, lmax, Nr; tol)` - Find critical Ra
 
 #### `get_velocity.jl`
-Reconstruct physical velocity and temperature fields from spectral coefficients.
+Convert poloidal/toroidal potentials on a grid to velocity components.
 
 **Key Functions:**
-- `potentials_to_velocity(P, T, op)` - Convert poloidal/toroidal to velocity
-- `velocity_fields_from_poloidal_toroidal(...)` - Full field reconstruction
-- `temperature_field_from_coefficients(...)` - Temperature reconstruction
-- `fields_from_coefficients(params, eigvec)` - All fields from eigenvector
+- `potentials_to_velocity(P, T; Dr, Dθ, Lθ, r, sintheta, m)` - Grid-based velocity
 
 ### Basic States
 
@@ -154,8 +163,13 @@ struct BasicState3D{T<:Real}
     Nr::Int
     r::Vector{T}
     theta_coeffs::Dict{Tuple{Int,Int},Vector{T}}  # θ̄_ℓm(r)
-    uphi_coeffs::Dict{Tuple{Int,Int},Vector{T}}   # ū_φ,ℓm(r)
-    # ... velocity components and derivatives
+    dtheta_dr_coeffs::Dict{Tuple{Int,Int},Vector{T}}
+    ur_coeffs::Dict{Tuple{Int,Int},Vector{T}}
+    utheta_coeffs::Dict{Tuple{Int,Int},Vector{T}}
+    uphi_coeffs::Dict{Tuple{Int,Int},Vector{T}}
+    dur_dr_coeffs::Dict{Tuple{Int,Int},Vector{T}}
+    dutheta_dr_coeffs::Dict{Tuple{Int,Int},Vector{T}}
+    duphi_dr_coeffs::Dict{Tuple{Int,Int},Vector{T}}
 end
 ```
 
@@ -254,7 +268,7 @@ end
 **Key Functions:**
 - `setup_coupled_mode_problem(params)` - Build coupled problem structure
 - `estimate_triglobal_problem_size(params)` - Size/memory estimates
-- `solve_triglobal_eigenvalue_problem(problem; nev)` - Solve coupled system
+- `solve_triglobal_eigenvalue_problem(params; nev, σ_target, verbose)` - Solve coupled system
 - `find_critical_rayleigh_triglobal(params)` - Critical Ra for 3D forcing
 
 ### Sparse Methods

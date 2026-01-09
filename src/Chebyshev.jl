@@ -34,7 +34,7 @@ Fields
 All derivative matrices act on column vectors of nodal values arranged in
 ascending order (from `x = a` to `x = b`).
 """
-struct ChebyshevDiffn{T<:Real}
+struct ChebyshevDiffn{T<:AbstractFloat}
     n::Int
     domain::Tuple{T,T}
     max_order::Int
@@ -100,7 +100,7 @@ promote_matrix(::Type{T}, M::Matrix{Float64}) where {T<:Real} = Matrix{T}(M)
 #  Constructor
 # -----------------------------------------------------------------------------
 
-function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) where {T<:Real}
+function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) where {T<:AbstractFloat}
     @assert length(domain) == 2 "Domain must be specified as [a, b]"
     @assert n ≥ 2 "Need at least two Chebyshev points"
     @assert 1 ≤ max_order ≤ 4 "Supported derivative orders: 1 ≤ max_order ≤ 4"

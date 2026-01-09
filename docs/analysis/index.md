@@ -149,6 +149,5 @@ boundary_modes = Dict((2,0) => 0.1, (2,2) => 0.05)
 bs3d = nonaxisymmetric_basic_state(cd, 0.35, 1e7, 1.0; boundary_modes)
 
 params = TriglobalParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m_range=-2:2, lmax=40, Nr=48, basic_state_3d=bs3d)
-problem = setup_coupled_mode_problem(params)
-solution = solve_triglobal_eigenvalue_problem(problem; nev=8)
+eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(params; nev=8)
 ```

@@ -16,7 +16,7 @@
 # =============================================================================
 
 """
-    is_dipole_case(params)
+    is_dipole_case(B0_type, ricb)
 
 Check if dipole field is active, requiring special operator handling.
 
@@ -28,14 +28,11 @@ Returns `true` if dipole operators should be used, `false` otherwise.
 
 # Examples
 ```julia
-params = MHDParams(B0_type=dipole, ricb=0.35, ...)
-is_dipole_case(params)  # Returns true
+is_dipole_case(dipole, 0.35)  # Returns true
 
-params = MHDParams(B0_type=dipole, ricb=0.0, ...)
-is_dipole_case(params)  # Returns false (no inner core)
+is_dipole_case(dipole, 0.0)  # Returns false (no inner core)
 
-params = MHDParams(B0_type=axial, ricb=0.35, ...)
-is_dipole_case(params)  # Returns false (not dipole)
+is_dipole_case(axial, 0.35)  # Returns false (not dipole)
 ```
 """
 function is_dipole_case(B0_type::BackgroundField, ricb::Real)

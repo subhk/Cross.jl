@@ -38,6 +38,17 @@ function build_thermal_wind(fθ::AbstractVector,
     N_r = length(r)
     size(Dθ, 1) == N_θ || throw(DimensionMismatch("Dθ must have $N_θ rows"))
     size(Dθ, 2) == N_θ || throw(DimensionMismatch("Dθ must have $N_θ columns"))
+    T = promote_type(eltype(r), eltype(fθ), eltype(Dθ), typeof(gα_2Ω))
+    r_i_val = T(r_i)
+    r_min, r_max = extrema(r)
+    tol = sqrt(eps(T))
+    abs(r_min - r_i_val) <= tol * max(one(T), abs(r_i_val)) ||
+        throw(ArgumentError("r must start at r_i=$r_i (got min(r)=$r_min)"))
+    if r_o !== nothing
+        r_o_val = T(r_o)
+        abs(r_max - r_o_val) <= tol * max(one(T), abs(r_o_val)) ||
+            throw(ArgumentError("r must end at r_o=$r_o (got max(r)=$r_max)"))
+    end
 
     # meridional derivative  f'(θ)
     df_dθ = Dθ * fθ                # size N_θ
@@ -48,12 +59,14 @@ function build_thermal_wind(fθ::AbstractVector,
     end
     length(sinθ) == N_θ || throw(DimensionMismatch("sintheta must have length $N_θ"))
     any(abs.(sinθ) .< eps(Float64)) && throw(ArgumentError("sintheta must be nonzero"))
+    any(abs.(r) .< eps(T)) && throw(ArgumentError("r must be nonzero"))
 
-    r_o_val = r_o === nothing ? maximum(r) : r_o
+    r_o_val = r_o === nothing ? T(r_max) : T(r_o)
+    gα_2Ω_val = T(gα_2Ω)
 
     # Thermal wind: dU/dr + U/r = -(gα/2Ω) * (1/(r_o sinθ)) * dθ̄/dθ
-    rhs = -(gα_2Ω / r_o_val) .* (df_dθ ./ sinθ)   # length N_θ
-    r2_minus = r .^ 2 .- r_i^2                    # length N_r
+    rhs = -(gα_2Ω_val / r_o_val) .* (df_dθ ./ sinθ)   # length N_θ
+    r2_minus = r .^ 2 .- r_i_val^2                    # length N_r
     Ubar = (0.5 .* r2_minus) .* rhs' ./ r         # (N_r x N_θ)
     dU_dr = rhs' .- (Ubar ./ r)                   # by definition
 

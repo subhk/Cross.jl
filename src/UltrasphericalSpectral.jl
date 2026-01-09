@@ -793,8 +793,6 @@ bc_type can be:
   - :dirichlet → u = 0
   - :neumann → du/dr = 0
   - :neumann2 → r · d²u/dr² = 0 (for stress-free)
-  - :no_slip → u = du/dr = 0 (for poloidal)
-  - :stress_free → u = d²u/dr² - 2u/r² = 0
 """
 function apply_boundary_conditions!(A::SparseMatrixCSC{T}, B::SparseMatrixCSC{T},
                                    bc_rows::Vector{Int}, bc_type::Symbol,
@@ -830,7 +828,8 @@ function apply_boundary_conditions!(A::SparseMatrixCSC{T}, B::SparseMatrixCSC{T}
             row_vals = r_boundary * scale^2 * _chebyshev_boundary_second_derivative(N, boundary)
             A[row, block_range] = T.(row_vals)
 
-        # Additional BC types can be added here
+        else
+            throw(ArgumentError("Unsupported boundary condition type: $(bc_type)"))
         end
     end
 

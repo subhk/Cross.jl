@@ -1065,7 +1065,7 @@ where k = (1-i)√(ω/2Eₘ) is the complex magnetic diffusion wavenumber.
 
 *Reference*: Kore assemble.py:1575-1612; Satapathy (2013)
 
-**Status**: Currently disabled. Use bci_magnetic=0 or 2 instead.
+**Status**: Implemented for `bci_magnetic=1`. For omega = 0, uses the small-k limit.
 
 ### Perfect Conductor ICB
 
@@ -1257,10 +1257,10 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 end
 
                 # If frequency is zero (steady state), condition reduces to f(ri) = 0
-                if freq == 0
+                if iszero(freq)
                     A[row_icb, :] .= zero(ComplexF64)
                     B[row_icb, :] .= zero(ComplexF64)
-                    A[row_icb, block_range] = ComplexF64.(inner_vals)
+                    A[row_icb, block_range] = ComplexF64.(r_inner .* inner_vals .- l .* inner_deriv)
                 else
                     k = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, k * ri)
@@ -1338,10 +1338,10 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                     error("Conducting magnetic BC requires Em > 0")
                 end
 
-                if freq == 0
+                if iszero(freq)
                     A[row_icb, :] .= zero(ComplexF64)
                     B[row_icb, :] .= zero(ComplexF64)
-                    A[row_icb, block_range] = ComplexF64.(inner_vals)
+                    A[row_icb, block_range] = ComplexF64.(r_inner .* inner_vals .- l .* inner_deriv)
                 else
                     kwave = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, kwave * ri)

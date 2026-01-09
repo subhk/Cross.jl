@@ -22,8 +22,11 @@ function velocity_from_potentials(op, P, T)
     Nr, Nθ = size(P)
     size(T) == size(P) || throw(DimensionMismatch("P and T must have same size"))
     size(op.Dr, 1) == Nr || throw(DimensionMismatch("Dr must have $Nr rows"))
+    size(op.Dr, 2) == Nr || throw(DimensionMismatch("Dr must have $Nr columns"))
     size(op.Dθ, 1) == Nθ || throw(DimensionMismatch("Dθ must have $Nθ rows"))
+    size(op.Dθ, 2) == Nθ || throw(DimensionMismatch("Dθ must have $Nθ columns"))
     size(op.Lθ, 1) == Nθ || throw(DimensionMismatch("Lθ must have $Nθ rows"))
+    size(op.Lθ, 2) == Nθ || throw(DimensionMismatch("Lθ must have $Nθ columns"))
 
     # Angular derivatives
     dθ_T = T * op.Dθ'
@@ -35,14 +38,19 @@ function velocity_from_potentials(op, P, T)
     # Common geometric factors
     inv_r = _get_inv_r(op, Nr)
     inv_r2 = inv_r .* inv_r
-    inv_r_sinθ = _get_inv_r_sinθ(op, inv_r, Nr, Nθ)
 
     im_m = _get_im_m(op)
 
     # Velocity components
     u_r = -lap_ang_P .* inv_r2
-    u_θ = (dr_P * op.Dθ') .* inv_r .+ (im_m .* T) .* inv_r_sinθ
-    u_φ = (im_m .* dr_P) .* inv_r_sinθ .- (dθ_T .* inv_r)
+    u_θ = (dr_P * op.Dθ') .* inv_r
+    u_φ = -(dθ_T .* inv_r)
+
+    if !iszero(im_m)
+        inv_r_sinθ = _get_inv_r_sinθ(op, inv_r, Nr, Nθ)
+        u_θ .+= (im_m .* T) .* inv_r_sinθ
+        u_φ .+= (im_m .* dr_P) .* inv_r_sinθ
+    end
 
     return u_r, u_θ, u_φ
 end
@@ -167,6 +175,11 @@ function _boundary_indices(op, Nr::Int)
         r = op.r
         length(r) == Nr || throw(DimensionMismatch("r must have length $Nr"))
         return r[1] < r[end] ? (1, Nr) : (Nr, 1)
+    end
+    if hasproperty(op, :inv_r)
+        inv_r = _get_inv_r(op, Nr)
+        inv_r_vec = _inv_r_vector(inv_r, Nr)
+        return inv_r_vec[1] > inv_r_vec[end] ? (1, Nr) : (Nr, 1)
     end
     return Nr, 1
 end

@@ -535,13 +535,18 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
         T_in_idx = haskey(op.index_map, (ℓ_input, :T)) ? op.index_map[(ℓ_input, :T)] : nothing
 
         # =====================================================================
-        # 1. Add advection operator to temperature equation
-        #    ∂θ'_ℓ_output/∂t term: (ū_φ/(r sin θ)) ∂θ'_ℓ_input/∂φ
-        #    This couples θ'_ℓ_input → θ'_ℓ_output
+        # 1. Add advection operator to scalar fields (P, T, Θ)
+        #    (ū_φ/(r sin θ)) ∂/∂φ acts as im·m × ū_φ/(r sin θ)
         # =====================================================================
-        if Θ_out_idx !== nothing && Θ_in_idx !== nothing
-            if haskey(basic_state_ops.advection_blocks, (ℓ_output, ℓ_input))
-                adv_block = basic_state_ops.advection_blocks[(ℓ_output, ℓ_input)]
+        if haskey(basic_state_ops.advection_blocks, (ℓ_output, ℓ_input))
+            adv_block = basic_state_ops.advection_blocks[(ℓ_output, ℓ_input)]
+            if P_out_idx !== nothing && P_in_idx !== nothing
+                A[P_out_idx, P_in_idx] .+= adv_block
+            end
+            if T_out_idx !== nothing && T_in_idx !== nothing
+                A[T_out_idx, T_in_idx] .+= adv_block
+            end
+            if Θ_out_idx !== nothing && Θ_in_idx !== nothing
                 A[Θ_out_idx, Θ_in_idx] .+= adv_block
             end
         end

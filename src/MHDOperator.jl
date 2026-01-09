@@ -28,7 +28,6 @@ using .UltrasphericalSpectral
 
 export MHDParams,
        MHDStabilityOperator,
-       assemble_mhd_matrices,
        BackgroundField,
        no_field, axial, dipole,
        is_dipole_case,
@@ -98,7 +97,6 @@ MHD linear stability analysis or dynamo onset calculations.
 - `ricb::T`: **Inner core radius** (normalized, outer radius = 1)
   - Must satisfy 0 < ricb < 1
   - Earth's core: χ ≈ 0.35
-  - ricb = 0: Full sphere (no inner core)
 
 - `m::Int`: **Azimuthal wavenumber**
   - Fourier mode number in longitude (φ-direction)
@@ -275,6 +273,14 @@ struct MHDParams{T<:Real}
         # Dipole field requires non-zero inner core radius
         if B0_type == dipole && ricb <= 0
             error("Dipole background field requires ricb > 0 (non-zero inner core radius)")
+        end
+
+        if B0_type == no_field
+            if !iszero(Le) || !iszero(B0_amplitude)
+                error("B0_type=no_field requires Le=0 and B0_amplitude=0")
+            end
+        elseif iszero(Le)
+            error("Background field requires Le > 0")
         end
 
         # Conducting BC requires positive magnetic Ekman number
@@ -548,7 +554,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
     # Determine l-mode structure
     ll_u, ll_v = compute_mhd_l_modes(params.m, params.lmax, params.symm, params.B0_type)
 
-    has_magnetic = !(iszero(params.Le) && params.B0_type == no_field && iszero(params.B0_amplitude))
+    has_magnetic = params.B0_type != no_field
 
     # Magnetic field parity depends on background field symmetry (symmB0)
     # For axial and dipole fields, symmB0 = -1 (equatorially antisymmetric)

@@ -22,6 +22,15 @@ struct DummyOpWithInvR{T,S,R}
     inv_r::Matrix{R}
 end
 
+struct DummyOpInvROnly{T,S}
+    Dr::Matrix{T}
+    Dθ::Matrix{T}
+    Lθ::Matrix{T}
+    sintheta::Vector{S}
+    m::Int
+    inv_r::Vector{S}
+end
+
 function build_test_data()
     nr = 4
     ntheta = 3
@@ -171,4 +180,49 @@ end
 
     @test isapprox(res_T[1, :], theta[1, :] .- 3.0)
     @test isapprox(res_T[nr, :], dtheta[nr, :] .- 2.0)
+end
+
+@testset "Boundary ordering inferred from inv_r when r is missing" begin
+    data = build_test_data()
+    nr = data.nr
+
+    inv_r_asc = 1.0 ./ data.r_asc
+    op_inv_only = DummyOpInvROnly(data.Dr, data.op_desc.Dθ, data.op_desc.Lθ,
+                                  data.op_desc.sintheta, 2, inv_r_asc)
+
+    theta = reshape(ComplexF64.(collect(1.0:12.0)), nr, data.ntheta)
+    res_T = fill(ComplexF64(-1.0), nr, data.ntheta)
+
+    apply_thermal_bc_from_potentials!(res_T, theta, op_inv_only;
+                                      inner = :fixed_flux,
+                                      outer = :fixed_temperature,
+                                      value_outer = 3.0,
+                                      flux_inner = 2.0)
+
+    dtheta = data.Dr * theta
+
+    @test isapprox(res_T[1, :], dtheta[1, :] .- 2.0)
+    @test isapprox(res_T[nr, :], theta[nr, :] .- 3.0)
+end
+
+@testset "m=0 avoids sinθ singularities" begin
+    nr = 3
+    ntheta = 3
+
+    Dr = Matrix{ComplexF64}(I, nr, nr)
+    Dtheta = Matrix{ComplexF64}(I, ntheta, ntheta)
+    Ltheta = Matrix{ComplexF64}(I, ntheta, ntheta)
+
+    r = Float64[1.0, 0.8, 0.6]
+    sin_theta = Float64[0.0, 1.0, 0.0]
+
+    poloidal = reshape(ComplexF64.(collect(1.0:9.0)), nr, ntheta)
+    toroidal = reshape(ComplexF64.(collect(10.0:18.0)), nr, ntheta)
+
+    op = DummyOpNoInvR(Dr, Dtheta, Ltheta, r, sin_theta, 0)
+    u_r, u_theta, u_phi = velocity_from_potentials(op, poloidal, toroidal)
+
+    @test all(isfinite, u_r)
+    @test all(isfinite, u_theta)
+    @test all(isfinite, u_phi)
 end

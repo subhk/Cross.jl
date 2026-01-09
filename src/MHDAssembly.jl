@@ -413,7 +413,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
             # B matrix: Time derivative
             # -----------------------------------------------------------------
             b_pol = operator_b_poloidal(op, l)
-            add_block!(B_rows, B_cols, B_vals, b_pol, row_base, col_base)
+            add_block!(B_rows, B_cols, B_vals, -b_pol, row_base, col_base)
 
             # -----------------------------------------------------------------
             # A matrix: RHS operators
@@ -464,7 +464,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
             # B matrix: Time derivative
             # -----------------------------------------------------------------
             b_tor = operator_b_toroidal(op, l)
-            add_block!(B_rows, B_cols, B_vals, b_tor, row_base, col_base)
+            add_block!(B_rows, B_cols, B_vals, -b_tor, row_base, col_base)
 
             # -----------------------------------------------------------------
             # A matrix: RHS operators

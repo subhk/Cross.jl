@@ -55,10 +55,7 @@ boundary_modes = Dict(
 )
 
 bs3d = nonaxisymmetric_basic_state(
-    cd, 0.35, 1e7, 1.0;
-    lmax_bs = 8,
-    mmax_bs = 4,
-    boundary_modes,
+    cd, 0.35, 1e-5, 1e7, 1.0, 8, 4, boundary_modes
 )
 ```
 
@@ -259,8 +256,7 @@ results = []
 
 for amp in amplitudes
     boundary_modes = Dict((2, 2) => amp)
-    bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
-        lmax_bs = 8, mmax_bs = 4, boundary_modes)
+    bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 
     params = TriglobalParams(
         E = E, Pr = Pr, Ra = Ra, χ = χ,
@@ -324,8 +320,7 @@ boundary_modes = Dict(
     (2, 2) => 0.08,
 )
 
-bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
-    lmax_bs = 8, mmax_bs = 4, boundary_modes)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 
 # === Tri-Global Setup ===
 params = TriglobalParams(

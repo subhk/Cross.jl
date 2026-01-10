@@ -194,10 +194,7 @@ boundary_modes = Dict(
 
 # Create 3D basic state
 bs3d = nonaxisymmetric_basic_state(
-    cd, χ, Ra, Pr;
-    lmax_bs = 8,
-    mmax_bs = 4,
-    boundary_modes = boundary_modes,
+    cd, χ, E, Ra, Pr, 8, 4, boundary_modes
 )
 ```
 
@@ -286,8 +283,7 @@ boundary_modes = Dict(
     (2, 2) => 0.08,   # Non-axisymmetric: m = 2
 )
 
-bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
-    lmax_bs = 8, mmax_bs = 4, boundary_modes)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 ```
 
 ### Step 2: Define Triglobal Parameters
@@ -473,8 +469,7 @@ for amp in amplitudes
         )
     end
 
-    bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
-        lmax_bs = 8, mmax_bs = 4, boundary_modes)
+    bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 
     params = TriglobalParams(
         E = E, Pr = Pr, Ra = Ra, χ = χ,
@@ -564,8 +559,7 @@ for ((ℓ, m), amp) in boundary_modes
     println("  Y($ℓ,$m) amplitude = $amp")
 end
 
-bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
-    lmax_bs = 8, mmax_bs = 4, boundary_modes)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 
 # === Triglobal Setup ===
 params = TriglobalParams(

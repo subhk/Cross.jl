@@ -429,10 +429,7 @@ Create 3D basic state with specified boundary modes.
 
 ```julia
 bs3d = nonaxisymmetric_basic_state(
-    cd, χ, Ra, Pr;
-    lmax_bs = 8,
-    mmax_bs = 4,
-    boundary_modes = Dict((2,2) => 0.1),
+    cd, χ, E, Ra, Pr, 8, 4, Dict((2,2) => 0.1)
 )
 ```
 

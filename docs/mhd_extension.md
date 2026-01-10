@@ -163,7 +163,7 @@ end
 
 | Value | Type | Conditions |
 |-------|------|------------|
-| 0 | Stress-free | $u_r = 0$, $\partial^2 u/\partial r^2 = 0$ (poloidal); $\partial v/\partial r = 0$ (toroidal) |
+| 0 | Stress-free | $u_r = 0$, $\partial^2 u/\partial r^2 = 0$ (poloidal); $-r \partial v/\partial r + v = 0$ (toroidal) |
 | 1 | No-slip | $\mathbf{u} = 0$ at boundary |
 
 #### Temperature (Thermal)

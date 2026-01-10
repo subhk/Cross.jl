@@ -136,8 +136,7 @@ boundary_modes = Dict(
     (2, 2) => 0.05,   # Non-axisymmetric Y₂₂
 )
 
-bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
-    lmax_bs=8, mmax_bs=4, boundary_modes)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 ```
 
 ---

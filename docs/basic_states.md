@@ -162,13 +162,16 @@ boundary_modes = Dict(
     (2, 2) => 0.05,   # Y₂₂ amplitude at boundary
 )
 
+E = 1e-5
+
 bs3d = nonaxisymmetric_basic_state(
     cd,               # Chebyshev differentiation
     χ,                # Radius ratio
+    E,                # Ekman number
     Ra,               # Rayleigh number
     Pr,               # Prandtl number
-    lmax_bs = 8,
-    mmax_bs = 4,
+    8,
+    4,
     boundary_modes,
 )
 ```
@@ -332,11 +335,7 @@ boundary_modes = Dict(
     (3, 2) => 0.03,     # Higher-order structure
 )
 
-bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr;
-    lmax_bs = 10,
-    mmax_bs = 4,
-    boundary_modes,
-)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 10, 4, boundary_modes)
 
 # Use with tri-global analysis
 tri_params = TriglobalParams(

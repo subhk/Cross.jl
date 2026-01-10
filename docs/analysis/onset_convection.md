@@ -246,7 +246,7 @@ The convective columns (thermal Rossby waves) become thinner at lower Ekman numb
 | Type | Mathematical Form | Physical Meaning |
 |------|-------------------|------------------|
 | No-slip | $\mathbf{u} = 0$ | Fluid adheres to boundary |
-| Stress-free | $u_r = 0$, $\partial(u_\theta/r)/\partial r = 0$ | Zero tangential stress |
+| Stress-free | $P=0$, $r \partial_r^2 P = 0$, $-r \partial_r T + T = 0$ | Zero tangential stress |
 
 **No-slip** boundaries are appropriate for:
 - Solid inner cores (Earth, terrestrial planets)

@@ -425,10 +425,10 @@ end
 # =============================================================================
 
 """
-    nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T,
+    nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::Real, E::Real, Ra::Real, Pr::Real,
                                 lmax_bs::Int, mmax_bs::Int,
                                 amplitudes::AbstractDict;
-                                mechanical_bc::Symbol=:no_slip) where T<:Real
+                                mechanical_bc::Symbol=:no_slip) where T
 
 Create a 3D basic state with both meridional and longitudinal temperature variations.
 
@@ -466,10 +466,10 @@ Example:
     )
     bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 4, 2, amplitudes)
 """
-function nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T,
+function nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::Real, E::Real, Ra::Real, Pr::Real,
                                      lmax_bs::Int, mmax_bs::Int,
                                      amplitudes::AbstractDict;
-                                     mechanical_bc::Symbol=:no_slip) where T<:Real
+                                     mechanical_bc::Symbol=:no_slip) where T
 
     r = cd.x
     Nr = length(r)

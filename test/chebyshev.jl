@@ -1,6 +1,5 @@
 using Test
-
-include("../src/Chebyshev.jl")
+using Cross
 
 @testset "ChebyshevDiffn polynomial derivatives" begin
     n = 8

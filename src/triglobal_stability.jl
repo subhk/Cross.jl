@@ -312,7 +312,8 @@ Returns a dictionary mapping m to a NamedTuple with:
 """
 function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bool) where T
     params_tri = problem.params
-    single_mode_ops = Dict{Int, NamedTuple{(:A, :B, :op, :idx_map), Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Any, Dict{Tuple{Int,Symbol}, Vector{Int}}}}}()
+    single_mode_ops = Dict{Int, NamedTuple{(:A, :B, :op, :idx_map), Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, 
+                    Any, Dict{Tuple{Int,Symbol}, Vector{Int}}}}}()
     basic_state_axis = axisymmetric_basic_state(params_tri.basic_state_3d)
     has_axisymmetric = _has_nonzero_basic_state(basic_state_axis)
 
@@ -1296,11 +1297,11 @@ end
 Assemble the full block-coupled matrices A_coupled and B_coupled.
 
 The structure is:
-    ┌                     ┐
-    │ A_{m1}   C_{12}  0  │
-    │ C_{21}   A_{m2} C_{23}│
-    │ 0      C_{32}  A_{m3}│
-    └                     ┘
+    ┌                         ┐
+    │ A_{m1}   C_{12}    0    │
+    │ C_{21}   A_{m2}  C_{23} │
+    │ 0        C_{32}  A_{m3} │
+    └                         ┘
 
 where A_{mi} are single-mode operators and C_{ij} are coupling operators.
 """

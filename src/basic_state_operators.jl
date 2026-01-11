@@ -149,6 +149,20 @@ function compute_gaunt_coefficient(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int, ℓ3:
 end
 
 
+"""
+    _theta_derivative_coeff(l::Int, m::Int)
+
+Compute spherical harmonic θ-derivative coupling coefficients.
+
+For ∂Y_ℓm/∂θ → Y_{ℓ±1,m}, the standard recurrence relations give:
+- c_plus (coupling to ℓ+1): -(ℓ+1) × √[((ℓ+1)²-m²)/((2ℓ+1)(2ℓ+3))]
+- c_minus (coupling to ℓ-1): +ℓ × √[(ℓ²-m²)/((2ℓ-1)(2ℓ+1))]
+
+These follow from the associated Legendre recurrence:
+  (1-x²) dP_ℓ^m/dx = -ℓx P_ℓ^m + (ℓ+m) P_{ℓ-1}^m
+
+Returns (c_plus, c_minus).
+"""
 function _theta_derivative_coeff(l::Int, m::Int)
     if l < abs(m)
         return (0.0, 0.0)
@@ -157,16 +171,18 @@ function _theta_derivative_coeff(l::Int, m::Int)
     c_plus = 0.0
     c_minus = 0.0
 
+    # Coupling to ℓ+1: coefficient = -(ℓ+1) × √[((ℓ+1)²-m²)/((2ℓ+1)(2ℓ+3))]
     if l > 0
         num_plus = (l + 1)^2 - m^2
         den_plus = (2l + 1) * (2l + 3)
-        c_plus = l * sqrt(num_plus / den_plus)
+        c_plus = -(l + 1) * sqrt(num_plus / den_plus)
     end
 
+    # Coupling to ℓ-1: coefficient = +ℓ × √[(ℓ²-m²)/((2ℓ-1)(2ℓ+1))]
     if l > abs(m)
         num_minus = l^2 - m^2
         den_minus = (2l - 1) * (2l + 1)
-        c_minus = -(l + 1) * sqrt(num_minus / den_minus)
+        c_minus = l * sqrt(num_minus / den_minus)
     end
 
     return (c_plus, c_minus)

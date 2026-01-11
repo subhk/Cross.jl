@@ -16,7 +16,6 @@ module Cross
     include("get_velocity.jl")
     include("basic_state.jl")
     include("basic_state_operators.jl")
-    include("thermal_wind.jl")
     include("linear_stability.jl")
 
     # Three analysis modes (dedicated modules)
@@ -49,6 +48,8 @@ module Cross
         meridional_basic_state,
         solve_thermal_wind_balance!,
         build_thermal_wind,
+        build_thermal_wind_3d,
+        theta_derivative_coeff_3d,
         BasicState3D,
         nonaxisymmetric_basic_state,
         solve_thermal_wind_balance_3d!,

@@ -12,6 +12,7 @@
 
 using Parameters
 using LinearAlgebra
+using SparseArrays
 
 """
     BasicState{T<:Real}
@@ -426,8 +427,8 @@ end
 """
     nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T,
                                 lmax_bs::Int, mmax_bs::Int,
-                                amplitudes::Dict{Tuple{Int,Int},T};
-                                mechanical_bc::Symbol=:no_slip) where T
+                                amplitudes::AbstractDict;
+                                mechanical_bc::Symbol=:no_slip) where T<:Real
 
 Create a 3D basic state with both meridional and longitudinal temperature variations.
 
@@ -467,8 +468,8 @@ Example:
 """
 function nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T,
                                      lmax_bs::Int, mmax_bs::Int,
-                                     amplitudes::Dict{Tuple{Int,Int},T};
-                                     mechanical_bc::Symbol=:no_slip) where T
+                                     amplitudes::AbstractDict;
+                                     mechanical_bc::Symbol=:no_slip) where T<:Real
 
     r = cd.x
     Nr = length(r)
@@ -1063,4 +1064,378 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
     end
 
     return nothing
+end
+
+
+# =============================================================================
+#  Collocation-Based Thermal Wind Helpers for Linear Stability Operators
+#
+#  These functions compute thermal wind profiles and return sparse diagonal
+#  matrices suitable for direct insertion into the linear stability operator.
+#  Unlike the spectral-coefficient functions above (solve_thermal_wind_balance!),
+#  these work on collocation grids (r, θ).
+# =============================================================================
+
+"""
+    build_thermal_wind(fθ::AbstractVector, r::AbstractVector;
+                       gα_2Ω::Float64 = 1.0,
+                       Dθ::AbstractMatrix,
+                       m::Int,
+                       r_i::Float64,
+                       r_o::Union{Nothing,Float64}=nothing,
+                       sintheta::Union{Nothing,AbstractVector}=nothing)
+
+Build thermal wind sparse matrices for the linear stability operator.
+
+Given a latitude-only temperature anomaly `fθ[k] = f(θ_k)` on Gauss-Legendre nodes,
+compute the zonal flow ū_φ(r,θ) from thermal wind balance and return three sparse
+diagonal matrices for the linear operator.
+
+The thermal wind equation is:
+    dŪ/dr + Ū/r = -(gα/2Ω) × (1/(r_o sin θ)) × ∂Θ̄/∂θ
+
+# Arguments
+- `fθ`: Temperature anomaly at θ collocation points
+- `r`: Chebyshev radial nodes (ascending from r_i to r_o)
+- `gα_2Ω`: Dimensional prefactor g×α/(2Ω). For Cross.jl: `Ra × E² / (2 × Pr)`
+- `Dθ`: Derivative matrix ∂/∂θ on the θ grid
+- `m`: Azimuthal wavenumber for perturbations
+- `r_i`: Inner radius
+- `r_o`: Outer radius (optional, defaults to max(r))
+- `sintheta`: sin(θ) at collocation points (required)
+
+# Returns
+- `U_m`: Sparse diagonal matrix for −Ū ∂φ term
+- `S_r`: Sparse diagonal matrix for −u_r ∂rŪ term
+- `S_θ`: Sparse diagonal matrix for −u_θ (1/r) ∂θT̄ term
+
+# Example
+```julia
+U_m, S_r, S_θ = build_thermal_wind(fθ, r;
+                                    Dθ=Dθ, m=m,
+                                    gα_2Ω=Ra * E^2 / (2 * Pr),
+                                    r_i=r_i, r_o=r_o,
+                                    sintheta=sintheta)
+```
+"""
+function build_thermal_wind(fθ::AbstractVector,
+                            r::AbstractVector;
+                            gα_2Ω::Float64 = 1.0,
+                            Dθ::AbstractMatrix,
+                            m::Int,
+                            r_i::Float64,
+                            r_o::Union{Nothing,Float64}=nothing,
+                            sintheta::Union{Nothing,AbstractVector}=nothing)
+
+    N_θ = length(fθ)
+    N_r = length(r)
+    size(Dθ, 1) == N_θ || throw(DimensionMismatch("Dθ must have $N_θ rows"))
+    size(Dθ, 2) == N_θ || throw(DimensionMismatch("Dθ must have $N_θ columns"))
+    T = promote_type(eltype(r), eltype(fθ), eltype(Dθ), typeof(gα_2Ω))
+    r_i_val = T(r_i)
+    r_min, r_max = extrema(r)
+    tol = sqrt(eps(T))
+    abs(r_min - r_i_val) <= tol * max(one(T), abs(r_i_val)) ||
+        throw(ArgumentError("r must start at r_i=$r_i (got min(r)=$r_min)"))
+    if r_o !== nothing
+        r_o_val = T(r_o)
+        abs(r_max - r_o_val) <= tol * max(one(T), abs(r_o_val)) ||
+            throw(ArgumentError("r must end at r_o=$r_o (got max(r)=$r_max)"))
+    end
+
+    # meridional derivative  f'(θ)
+    df_dθ = Dθ * fθ                # size N_θ
+
+    sinθ = sintheta
+    if sinθ === nothing
+        throw(ArgumentError("sintheta must be provided to build_thermal_wind"))
+    end
+    length(sinθ) == N_θ || throw(DimensionMismatch("sintheta must have length $N_θ"))
+    any(abs.(sinθ) .< eps(Float64)) && throw(ArgumentError("sintheta must be nonzero"))
+    any(abs.(r) .< eps(T)) && throw(ArgumentError("r must be nonzero"))
+
+    r_o_val = r_o === nothing ? T(r_max) : T(r_o)
+    gα_2Ω_val = T(gα_2Ω)
+
+    # Thermal wind: dU/dr + U/r = -(gα/2Ω) * (1/(r_o sinθ)) * dθ̄/dθ
+    # Rewrite as: d(r·U)/dr = r × RHS
+    # Integrate with U(r_i) = 0: r·U = (r² - r_i²)/2 × RHS
+    # Particular solution: U_part = (r² - r_i²)/(2r) × RHS
+    rhs = -(gα_2Ω_val / r_o_val) .* (df_dθ ./ sinθ)   # length N_θ
+    r2_minus = r .^ 2 .- r_i_val^2                    # length N_r
+    Ubar_part = (0.5 .* r2_minus) .* rhs' ./ r        # (N_r x N_θ) particular solution
+
+    # Add homogeneous solution to satisfy outer BC: U(r_o) = 0
+    # Homogeneous solution: U_hom = C/r (satisfies d(r·U)/dr = 0)
+    # Choose C so that U_part(r_o) + C/r_o = 0
+    # C = -r_o × U_part(r_o)
+    Ubar_ro = (0.5 * (r_o_val^2 - r_i_val^2)) .* rhs' ./ r_o_val  # U_part at r_o (1 x N_θ)
+    C_hom = -r_o_val .* Ubar_ro                                   # (1 x N_θ)
+    Ubar = Ubar_part .+ C_hom ./ r                                # Add homogeneous solution
+
+    # Enforce BCs exactly (numerical cleanup)
+    # After adding C/r, U(r_i) = C/r_i ≠ 0 in general, so we force it to zero
+    Ubar[1, :] .= zero(T)
+    Ubar[end, :] .= zero(T)
+
+    # Derivative: dU/dr = d(U_part)/dr + d(C/r)/dr
+    #           = RHS - U_part/r - C/r²
+    dU_dr = rhs' .- (Ubar_part ./ r) .- (C_hom ./ (r.^2))
+
+    # flatten in (r,θ) lexicographic order (r fastest: column-major from N_r × N_θ matrix)
+    # Index pattern: (r₁,θ₁), (r₂,θ₁), ..., (r_Nr,θ₁), (r₁,θ₂), ...
+    Uvec   = vec(Ubar)
+    dUvec  = vec(dU_dr)
+
+    # Repeat patterns for r-fastest ordering:
+    # - rs: each r value appears once, then repeats for each θ: [r₁,r₂,...,r_Nr, r₁,r₂,...,r_Nr, ...]
+    # - sint/dfvec: each θ value repeats N_r times: [s₁,s₁,...,s₁, s₂,s₂,...,s₂, ...]
+    rs     = repeat(r, outer=N_θ)              # r values repeated for each θ block
+    sint   = repeat(vec(sinθ), inner=N_r)      # sin(θ) repeated N_r times per θ value
+    dfvec  = repeat(vec(df_dθ), inner=N_r)     # ∂θf repeated N_r times per θ value
+
+    im_m      = im * m
+    U_m = spdiagm(0 => (-Uvec .* im_m) ./ (rs .* sint))   # −Ū ∂φ
+    S_r = spdiagm(0 => -dUvec)                            # −u_r ∂rŪ
+    S_θ = spdiagm(0 => -(dfvec ./ rs))                    # −u_θ (1/r) ∂θT̄
+
+    return U_m, S_r, S_θ
+end
+
+
+"""
+    build_thermal_wind_3d(theta_coeffs::Dict{Int, Vector{T}},
+                          r::AbstractVector{T};
+                          m_bs::Int,
+                          gα_2Ω::T,
+                          r_i::T,
+                          r_o::T,
+                          D1::AbstractMatrix{T},
+                          mechanical_bc::Symbol = :no_slip) where T<:Real
+
+Compute thermal wind balance for non-axisymmetric temperature variations.
+
+For a temperature field expanded in spherical harmonics with azimuthal wavenumber `m_bs`:
+    Θ̄(r, θ, φ) = Σ_ℓ Θ̄_ℓ(r) Y_ℓ,m_bs(θ, φ)
+
+the thermal wind equation is:
+    sin(θ) ∂ū_φ/∂r - cos(θ) ū_φ/r = -(gα/2Ω) × (1/r_o) × ∂Θ̄/∂θ
+
+The θ-derivative of Y_ℓm couples to Y_{ℓ±1,m}:
+    ∂Y_ℓm/∂θ = c_plus × Y_{ℓ+1,m} + c_minus × Y_{ℓ-1,m}
+
+where (standard recurrence relations):
+    c_plus  = -(ℓ+1) × √[((ℓ+1)²-m²)/((2ℓ+1)(2ℓ+3))]  (coupling to ℓ+1)
+    c_minus = +ℓ × √[(ℓ²-m²)/((2ℓ-1)(2ℓ+1))]          (coupling to ℓ-1)
+
+# Arguments
+- `theta_coeffs`: Dictionary mapping spherical harmonic degree ℓ to radial coefficients Θ̄_ℓ(r)
+- `r`: Radial grid (Chebyshev nodes, ascending from r_i to r_o)
+- `m_bs`: Azimuthal wavenumber of the basic state
+- `gα_2Ω`: Dimensional prefactor g×α/(2Ω). For Cross.jl: `Ra × E² / (2 × Pr)`
+- `r_i, r_o`: Inner and outer radii
+- `D1`: Chebyshev first derivative matrix
+- `mechanical_bc`: Boundary condition (:no_slip or :stress_free)
+
+# Returns
+- `uphi_coeffs`: Dictionary mapping L to ū_φ,L(r) coefficients
+- `duphi_dr_coeffs`: Dictionary mapping L to ∂ū_φ,L/∂r coefficients
+
+# Example
+```julia
+uphi, duphi_dr = build_thermal_wind_3d(theta_coeffs, r;
+                                        m_bs=2,
+                                        gα_2Ω=Ra * E^2 / (2 * Pr),
+                                        r_i=r_i, r_o=r_o,
+                                        D1=cd.D1)
+```
+"""
+function build_thermal_wind_3d(theta_coeffs::Dict{Int, Vector{T}},
+                               r::AbstractVector{T};
+                               m_bs::Int,
+                               gα_2Ω::T,
+                               r_i::T,
+                               r_o::T,
+                               D1::AbstractMatrix{T},
+                               mechanical_bc::Symbol = :no_slip) where T<:Real
+
+    Nr = length(r)
+
+    # Validate inputs
+    size(D1, 1) == Nr || throw(DimensionMismatch("D1 must have $Nr rows"))
+    size(D1, 2) == Nr || throw(DimensionMismatch("D1 must have $Nr columns"))
+
+    if !(mechanical_bc in (:no_slip, :stress_free))
+        error("mechanical_bc must be :no_slip or :stress_free, got: $mechanical_bc")
+    end
+
+    # Initialize output dictionaries
+    uphi_coeffs = Dict{Int, Vector{T}}()
+    duphi_dr_coeffs = Dict{Int, Vector{T}}()
+
+    # For m_bs = 0, the thermal wind decouples in ℓ (handled by build_thermal_wind)
+    # Here we handle m_bs ≠ 0 where θ-derivative couples ℓ to L = ℓ ± 1
+
+    # Spherical harmonic normalization factor ratio
+    function Y_norm_ratio(ℓ::Int, L::Int, m::Int)
+        # Y_ℓm normalization: √[(2ℓ+1)/(4π) × (ℓ-m)!/(ℓ+m)!] for complex SH
+        # For real SH with m≠0, additional √2 factor cancels in ratio
+        return sqrt(T(2*ℓ + 1) / T(2*L + 1))
+    end
+
+    # =========================================================================
+    # Compute forcing coefficients F_L(r) from ∂Θ̄/∂θ
+    # =========================================================================
+    #
+    # Temperature mode Θ̄_ℓ Y_ℓm contributes to forcing at L = ℓ-1 and L = ℓ+1
+    # through the θ-derivative coupling coefficients.
+
+    forcing = Dict{Int, Vector{T}}()
+
+    for (ℓ, θ_coeff) in theta_coeffs
+        if ℓ < abs(m_bs)
+            continue  # Invalid: ℓ must be ≥ |m|
+        end
+
+        if maximum(abs.(θ_coeff)) < eps(T) * 1000
+            continue  # Skip negligible modes
+        end
+
+        # Coupling to L = ℓ - 1 (if ℓ > |m|, so that L ≥ |m|)
+        if ℓ > abs(m_bs)
+            L_minus = ℓ - 1
+            # c_minus = +ℓ × √[(ℓ²-m²)/((2ℓ-1)(2ℓ+1))] × norm_ratio
+            denom_minus = T((2*ℓ - 1) * (2*ℓ + 1))
+            numer_minus = T(ℓ^2 - m_bs^2)
+            if denom_minus > 0 && numer_minus >= 0
+                c_minus = T(ℓ) * sqrt(numer_minus / denom_minus)
+                c_minus *= Y_norm_ratio(ℓ, L_minus, m_bs)
+
+                if !haskey(forcing, L_minus)
+                    forcing[L_minus] = zeros(T, Nr)
+                end
+                forcing[L_minus] .+= c_minus .* θ_coeff
+            end
+        end
+
+        # Coupling to L = ℓ + 1 (always valid)
+        L_plus = ℓ + 1
+        # c_plus = -(ℓ+1) × √[((ℓ+1)²-m²)/((2ℓ+1)(2ℓ+3))] × norm_ratio
+        denom_plus = T((2*ℓ + 1) * (2*ℓ + 3))
+        numer_plus = T((ℓ + 1)^2 - m_bs^2)
+        if denom_plus > 0 && numer_plus >= 0
+            c_plus = -T(ℓ + 1) * sqrt(numer_plus / denom_plus)
+            c_plus *= Y_norm_ratio(ℓ, L_plus, m_bs)
+
+            if !haskey(forcing, L_plus)
+                forcing[L_plus] = zeros(T, Nr)
+            end
+            forcing[L_plus] .+= c_plus .* θ_coeff
+        end
+    end
+
+    # =========================================================================
+    # Thermal wind prefactor (includes E² scaling)
+    # =========================================================================
+    prefactor = -gα_2Ω / r_o
+
+    # =========================================================================
+    # Solve ODE for each L mode: d(r·ū_φ)/dr = prefactor × r² × F_L
+    # =========================================================================
+    for (L, F_L) in forcing
+        if L < abs(m_bs)
+            continue  # L must be ≥ |m|
+        end
+
+        # RHS for ODE after multiplying by r
+        rhs = prefactor .* (r.^2) .* F_L
+
+        # Integrate from inner boundary using trapezoidal rule
+        r_uphi = zeros(T, Nr)
+        r_uphi[1] = zero(T)  # BC: r×ū_φ = 0 at r = r_i
+
+        for i in 2:Nr
+            dr = r[i] - r[i-1]
+            r_uphi[i] = r_uphi[i-1] + T(0.5) * (rhs[i-1] + rhs[i]) * dr
+        end
+
+        # Convert to ū_φ = (r·ū_φ) / r
+        uphi_L = r_uphi ./ r
+
+        # Apply boundary conditions
+        if mechanical_bc == :no_slip
+            # Add homogeneous solution C/r to satisfy ū_φ(r_o) = 0
+            # Homogeneous solution: d(r·U)/dr = 0 → r·U = const → U = C/r
+            uphi_ro = uphi_L[end]
+            C_hom = -r_o * uphi_ro
+            uphi_L .+= C_hom ./ r
+
+            # Enforce BCs exactly (numerical cleanup)
+            uphi_L[1] = zero(T)
+            uphi_L[end] = zero(T)
+        end
+
+        # Store results
+        uphi_coeffs[L] = uphi_L
+        duphi_dr_coeffs[L] = D1 * uphi_L
+    end
+
+    # Initialize zero arrays for modes without forcing
+    for ℓ in keys(theta_coeffs)
+        if !haskey(uphi_coeffs, ℓ)
+            uphi_coeffs[ℓ] = zeros(T, Nr)
+            duphi_dr_coeffs[ℓ] = zeros(T, Nr)
+        end
+    end
+
+    return uphi_coeffs, duphi_dr_coeffs
+end
+
+
+"""
+    theta_derivative_coeff_3d(ℓ::Int, m::Int)
+
+Compute θ-derivative coupling coefficients for spherical harmonics.
+
+Returns (c_plus, c_minus) where:
+- c_plus  = -(ℓ+1) × √[((ℓ+1)²-m²)/((2ℓ+1)(2ℓ+3))]  (couples Y_ℓm → Y_{ℓ+1,m})
+- c_minus = +ℓ × √[(ℓ²-m²)/((2ℓ-1)(2ℓ+1))]          (couples Y_ℓm → Y_{ℓ-1,m})
+
+These coefficients follow from the recurrence relation for associated Legendre functions:
+    (1-x²) dP_ℓ^m/dx = -ℓx P_ℓ^m + (ℓ+m) P_{ℓ-1}^m
+
+# Example
+```julia
+c_plus, c_minus = theta_derivative_coeff_3d(2, 1)  # For Y_21
+# c_plus ≈ -0.7746 (coupling to Y_31)
+# c_minus ≈ 0.7746 (coupling to Y_11)
+```
+"""
+function theta_derivative_coeff_3d(ℓ::Int, m::Int)
+    if ℓ < abs(m)
+        return (0.0, 0.0)
+    end
+
+    c_plus = 0.0
+    c_minus = 0.0
+
+    # Coupling to ℓ+1
+    if ℓ >= 0
+        num_plus = (ℓ + 1)^2 - m^2
+        den_plus = (2*ℓ + 1) * (2*ℓ + 3)
+        if num_plus >= 0 && den_plus > 0
+            c_plus = -(ℓ + 1) * sqrt(num_plus / den_plus)
+        end
+    end
+
+    # Coupling to ℓ-1
+    if ℓ > abs(m)
+        num_minus = ℓ^2 - m^2
+        den_minus = (2*ℓ - 1) * (2*ℓ + 1)
+        if num_minus >= 0 && den_minus > 0
+            c_minus = ℓ * sqrt(num_minus / den_minus)
+        end
+    end
+
+    return (c_plus, c_minus)
 end

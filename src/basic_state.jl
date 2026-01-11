@@ -425,10 +425,10 @@ end
 # =============================================================================
 
 """
-    nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::Real, E::Real, Ra::Real, Pr::Real,
+    nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::Real, Pr::Real,
                                 lmax_bs::Int, mmax_bs::Int,
                                 amplitudes::AbstractDict;
-                                mechanical_bc::Symbol=:no_slip) where T
+                                mechanical_bc::Symbol=:no_slip)
 
 Create a 3D basic state with both meridional and longitudinal temperature variations.
 
@@ -466,15 +466,16 @@ Example:
     )
     bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 4, 2, amplitudes)
 """
-function nonaxisymmetric_basic_state(cd::ChebyshevDiffn{T}, χ::Real, E::Real, Ra::Real, Pr::Real,
+function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::Real, Pr::Real,
                                      lmax_bs::Int, mmax_bs::Int,
                                      amplitudes::AbstractDict;
-                                     mechanical_bc::Symbol=:no_slip) where T
+                                     mechanical_bc::Symbol=:no_slip)
 
     r = cd.x
+    T = eltype(r)  # Get the element type from the Chebyshev grid
     Nr = length(r)
-    r_i = χ
-    r_o = 1.0
+    r_i = T(χ)
+    r_o = T(1.0)
 
     # Initialize all coefficient dictionaries
     theta_coeffs = Dict{Tuple{Int,Int},Vector{T}}()

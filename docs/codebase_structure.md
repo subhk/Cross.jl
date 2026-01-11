@@ -7,23 +7,31 @@ This page provides an overview of the Cross.jl source code organization, helping
 ```
 Cross.jl/
 ├── src/                    # Source code
+│   │
+│   │   # === INCLUDED IN CROSS MODULE ===
 │   ├── Cross.jl            # Main module (entry point)
 │   ├── Chebyshev.jl        # Radial discretization
+│   ├── banner.jl           # ASCII banner and version info
+│   ├── get_velocity.jl     # Field reconstruction
 │   ├── basic_state.jl      # Basic state definitions
-│   ├── basic_state_operators.jl
+│   ├── basic_state_operators.jl  # Basic state operators
+│   ├── thermal_wind.jl     # Thermal wind balance solver
 │   ├── linear_stability.jl # Core stability analysis
 │   ├── onset_convection.jl # Mode 1: No mean flow
 │   ├── biglobal_stability.jl # Mode 2: Axisymmetric mean flow
 │   ├── triglobal_stability.jl # Mode 3: Non-axisymmetric mean flow
-│   ├── get_velocity.jl     # Field reconstruction
-│   ├── boundary_conditions.jl
-│   ├── SparseOperator.jl   # Sparse ultraspherical method
-│   ├── UltrasphericalSpectral.jl
-│   ├── MHDOperator.jl      # MHD extension
-│   ├── MHDOperatorFunctions.jl
-│   ├── MHDAssembly.jl
-│   ├── CompleteMHD.jl
-│   └── ...
+│   │
+│   │   # === STANDALONE FILES (NOT included in module) ===
+│   ├── boundary_conditions.jl  # BC utilities (standalone)
+│   ├── SparseOperator.jl       # Sparse ultraspherical method
+│   ├── UltrasphericalSpectral.jl # Ultraspherical utilities
+│   ├── OnsetEigenvalueSolver.jl  # Alternative eigensolver
+│   ├── DipoleOperators.jl      # Dipole field operators
+│   ├── MHDOperator.jl          # MHD extension
+│   ├── MHDOperatorFunctions.jl # MHD operator terms
+│   ├── MHDAssembly.jl          # MHD matrix assembly
+│   └── CompleteMHD.jl          # MHD high-level interface
+│
 ├── test/                   # Test suite
 ├── example/                # Example scripts
 ├── docs/                   # Documentation (MkDocs)
@@ -41,13 +49,16 @@ module Cross
     # Dependencies
     using LinearAlgebra, SparseArrays, JLD2, Printf
     using Parameters
-    using ArnoldiMethod, KrylovKit
+    using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
+    using KrylovKit
 
-    # Core components
+    # Core components (order matters!)
     include("Chebyshev.jl")           # Radial discretization
+    include("banner.jl")               # ASCII banner
     include("get_velocity.jl")         # Field reconstruction
     include("basic_state.jl")          # Basic state types
     include("basic_state_operators.jl") # Basic state operators
+    include("thermal_wind.jl")         # Thermal wind balance
     include("linear_stability.jl")     # Core eigenvalue machinery
 
     # Three analysis modes
@@ -92,6 +103,21 @@ end
 
 **Key Functions:**
 - `ChebyshevDiffn(N, [r_i, r_o], nderiv)` - Construct differentiation matrices
+
+#### `banner.jl`
+ASCII banner and version information.
+
+**Key Exports:**
+- `CROSS_BANNER` - ASCII art banner string
+- `print_cross_header()` - Print the banner
+
+#### `thermal_wind.jl`
+Thermal wind balance solver for computing zonal flow from temperature gradients.
+
+**Key Functions:**
+- `solve_thermal_wind_balance!(bs, E, Ra, Pr)` - Compute axisymmetric thermal wind
+- `solve_thermal_wind_balance_3d!(bs3d, E, Ra, Pr)` - Compute 3D thermal wind
+- `build_thermal_wind(cd, χ, E, Ra, Pr, lmax_bs, amplitude)` - Build thermal wind state
 
 #### `linear_stability.jl`
 Core linear stability analysis machinery shared by all modes.
@@ -271,106 +297,41 @@ end
 - `solve_triglobal_eigenvalue_problem(params; nev, σ_target, verbose)` - Solve coupled system
 - `find_critical_rayleigh_triglobal(params)` - Critical Ra for 3D forcing
 
-### Sparse Methods
+### Standalone Files (Not Included in Cross Module)
 
-#### `SparseOperator.jl`
-Sparse ultraspherical spectral method for large problems.
+!!! warning "Not Part of Main Module"
+    The following files exist in `src/` but are **NOT included** in the Cross.jl module.
+    They are standalone implementations for future integration, alternative methods, or separate use.
 
-**Key Types:**
-```julia
-struct SparseOnsetParams{T<:Real}
-    E::T, Pr::T, Ra::T, ricb::T
-    m::Int, lmax::Int, N::Int, symm::Int
-    bci::Int, bco::Int          # Mechanical BCs
-    bci_thermal::Int, bco_thermal::Int  # Thermal BCs
-    heating::Symbol             # :differential or :internal
-end
+#### Sparse/Ultraspherical Methods
 
-struct SparseStabilityOperator{T<:Real}
-    params::SparseOnsetParams{T}
-    # Pre-computed radial operators (sparse)
-    r0_D0_u::SparseMatrixCSC, r2_D2_u::SparseMatrixCSC, ...
-    # Mode structure
-    ll_top::Vector{Int}, ll_bot::Vector{Int}
-    matrix_size::Int
-end
-```
+- **`SparseOperator.jl`** - Sparse ultraspherical spectral method for large problems
+- **`UltrasphericalSpectral.jl`** - Utilities for ultraspherical (Gegenbauer) polynomial methods
 
-**Key Functions:**
-- `SparseStabilityOperator(params)` - Build sparse operators
-- `assemble_sparse_matrices(op)` - Assemble A, B matrices
-- `compute_l_modes(m, lmax, symm)` - Determine mode structure
+#### Alternative Solvers
 
-#### `UltrasphericalSpectral.jl`
-Utilities for ultraspherical (Gegenbauer) polynomial methods.
+- **`OnsetEigenvalueSolver.jl`** - Alternative eigenvalue solver implementation
+- **`boundary_conditions.jl`** - Standalone boundary condition utilities
 
-**Key Functions:**
-- `sparse_radial_operator(power, deriv, N, ri, ro)` - Build sparse operator
-- `ultraspherical_conversion(N, λ)` - Conversion matrices
-- `ultraspherical_derivative(N, λ)` - Differentiation matrices
+#### MHD Extension
 
-### MHD Extension
-
-#### `MHDOperator.jl`
-Main MHD operator definitions.
-
-**Key Types:**
-```julia
-struct MHDParams{T<:Real}
-    # Hydrodynamic parameters
-    E::T, Pr::T, Ra::T, χ::T
-    # Magnetic parameters
-    Pm::T             # Magnetic Prandtl number
-    Le::T             # Lehnert number (or Elsasser)
-    # Background field
-    B0_type::Symbol   # :dipole, :uniform, :quadrupole
-    B0_amplitude::T
-    # Resolution
-    m::Int, lmax::Int, Nr::Int
-end
-
-struct MHDStabilityOperator{T}
-    params::MHDParams{T}
-    # Full MHD matrices (velocity + magnetic field)
-    A::Matrix{Complex{T}}
-    B::Matrix{Complex{T}}
-end
-```
-
-#### `MHDOperatorFunctions.jl`
-Individual operator terms for MHD equations.
-
-**Key Functions:**
-- `lorentz_force_operator(...)` - Lorentz force terms
-- `induction_operator(...)` - Magnetic induction
-- `magnetic_diffusion_operator(...)` - Ohmic dissipation
-
-#### `MHDAssembly.jl`
-Matrix assembly for MHD problems.
-
-**Key Functions:**
-- `assemble_mhd_matrices(params)` - Build full MHD system
-- `add_lorentz_force!(A, ...)` - Add Lorentz terms
-- `add_induction!(A, ...)` - Add induction terms
-
-#### `CompleteMHD.jl`
-High-level MHD interface.
-
-**Key Functions:**
-- `solve_mhd_eigenvalue_problem(params)` - Complete MHD solve
-- `find_critical_magnetic_field(params)` - Critical field strength
+- **`MHDOperator.jl`** - Main MHD operator definitions
+- **`MHDOperatorFunctions.jl`** - Individual operator terms for MHD equations
+- **`MHDAssembly.jl`** - Matrix assembly for MHD problems
+- **`CompleteMHD.jl`** - High-level MHD interface
+- **`DipoleOperators.jl`** - Dipole magnetic field operators
 
 ## Data Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      User Parameters                            │
-│  (E, Pr, Ra, χ, m, lmax, Nr, boundary conditions)              │
+│  (E, Pr, Ra, χ, m, lmax, Nr, boundary conditions)               │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Analysis Mode Selection                       │
+│                    Analysis Mode Selection                      │
 ├─────────────────┬─────────────────────┬─────────────────────────┤
 │  Onset          │  Biglobal           │  Triglobal              │
 │  (no mean flow) │  (axisymmetric)     │  (non-axisymmetric)     │
@@ -386,7 +347,7 @@ High-level MHD interface.
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Matrix Assembly                               │
+│                    Matrix Assembly                              │
 │  • Chebyshev radial discretization                              │
 │  • Spherical harmonic angular expansion                         │
 │  • Boundary condition application                               │
@@ -395,15 +356,15 @@ High-level MHD interface.
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                 Generalized Eigenvalue Problem                   │
-│                      A x = λ B x                                 │
+│                 Generalized Eigenvalue Problem                  │
+│                      A x = λ B x                                │
 │  • ArnoldiMethod (shift-invert)                                 │
 │  • KrylovKit (iterative)                                        │
 └─────────────────────────────────────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                       Results                                    │
+│                       Results                                   │
 │  • Eigenvalues (growth rates, frequencies)                      │
 │  • Eigenvectors (mode structure)                                │
 │  • Field reconstruction (velocity, temperature, magnetic)       │
@@ -447,10 +408,11 @@ $$
 ```
 test/
 ├── runtests.jl            # Test runner
-├── chebyshev.jl           # Chebyshev differentiation tests
 ├── boundary_conditions.jl # BC application tests
+├── chebyshev.jl           # Chebyshev differentiation tests
 ├── sparse_operator.jl     # Sparse method tests
-└── thermal_wind.jl        # Thermal wind balance tests
+├── thermal_wind.jl        # Thermal wind balance tests
+└── triglobal.jl           # Triglobal stability tests
 ```
 
 Run tests with:
@@ -469,6 +431,10 @@ Pkg.test("Cross")
 | `KrylovKit` | Iterative eigensolvers |
 | `Parameters` | `@with_kw` struct macros |
 | `JLD2` | Data serialization |
+| `WignerSymbols` | Gaunt coefficients for spherical harmonic coupling |
+| `SpecialFunctions` | Special mathematical functions |
+| `LinearMaps` | Linear operator abstractions |
+| `BenchmarkTools` | Performance benchmarking |
 
 ## Extension Points
 

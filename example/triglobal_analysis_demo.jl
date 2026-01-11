@@ -1,19 +1,19 @@
 #!/usr/bin/env julia
 #
-# Tri-Global Instability Analysis - Framework Demonstration
+# Tri-Global Instability Analysis - Full Demonstration
 #
-# This example demonstrates the framework for tri-global analysis where
+# This example demonstrates the complete tri-global analysis workflow where
 # perturbations couple across multiple azimuthal modes m due to a
 # non-axisymmetric basic state.
 #
-# NOTE: The full eigenvalue solver is not yet implemented. This example
-# shows how to set up the problem and analyze the coupling structure.
+# The solver finds eigenvalues of the coupled system where different m modes
+# interact through the non-axisymmetric basic state flow.
 
 using Cross
 using Printf
 
 println("="^70)
-println("Tri-Global Instability Analysis Framework")
+println("Tri-Global Instability Analysis")
 println("="^70)
 println()
 
@@ -24,16 +24,23 @@ println("STEP 1: Create Non-Axisymmetric Basic State")
 println("-"^70)
 println()
 
-# Physical parameters
-E = 1e-5
-Pr = 1.0
-Ra = 1e7
-χ = 0.35
+# Physical parameters - using moderate values for demonstration
+E = 1e-4      # Ekman number (moderate for faster computation)
+Pr = 1.0      # Prandtl number
+Ra = 5e5      # Rayleigh number (above onset)
+χ = 0.35      # Radius ratio
 
 # Basic state parameters
 lmax_bs = 4
 mmax_bs = 2  # Key: Non-zero m modes create mode coupling!
-Nr = 64
+Nr = 32      # Radial points (moderate for demo)
+
+println("Physical parameters:")
+println("  E  = ", @sprintf("%.2e", E))
+println("  Pr = ", Pr)
+println("  Ra = ", @sprintf("%.2e", Ra))
+println("  χ  = ", χ)
+println()
 
 println("Creating 3D basic state with m_bs = $mmax_bs...")
 println()
@@ -54,9 +61,9 @@ end
 println()
 
 # Create basic state
-bs3d = nonaxisymmetric_basic_state(cd, χ, Ra, Pr, lmax_bs, mmax_bs, amplitudes)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amplitudes)
 
-println("✓ Basic state created")
+println("Basic state created")
 println("  Contains modes: ")
 for ((ℓ, m), theta) in sort(collect(bs3d.theta_coeffs))
     if maximum(abs.(theta)) > 1e-10
@@ -126,7 +133,7 @@ end
 println()
 
 # =============================================================================
-# Step 3: Set Up Tri-Global Problem
+# Step 3: Set Up and Solve Tri-Global Eigenvalue Problem
 # =============================================================================
 println("="^70)
 println("STEP 3: Set Up Tri-Global Eigenvalue Problem")
@@ -134,7 +141,8 @@ println("-"^70)
 println()
 
 # Create tri-global parameters
-lmax = 50  # Max ℓ for perturbations
+# Using smaller lmax for faster demonstration
+lmax = 20  # Max ℓ for perturbations (reduced for demo speed)
 
 params_triglobal = TriglobalParams(
     E = E,
@@ -150,9 +158,9 @@ params_triglobal = TriglobalParams(
 )
 
 println("Tri-global parameters:")
-println("  E      = ", E)
+println("  E      = ", @sprintf("%.2e", E))
 println("  Pr     = ", Pr)
-println("  Ra     = ", Ra)
+println("  Ra     = ", @sprintf("%.2e", Ra))
 println("  χ      = ", χ)
 println("  m_range= ", m_range)
 println("  lmax   = ", lmax)
@@ -162,7 +170,7 @@ println()
 # Set up coupled problem structure
 problem = setup_coupled_mode_problem(params_triglobal)
 
-println("✓ Problem structure created")
+println("Problem structure created")
 println()
 println("Problem Statistics:")
 println("  Perturbation modes: ", problem.m_range)
@@ -181,9 +189,8 @@ println("  Average DOFs per mode:    ", size_info.dofs_per_mode)
 println()
 
 # Memory estimate
-memory_gb = (size_info.matrix_size^2 * 8) / 1e9  # 8 bytes per Float64
+memory_gb = (size_info.matrix_size^2 * 16) / 1e9  # 16 bytes per ComplexF64
 println("  Estimated memory (dense): ", @sprintf("%.2f GB", memory_gb))
-println("  Note: Use SPARSE matrices for practical computation!")
 println()
 
 # =============================================================================
@@ -207,10 +214,64 @@ end
 println()
 
 # =============================================================================
-# Step 5: Comparison with Standard Onset
+# Step 5: Solve Tri-Global Eigenvalue Problem
 # =============================================================================
 println("="^70)
-println("STEP 5: Comparison with Standard (Single-m) Onset")
+println("STEP 5: Solve Tri-Global Eigenvalue Problem")
+println("-"^70)
+println()
+
+println("Solving eigenvalue problem...")
+println("This uses shift-invert with KrylovKit for the coupled system.")
+println()
+
+# Solve the tri-global eigenvalue problem
+# Target eigenvalues near σ=0 (onset of instability)
+eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(
+    params_triglobal;
+    σ_target = 0.0,
+    nev = 10,
+    verbose = true
+)
+
+println()
+println("="^70)
+println("EIGENVALUE RESULTS")
+println("="^70)
+println()
+
+println("Leading eigenvalues (sorted by growth rate):")
+println(@sprintf("  %-4s  %-20s  %-20s  %-12s", "#", "σ (growth rate)", "ω (frequency)", "Period"))
+println("  " * "-"^60)
+
+for (i, λ) in enumerate(eigenvalues[1:min(10, length(eigenvalues))])
+    σ = real(λ)
+    ω = imag(λ)
+    period = abs(ω) > 1e-10 ? 2π / abs(ω) : Inf
+    period_str = isinf(period) ? "∞" : @sprintf("%.4f", period)
+    println(@sprintf("  %-4d  %+.12e  %+.12e  %-12s", i, σ, ω, period_str))
+end
+println()
+
+# Physical interpretation
+max_σ = real(eigenvalues[1])
+println("Physical Interpretation:")
+if max_σ > 0
+    println("  - System is UNSTABLE (σ > 0)")
+    println("  - Most unstable mode has growth rate σ = ", @sprintf("%.6e", max_σ))
+    e_folding_time = 1.0 / max_σ
+    println("  - E-folding time: ", @sprintf("%.4f", e_folding_time), " (viscous time units)")
+else
+    println("  - System is STABLE (σ < 0)")
+    println("  - Least damped mode has decay rate |σ| = ", @sprintf("%.6e", abs(max_σ)))
+end
+println()
+
+# =============================================================================
+# Step 6: Comparison with Standard Onset
+# =============================================================================
+println("="^70)
+println("STEP 6: Comparison with Standard (Single-m) Onset")
 println("-"^70)
 println()
 
@@ -229,61 +290,42 @@ println("  - Computational cost: ", size_info.num_modes, "× larger")
 println()
 
 println("When is tri-global analysis necessary?")
-println("  ✓ Basic state has non-axisymmetric components (m_bs ≠ 0)")
-println("  ✓ Studying effects of longitudinal variations")
-println("  ✓ Realistic 3D boundary conditions")
-println("  ✓ Mode interactions are important")
+println("  * Basic state has non-axisymmetric components (m_bs != 0)")
+println("  * Studying effects of longitudinal variations")
+println("  * Realistic 3D boundary conditions")
+println("  * Mode interactions are important")
 println()
 
 println("When can you use standard (single-m) analysis?")
-println("  ✓ Basic state is axisymmetric (m_bs = 0 only)")
-println("  ✓ Modes decouple: no longitudinal variations")
-println("  ✓ Much faster and more practical for large problems")
+println("  * Basic state is axisymmetric (m_bs = 0 only)")
+println("  * Modes decouple: no longitudinal variations")
+println("  * Much faster and more practical for large problems")
 println()
 
 # =============================================================================
-# Summary and Next Steps
+# Summary
 # =============================================================================
 println("="^70)
-println("SUMMARY AND NEXT STEPS")
+println("SUMMARY")
 println("="^70)
 println()
 
-println("✓ COMPLETED:")
-println("  1. Created 3D non-axisymmetric basic state")
-println("  2. Analyzed mode coupling structure")
-println("  3. Set up tri-global problem framework")
-println("  4. Estimated computational requirements")
+println("Completed:")
+println("  1. Created 3D non-axisymmetric basic state with Y_22 pattern")
+println("  2. Analyzed mode coupling structure (m couples to m +/- 2)")
+println("  3. Set up block-coupled eigenvalue problem")
+println("  4. Solved for leading eigenvalues using shift-invert Krylov method")
+println("  5. Identified stability characteristics")
 println()
 
-println("⚠ TODO (Future Implementation):")
-println("  1. Build single-mode operators for each m")
-println("  2. Implement mode-coupling operators:")
-println("     - Advection: (ū_bs · ∇)θ' couples different m values")
-println("     - Advection: (u' · ∇)θ̄_bs couples different m values")
-println("  3. Assemble block-sparse coupled matrix")
-println("  4. Solve large eigenvalue problem using:")
-println("     - Shift-invert with Krylov methods")
-println("     - Sparse matrix storage")
-println("     - Iterative linear solvers (GMRES, BiCGStab)")
-println("  5. Find critical Rayleigh number via root-finding")
-println()
-
-println("Physical Questions to Address:")
-println("  • How do longitudinal temperature variations affect Ra_c?")
-println("  • Does wavenumber-2 boundary heating prefer m=2 perturbations?")
-println("  • How strong is the mode coupling for small amplitudes?")
-println("  • Can we use perturbation theory for weak coupling?")
-println()
-
-println("Computational Strategy:")
-println("  • Start with small problems (few coupled modes)")
-println("  • Use iterative eigensolvers (not full diagonalization!)")
-println("  • Exploit sparsity in coupling (most modes don't couple)")
-println("  • Consider reduced models for parameter studies")
+println("Key Physical Insights:")
+println("  * Non-axisymmetric basic states couple different m modes")
+println("  * Y_22 boundary heating creates zonal wavenumber-2 structure")
+println("  * The coupling can modify critical Rayleigh numbers")
+println("  * Mode interactions may prefer certain azimuthal patterns")
 println()
 
 println("="^70)
-println()
-println("Framework is ready for implementation of coupled eigenvalue solver!")
+println("Tri-global stability analysis complete!")
+println("="^70)
 println()

@@ -82,46 +82,6 @@ end
 
 **Source:** `src/triglobal_stability.jl`
 
----
-
-#### `MHDParams{T}`
-
-Parameters for MHD stability problems.
-
-```julia
-@with_kw struct MHDParams{T}
-    E::T                    # Ekman number
-    Pr::T                   # Prandtl number
-    Pm::T                   # Magnetic Prandtl number
-    Ra::T                   # Rayleigh number
-    Le::T                   # Lehnert number
-    ricb::T                 # Inner core radius
-    m::Int                  # Azimuthal wavenumber
-    lmax::Int               # Maximum spherical harmonic degree
-    N::Int                  # Radial resolution
-    symm::Int               # Equatorial symmetry (1 or -1)
-    B0_type::BackgroundField
-    B0_amplitude::T
-    bci::Int                # Inner velocity BC
-    bco::Int                # Outer velocity BC
-    bci_thermal::Int        # Inner thermal BC
-    bco_thermal::Int        # Outer thermal BC
-    bci_magnetic::Int       # Inner magnetic BC
-    bco_magnetic::Int       # Outer magnetic BC
-    forcing_frequency::T
-    heating::Symbol         # :differential or :internal
-
-    # Derived quantities
-    L::T
-    Etherm::T
-    Em::T
-end
-```
-
-**Source:** `src/MHDOperator.jl`
-
----
-
 ### Operator Structures
 
 #### `LinearStabilityOperator{T}`
@@ -159,20 +119,6 @@ Block-structured problem for tri-global analysis.
 
 ---
 
-#### `MHDStabilityOperator{T}`
-
-MHD operator with precomputed radial matrices.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `params` | `MHDParams` | Problem parameters |
-| `radial_ops` | `Dict` | Cached $r^p d^n/dr^n$ operators |
-| `ll_u, ll_v, ll_f, ll_g, ll_h` | `Vector{Int}` | ℓ modes per field |
-| `matrix_size` | `Int` | Total matrix dimension |
-
-**Source:** `src/MHDOperator.jl`
-
----
 
 ### Basic State Structures
 
@@ -483,38 +429,6 @@ for ℓ in op.l_sets[:Θ]
 end
 ```
 
-## MHD Functions
-
-### `MHDStabilityOperator`
-
-Constructor for MHD operator.
-
-```julia
-op = MHDStabilityOperator(params::MHDParams)
-```
-
-**Source:** `src/MHDOperator.jl`
-
----
-
-### `assemble_mhd_matrices`
-
-Assemble MHD eigenvalue problem matrices.
-
-```julia
-A, B, interior_dofs, info = assemble_mhd_matrices(op::MHDStabilityOperator)
-```
-
-**Returns:**
-- `A::SparseMatrixCSC` - Physics operator
-- `B::SparseMatrixCSC` - Mass operator
-- `interior_dofs::Vector{Int}` - Interior DOF indices
-- `info::Dict` - Assembly diagnostics
-
-**Source:** `src/MHDAssembly.jl`
-
----
-
 ## Utility Functions
 
 ### `print_cross_header`
@@ -568,23 +482,26 @@ The `which` parameter controls eigenvalue selection:
 ## Module Structure
 
 ```
-Cross.jl
-├── Cross (main module)
-│   ├── ChebyshevDiffn
+Cross (main module)
+├── Core Types
+│   ├── ChebyshevDiffn         # Radial discretization
 │   ├── OnsetParams, ShellParams
 │   ├── LinearStabilityOperator
 │   ├── BasicState, BasicState3D
-│   ├── TriglobalParams, CoupledModeProblem
-│   └── Exported functions
+│   ├── TriglobalParams
+│   └── CoupledModeProblem
 │
-├── CompleteMHD (MHD extension)
-│   ├── MHDParams
-│   ├── MHDStabilityOperator
-│   ├── BackgroundField enum
-│   └── assemble_mhd_matrices
+├── Analysis Modes
+│   ├── Onset Convection       # No mean flow
+│   ├── Biglobal Stability     # Axisymmetric mean flow
+│   └── Triglobal Stability    # Non-axisymmetric mean flow
 │
-└── OnsetEigenvalueSolver
-    └── solve_eigenvalue_problem
+└── Exported Functions
+    ├── solve_eigenvalue_problem
+    ├── leading_modes, find_growth_rate
+    ├── find_critical_rayleigh
+    ├── solve_triglobal_eigenvalue_problem
+    └── ... (see exports in Cross.jl)
 ```
 
 ---
@@ -594,4 +511,3 @@ Cross.jl
 - [Problem Setup](problem_setup.md) - Tutorial for first problems
 - [Basic States](basic_states.md) - Detailed basic state usage
 - [Tri-Global Analysis](triglobal.md) - Mode coupling details
-- [MHD Extension](mhd_extension.md) - MHD module reference

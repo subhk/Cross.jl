@@ -862,6 +862,6 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
     return Ra_c, ω_c, vec_c
 end
 
-export OnsetParams, LinearStabilityOperator
+export OnsetParams, LinearStabilityOperator, compute_l_sets
 export assemble_matrices
 export solve_eigenvalue_problem, find_growth_rate, find_critical_rayleigh

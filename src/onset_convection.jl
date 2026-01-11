@@ -30,7 +30,8 @@ using Printf
 
 # Import from parent module
 import ..Cross: LinearStabilityOperator, OnsetParams, assemble_matrices,
-                solve_eigenvalue_problem, find_growth_rate, ChebyshevDiffn
+                solve_eigenvalue_problem, find_growth_rate, ChebyshevDiffn,
+                compute_l_sets
 
 """
     OnsetConvectionParams{T<:Real}

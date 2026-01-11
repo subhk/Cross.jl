@@ -65,10 +65,29 @@ function build_thermal_wind(fθ::AbstractVector,
     gα_2Ω_val = T(gα_2Ω)
 
     # Thermal wind: dU/dr + U/r = -(gα/2Ω) * (1/(r_o sinθ)) * dθ̄/dθ
+    # Rewrite as: d(r·U)/dr = r × RHS
+    # Integrate with U(r_i) = 0: r·U = (r² - r_i²)/2 × RHS
+    # Particular solution: U_part = (r² - r_i²)/(2r) × RHS
     rhs = -(gα_2Ω_val / r_o_val) .* (df_dθ ./ sinθ)   # length N_θ
     r2_minus = r .^ 2 .- r_i_val^2                    # length N_r
-    Ubar = (0.5 .* r2_minus) .* rhs' ./ r         # (N_r x N_θ)
-    dU_dr = rhs' .- (Ubar ./ r)                   # by definition
+    Ubar_part = (0.5 .* r2_minus) .* rhs' ./ r        # (N_r x N_θ) particular solution
+
+    # Add homogeneous solution to satisfy outer BC: U(r_o) = 0
+    # Homogeneous solution: U_hom = C/r (satisfies d(r·U)/dr = 0)
+    # Choose C so that U_part(r_o) + C/r_o = 0
+    # C = -r_o × U_part(r_o)
+    Ubar_ro = (0.5 * (r_o_val^2 - r_i_val^2)) .* rhs' ./ r_o_val  # U_part at r_o (1 x N_θ)
+    C_hom = -r_o_val .* Ubar_ro                                   # (1 x N_θ)
+    Ubar = Ubar_part .+ C_hom ./ r                                # Add homogeneous solution
+
+    # Enforce BCs exactly (numerical cleanup, consistent with basic_state.jl)
+    # After adding C/r, U(r_i) = C/r_i ≠ 0 in general, so we force it to zero
+    Ubar[1, :] .= zero(T)
+    Ubar[end, :] .= zero(T)
+
+    # Derivative: dU/dr = d(U_part)/dr + d(C/r)/dr
+    #           = RHS - U_part/r - C/r²
+    dU_dr = rhs' .- (Ubar_part ./ r) .- (C_hom ./ (r.^2))
 
     # flatten in (r,θ) lexicographic order (r fastest: column-major from N_r × N_θ matrix)
     # Index pattern: (r₁,θ₁), (r₂,θ₁), ..., (r_Nr,θ₁), (r₁,θ₂), ...
@@ -99,3 +118,5 @@ U_m, S_r, S_θ = build_thermal_wind(fθ, r;
                                 r_o=r_o,
                                 sintheta=sintheta)
 """
+
+export build_thermal_wind

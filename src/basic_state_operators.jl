@@ -195,53 +195,8 @@ struct AzimuthalCouplingCache
     y_0::Matrix{Float64}
 end
 
-function _double_factorial(n::Int)
-    n <= 0 && return 1.0
-    result = 1.0
-    for k in n:-2:1
-        result *= k
-    end
-    return result
-end
-
-function _associated_legendre_table(m::Int, lmax::Int, mu::Vector{Float64})
-    nmu = length(mu)
-    n_l = lmax - m + 1
-    P = zeros(Float64, n_l, nmu)
-    n_l <= 0 && return P
-
-    if m == 0
-        P[1, :] .= 1.0
-    else
-        Pmm = (-1.0)^m * _double_factorial(2 * m - 1) .* (1 .- mu.^2).^(m / 2)
-        P[1, :] .= Pmm
-    end
-
-    lmax == m && return P
-
-    P[2, :] .= mu .* (2 * m + 1) .* P[1, :]
-
-    for l in (m + 2):lmax
-        idx = l - m + 1
-        P[idx, :] .= ((2 * l - 1) .* mu .* P[idx - 1, :] .-
-                      (l + m - 1) .* P[idx - 2, :]) ./ (l - m)
-    end
-
-    return P
-end
-
-function _normalization_table(m::Int, lmax::Int)
-    n_l = lmax - m + 1
-    N = Vector{Float64}(undef, n_l)
-    for l in m:lmax
-        ratio = 1.0
-        for k in (l - m + 1):(l + m)
-            ratio /= k
-        end
-        N[l - m + 1] = sqrt((2 * l + 1) / (4 * pi) * ratio)
-    end
-    return N
-end
+# Note: _double_factorial, _associated_legendre_table, and _normalization_table
+# are defined in get_velocity.jl which is included before this file.
 
 function _build_azimuthal_coupling_cache(m::Int, lmax_m::Int, lmax_0::Int)
     ntheta = max(64, 4 * max(lmax_m, lmax_0) + 1)

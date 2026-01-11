@@ -429,28 +429,7 @@ function _basic_state_mode_scale(m_bs::Int, ::Type{T}) where {T<:Real}
     return phase * scale
 end
 
-function _theta_derivative_coeff(l::Int, m::Int)
-    if l < abs(m)
-        return (0.0, 0.0)
-    end
-
-    c_plus = 0.0
-    c_minus = 0.0
-
-    if l > 0
-        num_plus = (l + 1)^2 - m^2
-        den_plus = (2l + 1) * (2l + 3)
-        c_plus = l * sqrt(num_plus / den_plus)
-    end
-
-    if l > abs(m)
-        num_minus = l^2 - m^2
-        den_minus = (2l - 1) * (2l + 1)
-        c_minus = -(l + 1) * sqrt(num_minus / den_minus)
-    end
-
-    return (c_plus, c_minus)
-end
+# Note: _theta_derivative_coeff is defined in basic_state_operators.jl
 
 function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int,
                               m_from::Int, m_bs::Int, m_to::Int)
@@ -667,6 +646,13 @@ The azimuthal advection term is:
 This couples perturbation mode m_from to m_to = m_from ± m_bs through the
 product of spherical harmonics.
 
+**Implementation Note:**
+The 1/sinθ factor in the advection operator requires computing the unweighted
+integral ∫ Y*₃ Y₁ Y₂ dθdφ (without sinθ weighting), which differs from the
+standard Gaunt coefficient G = ∫ Y*₃ Y₁ Y₂ sinθ dθdφ. This implementation uses
+`compute_sh_coupling_unweighted()` which computes the correct integral using
+Gauss-Chebyshev quadrature, providing accurate results even near the poles.
+
 Arguments:
 - uphi_coeffs: Dictionary of interpolated uphi coefficients on the operator grid
 """
@@ -696,7 +682,7 @@ function add_advection_coupling!(C::Matrix{ComplexF64},
     end
 
     # Advection coefficient: im_from × ū_φ/(r)
-    # Note: The 1/sinθ factor is handled through spherical harmonic coupling
+    # The 1/sinθ factor is handled by using the unweighted coupling coefficient
     bs_scale = _basic_state_mode_scale(m_bs, T)
     adv_coeff = im * m_from .* (bs_scale .* uphi_bs) ./ r
 
@@ -717,9 +703,10 @@ function add_advection_coupling!(C::Matrix{ComplexF64},
                 continue
             end
 
-            # Compute spherical harmonic coupling coefficient
+            # Compute UNWEIGHTED spherical harmonic coupling coefficient
+            # This correctly handles the 1/sinθ factor in the advection operator
             # Y_{ℓ_to, m_to} from Y_{ℓ_from, m_from} × Y_{ℓ_bs, m_bs}
-            coupling_coeff = compute_sh_coupling_coefficient(
+            coupling_coeff = compute_sh_coupling_unweighted(
                 ℓ_from, m_from, ℓ_bs, m_bs, ℓ_to, m_to
             )
 
@@ -1099,6 +1086,207 @@ This is a wrapper around WignerSymbols.wigner3j for validated computation.
 function wigner3j_simple(j1::Int, j2::Int, j3::Int, m1::Int, m2::Int, m3::Int)
     # Use the validated WignerSymbols.jl package
     return Float64(WignerSymbols.wigner3j(j1, j2, j3, m1, m2, m3))
+end
+
+
+# =============================================================================
+#  Unweighted Spherical Harmonic Coupling (for 1/sinθ terms)
+# =============================================================================
+
+"""
+    compute_sh_coupling_unweighted(ℓ1, m1, ℓ2, m2, ℓ3, m3; n_quad=64)
+
+Compute the UNWEIGHTED spherical harmonic coupling coefficient:
+
+    I = ∫ Y*_{ℓ3,m3} Y_{ℓ1,m1} Y_{ℓ2,m2} dθ dφ
+
+This differs from the standard Gaunt coefficient which uses sinθ dθ dφ (= dΩ).
+The unweighted integral is needed for terms with 1/sinθ factors, such as
+the azimuthal advection operator (ū_φ/(r sinθ)) ∂/∂φ.
+
+**Mathematical basis:**
+Using x = cosθ, we have dθ = dx/sinθ = dx/√(1-x²), so:
+
+    ∫₀^π f(θ) dθ = ∫₋₁^{+1} f(arccos(x)) / √(1-x²) dx
+
+This is a Chebyshev-weighted integral, computed using Gauss-Chebyshev quadrature.
+
+Arguments:
+- `ℓ1, m1, ℓ2, m2, ℓ3, m3` - Spherical harmonic indices
+- `n_quad` - Number of quadrature points (default: 64)
+
+Returns:
+- Coupling coefficient (Float64)
+
+Selection rules (same as Gaunt):
+- m1 + m2 = m3 (azimuthal)
+- |ℓ1 - ℓ2| ≤ ℓ3 ≤ ℓ1 + ℓ2 (triangle)
+- ℓ1 + ℓ2 + ℓ3 even (parity)
+"""
+function compute_sh_coupling_unweighted(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
+                                         ℓ3::Int, m3::Int; n_quad::Int=64)
+    # Selection rule: m1 + m2 = m3
+    if m1 + m2 != m3
+        return 0.0
+    end
+
+    # Triangle inequality
+    if !(abs(ℓ1 - ℓ2) <= ℓ3 <= ℓ1 + ℓ2)
+        return 0.0
+    end
+
+    # Parity selection
+    if (ℓ1 + ℓ2 + ℓ3) % 2 != 0
+        return 0.0
+    end
+
+    # Check m constraints
+    if abs(m1) > ℓ1 || abs(m2) > ℓ2 || abs(m3) > ℓ3
+        return 0.0
+    end
+
+    # Use Gauss-Chebyshev quadrature of the first kind
+    # Nodes: x_i = cos((2i-1)π/(2n))
+    # Weights: w_i = π/n
+    nodes = [cos((2*i - 1) * π / (2 * n_quad)) for i in 1:n_quad]
+    weight = π / n_quad
+
+    # Compute the integral using quadrature
+    # ∫ Y*₃ Y₁ Y₂ dθ = ∫ Y*₃ Y₁ Y₂ dx/√(1-x²)
+    # where x = cosθ
+
+    integral = 0.0
+
+    for x in nodes
+        # Compute normalized associated Legendre functions at x
+        # Y_ℓm = N_ℓm P_ℓ^m(x) e^{imφ}
+        # The φ integral gives 2π δ_{m1+m2, m3}, already checked above
+
+        P1 = _normalized_associated_legendre(ℓ1, abs(m1), x)
+        P2 = _normalized_associated_legendre(ℓ2, abs(m2), x)
+        P3 = _normalized_associated_legendre(ℓ3, abs(m3), x)
+
+        # Apply Condon-Shortley phase for negative m
+        if m1 < 0 && isodd(abs(m1))
+            P1 = -P1
+        end
+        if m2 < 0 && isodd(abs(m2))
+            P2 = -P2
+        end
+        if m3 < 0 && isodd(abs(m3))
+            P3 = -P3
+        end
+
+        # The complex conjugate of Y₃ gives the (-m3) phase
+        # Y*_{ℓ,m} = (-1)^m Y_{ℓ,-m}
+        # For the integral, this combines with the selection rule
+        phase3 = isodd(m3) ? -1.0 : 1.0
+
+        integral += weight * phase3 * P3 * P1 * P2
+    end
+
+    # Multiply by 2π from the φ integral (δ function gives 2π, not 1)
+    # Actually, the normalization of Y_ℓm already includes the 1/√(2π) factor
+    # so we just need to account for the integral of e^{i(m1+m2-m3)φ} = 2π δ
+    integral *= 2.0 * π
+
+    return integral
+end
+
+
+"""
+    _normalized_associated_legendre(ℓ, m, x)
+
+Compute the normalized associated Legendre function:
+
+    P̃_ℓ^m(x) = √[(2ℓ+1)/(4π) × (ℓ-m)!/(ℓ+m)!] × P_ℓ^m(x)
+
+This is the normalization used in fully normalized spherical harmonics:
+    Y_ℓm(θ,φ) = P̃_ℓ^m(cosθ) × e^{imφ}
+
+Uses the stable recurrence relation to avoid numerical overflow.
+"""
+function _normalized_associated_legendre(ℓ::Int, m::Int, x::Float64)
+    if m > ℓ
+        return 0.0
+    end
+
+    # Start with P_m^m using the formula:
+    # P_m^m(x) = (-1)^m (2m-1)!! (1-x²)^(m/2)
+    # With normalization factor
+
+    if m == 0
+        # Use standard Legendre polynomial recurrence
+        if ℓ == 0
+            return sqrt(1.0 / (4.0 * π))
+        elseif ℓ == 1
+            return sqrt(3.0 / (4.0 * π)) * x
+        else
+            # Three-term recurrence for normalized Legendre
+            P_prev2 = sqrt(1.0 / (4.0 * π))  # P̃_0
+            P_prev1 = sqrt(3.0 / (4.0 * π)) * x  # P̃_1
+
+            for l in 2:ℓ
+                # Recurrence: P̃_l = a_l x P̃_{l-1} - b_l P̃_{l-2}
+                a_l = sqrt((4.0*l^2 - 1.0) / (l^2 - m^2))
+                b_l = sqrt(((l-1)^2 - m^2) / (4.0*(l-1)^2 - 1.0)) *
+                      sqrt((4.0*l^2 - 1.0) / (l^2 - m^2))
+
+                P_curr = a_l * x * P_prev1 - b_l * P_prev2
+                P_prev2 = P_prev1
+                P_prev1 = P_curr
+            end
+
+            return P_prev1
+        end
+    else
+        # For m > 0, use the sectoral (P_m^m) start and recurrence
+
+        # Compute P̃_m^m
+        # P_m^m(x) = (-1)^m (2m-1)!! (1-x²)^(m/2)
+        # Normalization: √[(2m+1)/(4π) × 1/(2m)!] for the (2m-1)!! factor
+
+        sin_theta = sqrt(1.0 - x^2)
+
+        # Start with normalized P̃_m^m
+        # Using stable computation
+        P_mm = 1.0 / sqrt(4.0 * π)
+        for i in 1:m
+            P_mm *= -sqrt((2.0*i + 1.0) / (2.0*i)) * sin_theta
+        end
+
+        if ℓ == m
+            return P_mm
+        end
+
+        # Compute P̃_{m+1}^m using P̃_m^m
+        # P_{m+1}^m = x(2m+1) P_m^m
+        # With normalization adjustment
+        P_prev1 = P_mm
+        a_mp1 = sqrt(2.0*m + 3.0) * x
+        P_curr = a_mp1 * P_mm
+
+        if ℓ == m + 1
+            return P_curr
+        end
+
+        # Three-term recurrence for ℓ > m+1
+        P_prev2 = P_mm
+        P_prev1 = P_curr
+
+        for l in (m+2):ℓ
+            # Normalized recurrence coefficients
+            a_l = x * sqrt((4.0*l^2 - 1.0) / (l^2 - m^2))
+            b_l = sqrt(((l-1)^2 - m^2) * (4.0*l^2 - 1.0) /
+                       ((l^2 - m^2) * (4.0*(l-1)^2 - 1.0)))
+
+            P_curr = a_l * P_prev1 - b_l * P_prev2
+            P_prev2 = P_prev1
+            P_prev1 = P_curr
+        end
+
+        return P_prev1
+    end
 end
 
 

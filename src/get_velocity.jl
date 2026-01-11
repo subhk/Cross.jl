@@ -3,6 +3,11 @@
 #
 #  Provides functions to convert poloidal/toroidal potentials to physical
 #  velocity components on a meridional (r, θ) grid for a single azimuthal mode.
+#
+#  This module supports:
+#  - Direct physical-space computation (potentials_to_velocity)
+#  - Biglobal stability analysis eigenvector reconstruction
+#  - Triglobal stability analysis eigenvector reconstruction
 # =============================================================================
 
 using LinearAlgebra
@@ -17,12 +22,15 @@ The velocity is reconstructed using the poloidal-toroidal decomposition:
 
     u = ∇×∇×(P r̂) + ∇×(T r̂)
 
-which gives:
-    u_r = -L²P / r²
-    u_θ = (1/r) ∂(∂P/∂r)/∂θ + (im/r sinθ) T
+which gives (see MagIC documentation, Chandrasekhar 1961):
+    u_r = ℓ(ℓ+1) P / r² = -L²P / r²
+    u_θ = (1/r) ∂²P/∂r∂θ + (im/r sinθ) T
     u_φ = (im/r sinθ) ∂P/∂r - (1/r) ∂T/∂θ
 
 where L² = -ℓ(ℓ+1) is the angular Laplacian eigenvalue.
+
+Note: The horizontal Laplacian Δ_H = L²/r², and for spherical harmonics,
+L² Y_ℓm = -ℓ(ℓ+1) Y_ℓm.
 
 # Arguments
 - `P::AbstractMatrix` - Poloidal potential on (Nr, Nθ) grid
@@ -70,12 +78,13 @@ function potentials_to_velocity(P::AbstractMatrix,
     inv_r2 = inv_r .^ 2
     inv_sinθ = 1.0 ./ sintheta
 
-    dθ_T = T * Dθ'
-    lap_ang_P = P * Lθ'
-    dP_dr = Dr * P
+    # Compute derivatives
+    dθ_T = T * Dθ'           # ∂T/∂θ
+    lap_ang_P = P * Lθ'      # L² P (angular Laplacian of P)
+    dP_dr = Dr * P           # ∂P/∂r
     inv_r_sinθ = inv_r .* inv_sinθ'
 
-    # u_r = -L²P / r² (L² applied via Lθ operator)
+    # u_r = ℓ(ℓ+1) P / r² = -L²P / r² (since Lθ gives -ℓ(ℓ+1))
     ur = -lap_ang_P .* inv_r2
 
     # u_θ = (1/r) ∂²P/∂r∂θ + (im/r sinθ) T
@@ -87,4 +96,812 @@ function potentials_to_velocity(P::AbstractMatrix,
     uφ .-= dθ_T .* inv_r
 
     return ur, uθ, uφ
+end
+
+
+# =============================================================================
+#  Spherical Harmonic Utilities
+# =============================================================================
+
+"""
+    _double_factorial(n)
+
+Compute n!! = n × (n-2) × (n-4) × ... × (1 or 2).
+"""
+function _double_factorial(n::Int)
+    n <= 0 && return 1.0
+    result = 1.0
+    for k in n:-2:1
+        result *= k
+    end
+    return result
+end
+
+
+"""
+    _associated_legendre_table(m, lmax, mu)
+
+Compute table of associated Legendre polynomials P_ℓ^m(μ) for ℓ ∈ [m, lmax].
+
+Uses the standard recurrence relation for numerical stability.
+
+# Arguments
+- `m::Int` - Azimuthal order (≥ 0)
+- `lmax::Int` - Maximum degree
+- `mu::Vector{Float64}` - cos(θ) values
+
+# Returns
+- `P::Matrix{Float64}` - P[ℓ-m+1, j] = P_ℓ^m(μ[j])
+"""
+function _associated_legendre_table(m::Int, lmax::Int, mu::Vector{Float64})
+    nmu = length(mu)
+    n_l = lmax - m + 1
+    P = zeros(Float64, n_l, nmu)
+    n_l <= 0 && return P
+
+    # Starting value: P_m^m
+    if m == 0
+        P[1, :] .= 1.0
+    else
+        Pmm = (-1.0)^m * _double_factorial(2 * m - 1) .* (1 .- mu.^2).^(m / 2)
+        P[1, :] .= Pmm
+    end
+
+    lmax == m && return P
+
+    # P_{m+1}^m from P_m^m
+    P[2, :] .= mu .* (2 * m + 1) .* P[1, :]
+
+    # Recurrence for higher ℓ
+    for l in (m + 2):lmax
+        idx = l - m + 1
+        P[idx, :] .= ((2 * l - 1) .* mu .* P[idx - 1, :] .-
+                      (l + m - 1) .* P[idx - 2, :]) ./ (l - m)
+    end
+
+    return P
+end
+
+
+"""
+    _normalization_table(m, lmax)
+
+Compute spherical harmonic normalization factors for ℓ ∈ [m, lmax].
+
+The fully normalized spherical harmonic is:
+    Y_ℓm(θ, φ) = N_ℓm × P_ℓ^m(cos θ) × e^{imφ}
+
+where N_ℓm = √[(2ℓ+1)/(4π) × (ℓ-m)!/(ℓ+m)!]
+
+# Returns
+- `N::Vector{Float64}` - N[ℓ-m+1] = N_ℓm
+"""
+function _normalization_table(m::Int, lmax::Int)
+    n_l = lmax - m + 1
+    N = Vector{Float64}(undef, n_l)
+    for l in m:lmax
+        # Compute (l-m)!/(l+m)! iteratively to avoid overflow
+        ratio = 1.0
+        for k in (l - m + 1):(l + m)
+            ratio /= k
+        end
+        N[l - m + 1] = sqrt((2 * l + 1) / (4 * π) * ratio)
+    end
+    return N
+end
+
+
+# =============================================================================
+#  Angular Grid and Operators
+# =============================================================================
+
+"""
+    MeridionalGrid{T<:Real}
+
+Grid and operators for meridional (r, θ) plane reconstruction.
+
+# Fields
+- `θ::Vector{T}` - Colatitude values (0 to π)
+- `cosθ::Vector{T}` - cos(θ) values
+- `sinθ::Vector{T}` - sin(θ) values
+- `Dθ::Matrix{T}` - θ-differentiation matrix
+- `m::Int` - Azimuthal wavenumber
+- `Lθ::Matrix{T}` - Angular Laplacian L² for mode m
+- `Ylm::Dict{Int, Vector{Complex{T}}}` - Precomputed Y_ℓm(θ, φ=0)
+"""
+struct MeridionalGrid{T<:Real}
+    θ::Vector{T}
+    cosθ::Vector{T}
+    sinθ::Vector{T}
+    Dθ::Matrix{T}
+    m::Int
+    Lθ::Matrix{T}
+    Ylm::Dict{Int, Vector{Complex{T}}}
+    lmax::Int
+end
+
+
+"""
+    build_meridional_grid(Nθ, m, lmax; grid_type=:gauss_legendre)
+
+Build a meridional grid with angular operators for velocity reconstruction.
+
+# Arguments
+- `Nθ::Int` - Number of θ points
+- `m::Int` - Azimuthal wavenumber
+- `lmax::Int` - Maximum spherical harmonic degree
+- `grid_type::Symbol` - Grid type (:gauss_legendre or :uniform)
+
+# Returns
+- `MeridionalGrid` - Grid structure with all operators
+
+# Example
+```julia
+grid = build_meridional_grid(128, 10, 60)
+```
+"""
+function build_meridional_grid(Nθ::Int, m::Int, lmax::Int;
+                                grid_type::Symbol=:gauss_legendre)
+    T = Float64
+
+    # Generate θ grid
+    if grid_type == :gauss_legendre
+        # Gauss-Legendre nodes (better for spectral accuracy)
+        cosθ, weights = _gauss_legendre_nodes(Nθ)
+        θ = acos.(cosθ)
+    elseif grid_type == :chebyshev
+        # Chebyshev nodes in θ ∈ (0, π)
+        k = collect(1:Nθ)
+        θ = π .* (2 .* k .- 1) ./ (2 * Nθ)
+        cosθ = cos.(θ)
+    else  # :uniform
+        θ = range(T(π) / (2 * Nθ), T(π) - T(π) / (2 * Nθ), length=Nθ)
+        θ = collect(θ)
+        cosθ = cos.(θ)
+    end
+    sinθ = sin.(θ)
+
+    # Build differentiation matrix Dθ using finite differences or spectral
+    Dθ = _build_theta_derivative_matrix(θ)
+
+    # Build angular Laplacian L² for mode m
+    # L² = (1/sinθ) d/dθ (sinθ d/dθ) - m²/sin²θ
+    Lθ = _build_angular_laplacian(θ, sinθ, Dθ, m)
+
+    # Precompute spherical harmonics Y_ℓm(θ, φ=0)
+    Ylm = _precompute_spherical_harmonics(m, lmax, cosθ)
+
+    return MeridionalGrid{T}(θ, cosθ, sinθ, Dθ, m, Lθ, Ylm, lmax)
+end
+
+
+"""
+    _gauss_legendre_nodes(n)
+
+Compute Gauss-Legendre nodes and weights on [-1, 1].
+"""
+function _gauss_legendre_nodes(n::Int)
+    # Newton-Raphson iteration for roots of P_n(x)
+    x = zeros(Float64, n)
+    w = zeros(Float64, n)
+
+    m = div(n + 1, 2)
+    for i in 1:m
+        # Initial guess
+        z = cos(π * (i - 0.25) / (n + 0.5))
+
+        # Newton iteration
+        for _ in 1:100
+            p1 = 1.0
+            p2 = 0.0
+            for j in 1:n
+                p3 = p2
+                p2 = p1
+                p1 = ((2 * j - 1) * z * p2 - (j - 1) * p3) / j
+            end
+            # p1 is now P_n(z)
+            # Derivative: P'_n(z) = n(zP_n - P_{n-1})/(z²-1)
+            pp = n * (z * p1 - p2) / (z * z - 1)
+            z_old = z
+            z = z - p1 / pp
+            abs(z - z_old) < 1e-15 && break
+        end
+
+        x[i] = -z
+        x[n + 1 - i] = z
+        w[i] = 2 / ((1 - z * z) * (n * (z * p1 - p2) / (z * z - 1))^2)
+        w[n + 1 - i] = w[i]
+    end
+
+    return x, w
+end
+
+
+"""
+    _build_theta_derivative_matrix(θ)
+
+Build differentiation matrix for θ using Chebyshev-like spectral differentiation.
+"""
+function _build_theta_derivative_matrix(θ::Vector{T}) where T
+    n = length(θ)
+    D = zeros(T, n, n)
+
+    for i in 1:n
+        for j in 1:n
+            if i != j
+                D[i, j] = _barycentric_weight(θ, j) /
+                          (_barycentric_weight(θ, i) * (θ[i] - θ[j]))
+            end
+        end
+        D[i, i] = -sum(D[i, k] for k in 1:n if k != i)
+    end
+
+    return D
+end
+
+
+function _barycentric_weight(θ::Vector{T}, j::Int) where T
+    n = length(θ)
+    w = one(T)
+    for k in 1:n
+        if k != j
+            w *= (θ[j] - θ[k])
+        end
+    end
+    return 1 / w
+end
+
+
+"""
+    _build_angular_laplacian(θ, sinθ, Dθ, m)
+
+Build angular Laplacian operator L² for azimuthal mode m.
+
+L² = (1/sinθ) d/dθ (sinθ d/dθ) - m²/sin²θ
+
+For Y_ℓm, this gives L² Y_ℓm = -ℓ(ℓ+1) Y_ℓm.
+"""
+function _build_angular_laplacian(θ::Vector{T}, sinθ::Vector{T},
+                                   Dθ::Matrix{T}, m::Int) where T
+    n = length(θ)
+    cosθ = cos.(θ)
+
+    # L² = d²/dθ² + (cosθ/sinθ) d/dθ - m²/sin²θ
+    # which is equivalent to (1/sinθ) d/dθ (sinθ d/dθ) - m²/sin²θ
+
+    D2θ = Dθ * Dθ  # Second derivative
+
+    Lθ = D2θ + Diagonal(cosθ ./ sinθ) * Dθ - Diagonal(T(m^2) ./ (sinθ.^2))
+
+    return Lθ
+end
+
+
+"""
+    _precompute_spherical_harmonics(m, lmax, cosθ)
+
+Precompute Y_ℓm(θ, φ=0) for ℓ ∈ [m, lmax].
+"""
+function _precompute_spherical_harmonics(m::Int, lmax::Int, cosθ::Vector{Float64})
+    Plm = _associated_legendre_table(m, lmax, cosθ)
+    Nlm = _normalization_table(m, lmax)
+
+    Ylm = Dict{Int, Vector{ComplexF64}}()
+    for ℓ in m:lmax
+        idx = ℓ - m + 1
+        # Y_ℓm(θ, φ=0) = N_ℓm × P_ℓ^m(cosθ) × e^{im×0} = N_ℓm × P_ℓ^m(cosθ)
+        Ylm[ℓ] = ComplexF64.(Nlm[idx] .* Plm[idx, :])
+    end
+
+    return Ylm
+end
+
+
+# =============================================================================
+#  Eigenvector Coefficient Extraction
+# =============================================================================
+
+"""
+    extract_eigenvector_coefficients(eigenvector, op)
+
+Extract poloidal P_ℓm(r), toroidal T_ℓm(r), and temperature Θ_ℓm(r)
+coefficients from a stability analysis eigenvector.
+
+# Arguments
+- `eigenvector::Vector{Complex}` - Eigenvector from solve_eigenvalue_problem
+- `op::LinearStabilityOperator` - The operator used to compute the eigenvector
+
+# Returns
+- `P_coeffs::Dict{Int, Vector{Complex}}` - P_ℓm(r) for each ℓ
+- `T_coeffs::Dict{Int, Vector{Complex}}` - T_ℓm(r) for each ℓ
+- `Θ_coeffs::Dict{Int, Vector{Complex}}` - Θ_ℓm(r) for each ℓ
+
+# Example
+```julia
+eigenvalues, eigenvectors, op, info = solve_eigenvalue_problem(op)
+P, T, Θ = extract_eigenvector_coefficients(eigenvectors[1], op)
+```
+"""
+function extract_eigenvector_coefficients(eigenvector::AbstractVector{<:Complex},
+                                           op)
+    P_coeffs = Dict{Int, Vector{ComplexF64}}()
+    T_coeffs = Dict{Int, Vector{ComplexF64}}()
+    Θ_coeffs = Dict{Int, Vector{ComplexF64}}()
+
+    # Extract poloidal coefficients
+    for ℓ in op.l_sets[:P]
+        idx = op.index_map[(ℓ, :P)]
+        P_coeffs[ℓ] = eigenvector[idx]
+    end
+
+    # Extract toroidal coefficients
+    for ℓ in op.l_sets[:T]
+        idx = op.index_map[(ℓ, :T)]
+        T_coeffs[ℓ] = eigenvector[idx]
+    end
+
+    # Extract temperature coefficients
+    for ℓ in op.l_sets[:Θ]
+        idx = op.index_map[(ℓ, :Θ)]
+        Θ_coeffs[ℓ] = eigenvector[idx]
+    end
+
+    return P_coeffs, T_coeffs, Θ_coeffs
+end
+
+
+# =============================================================================
+#  Spectral to Physical Space Synthesis
+# =============================================================================
+
+"""
+    spectral_to_physical(coeffs, grid, Nr)
+
+Transform spectral coefficients to physical (r, θ) space.
+
+Computes: f(r, θ) = Σ_ℓ f_ℓm(r) × Y_ℓm(θ, φ=0)
+
+# Arguments
+- `coeffs::Dict{Int, Vector{Complex}}` - Spectral coefficients f_ℓm(r)
+- `grid::MeridionalGrid` - Meridional grid with precomputed Y_ℓm
+- `Nr::Int` - Number of radial points
+
+# Returns
+- `f_phys::Matrix{ComplexF64}` - f(r, θ) on (Nr, Nθ) grid
+"""
+function spectral_to_physical(coeffs::Dict{Int, Vector{<:Complex}},
+                               grid::MeridionalGrid,
+                               Nr::Int)
+    Nθ = length(grid.θ)
+    f_phys = zeros(ComplexF64, Nr, Nθ)
+
+    for (ℓ, f_lm) in coeffs
+        if haskey(grid.Ylm, ℓ)
+            Ylm = grid.Ylm[ℓ]
+            # f_phys(r, θ) += f_ℓm(r) × Y_ℓm(θ)
+            for j in 1:Nθ
+                f_phys[:, j] .+= f_lm .* Ylm[j]
+            end
+        end
+    end
+
+    return f_phys
+end
+
+
+# =============================================================================
+#  High-Level Velocity Reconstruction from Eigenvectors
+# =============================================================================
+
+"""
+    eigenvector_to_velocity(eigenvector, op; Nθ=nothing, grid=nothing)
+
+Reconstruct velocity components from a stability analysis eigenvector.
+
+This is the main high-level function for velocity reconstruction from
+biglobal stability analysis results.
+
+# Arguments
+- `eigenvector::Vector{Complex}` - Eigenvector from solve_eigenvalue_problem
+- `op::LinearStabilityOperator` - The operator used to compute eigenvector
+- `Nθ::Int` - Number of θ points (default: 2 × lmax)
+- `grid::MeridionalGrid` - Pre-built grid (optional, for repeated calls)
+
+# Returns
+- `ur::Matrix{ComplexF64}` - Radial velocity u_r(r, θ)
+- `uθ::Matrix{ComplexF64}` - Colatitudinal velocity u_θ(r, θ)
+- `uφ::Matrix{ComplexF64}` - Azimuthal velocity u_φ(r, θ)
+- `grid::MeridionalGrid` - The grid used (for reuse)
+
+# Example
+```julia
+# Solve eigenvalue problem
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64)
+op = LinearStabilityOperator(params)
+eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op)
+
+# Reconstruct velocity of fastest-growing mode
+ur, uθ, uφ, grid = eigenvector_to_velocity(eigenvectors[1], op)
+
+# Plot radial velocity
+using Plots
+heatmap(grid.θ, op.r, real.(ur), xlabel="θ", ylabel="r", title="u_r")
+```
+"""
+function eigenvector_to_velocity(eigenvector::AbstractVector{<:Complex}, op;
+                                  Nθ::Union{Int, Nothing}=nothing,
+                                  grid::Union{MeridionalGrid, Nothing}=nothing)
+    m = op.params.m
+    lmax = op.params.lmax
+    Nr = op.params.Nr
+    r = op.r
+    Dr = op.cd.D1
+
+    # Build or use provided grid
+    if grid === nothing
+        Nθ_use = Nθ === nothing ? 2 * lmax : Nθ
+        grid = build_meridional_grid(Nθ_use, m, lmax)
+    end
+
+    # Extract spectral coefficients
+    P_coeffs, T_coeffs, _ = extract_eigenvector_coefficients(eigenvector, op)
+
+    # Transform to physical space
+    P_phys = spectral_to_physical(P_coeffs, grid, Nr)
+    T_phys = spectral_to_physical(T_coeffs, grid, Nr)
+
+    # Compute velocity using potentials_to_velocity
+    ur, uθ, uφ = potentials_to_velocity(P_phys, T_phys;
+                                         Dr=Dr,
+                                         Dθ=grid.Dθ,
+                                         Lθ=grid.Lθ,
+                                         r=r,
+                                         sintheta=grid.sinθ,
+                                         m=m)
+
+    return ur, uθ, uφ, grid
+end
+
+
+"""
+    eigenvector_to_velocity_triglobal(eigenvector, problem;
+                                       Nθ=nothing, Nφ=nothing, φ_slice=nothing)
+
+Reconstruct velocity from a triglobal stability analysis eigenvector.
+
+For triglobal analysis, the eigenvector contains multiple coupled azimuthal
+modes m. This function either:
+1. Returns velocity at a fixed φ slice (2D output)
+2. Returns full 3D velocity field (expensive)
+
+# Arguments
+- `eigenvector::Vector{Complex}` - Eigenvector from solve_triglobal_eigenvalue_problem
+- `problem::CoupledModeProblem` - The problem structure from setup_coupled_mode_problem
+- `Nθ::Int` - Number of θ points (default: 2 × lmax)
+- `Nφ::Int` - Number of φ points for 3D output (default: nothing → use φ_slice)
+- `φ_slice::Real` - Fixed azimuthal angle for 2D slice (default: 0)
+
+# Returns (2D mode, when φ_slice is specified)
+- `ur::Matrix{ComplexF64}` - u_r(r, θ) at φ = φ_slice
+- `uθ::Matrix{ComplexF64}` - u_θ(r, θ) at φ = φ_slice
+- `uφ::Matrix{ComplexF64}` - u_φ(r, θ) at φ = φ_slice
+
+# Returns (3D mode, when Nφ is specified)
+- `ur::Array{ComplexF64, 3}` - u_r(r, θ, φ)
+- `uθ::Array{ComplexF64, 3}` - u_θ(r, θ, φ)
+- `uφ::Array{ComplexF64, 3}` - u_φ(r, θ, φ)
+
+# Example
+```julia
+# Solve triglobal problem
+eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(params)
+
+# Get velocity at φ = 0 slice
+ur, uθ, uφ = eigenvector_to_velocity_triglobal(eigenvectors[:, 1], problem)
+
+# Get full 3D velocity (more expensive)
+ur, uθ, uφ = eigenvector_to_velocity_triglobal(eigenvectors[:, 1], problem; Nφ=64)
+```
+"""
+function eigenvector_to_velocity_triglobal(eigenvector::AbstractVector{<:Complex},
+                                            problem;
+                                            Nθ::Union{Int, Nothing}=nothing,
+                                            Nφ::Union{Int, Nothing}=nothing,
+                                            φ_slice::Union{Real, Nothing}=nothing)
+    params = problem.params
+    lmax = params.lmax
+    Nr = params.Nr
+
+    # Default: 2D slice at φ = 0
+    if Nφ === nothing && φ_slice === nothing
+        φ_slice = 0.0
+    end
+
+    Nθ_use = Nθ === nothing ? 2 * lmax : Nθ
+
+    if Nφ !== nothing
+        # Full 3D reconstruction
+        return _triglobal_velocity_3d(eigenvector, problem, Nθ_use, Nφ)
+    else
+        # 2D slice at fixed φ
+        return _triglobal_velocity_slice(eigenvector, problem, Nθ_use, φ_slice)
+    end
+end
+
+
+"""
+    _triglobal_velocity_slice(eigenvector, problem, Nθ, φ)
+
+Compute velocity at a fixed φ slice for triglobal eigenvector.
+"""
+function _triglobal_velocity_slice(eigenvector::AbstractVector{<:Complex},
+                                    problem, Nθ::Int, φ::Real)
+    params = problem.params
+    lmax = params.lmax
+    Nr = params.Nr
+    m_range = problem.m_range
+
+    # Get radial grid from first mode's operator
+    # (all modes share the same radial discretization)
+    first_m = first(m_range)
+    χ = params.χ
+
+    # Build radial grid
+    cd = _build_chebyshev_grid(Nr, χ, 1.0)
+    r = cd.x
+    Dr = cd.D1
+
+    # Initialize velocity accumulators
+    ur_total = zeros(ComplexF64, Nr, Nθ)
+    uθ_total = zeros(ComplexF64, Nr, Nθ)
+    uφ_total = zeros(ComplexF64, Nr, Nθ)
+
+    # Process each azimuthal mode
+    for m in m_range
+        # Build grid for this m
+        grid_m = build_meridional_grid(Nθ, abs(m), lmax)
+
+        # Extract coefficients for this m
+        P_m, T_m = _extract_mode_coefficients(eigenvector, problem, m)
+
+        # Skip if empty
+        isempty(P_m) && isempty(T_m) && continue
+
+        # Transform to physical θ-space
+        P_phys = spectral_to_physical(P_m, grid_m, Nr)
+        T_phys = spectral_to_physical(T_m, grid_m, Nr)
+
+        # Compute velocity for this mode
+        ur_m, uθ_m, uφ_m = potentials_to_velocity(P_phys, T_phys;
+                                                   Dr=Dr,
+                                                   Dθ=grid_m.Dθ,
+                                                   Lθ=grid_m.Lθ,
+                                                   r=r,
+                                                   sintheta=grid_m.sinθ,
+                                                   m=abs(m))
+
+        # Add contribution with e^{imφ} phase factor
+        phase = exp(im * m * φ)
+        ur_total .+= ur_m .* phase
+        uθ_total .+= uθ_m .* phase
+        uφ_total .+= uφ_m .* phase
+    end
+
+    return ur_total, uθ_total, uφ_total
+end
+
+
+"""
+    _triglobal_velocity_3d(eigenvector, problem, Nθ, Nφ)
+
+Compute full 3D velocity field for triglobal eigenvector.
+"""
+function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
+                                 problem, Nθ::Int, Nφ::Int)
+    params = problem.params
+    lmax = params.lmax
+    Nr = params.Nr
+    m_range = problem.m_range
+
+    # Build radial grid
+    χ = params.χ
+    cd = _build_chebyshev_grid(Nr, χ, 1.0)
+    r = cd.x
+    Dr = cd.D1
+
+    # Build φ grid
+    φ = range(0, 2π, length=Nφ+1)[1:Nφ]
+
+    # Initialize 3D velocity arrays
+    ur = zeros(ComplexF64, Nr, Nθ, Nφ)
+    uθ = zeros(ComplexF64, Nr, Nθ, Nφ)
+    uφ = zeros(ComplexF64, Nr, Nθ, Nφ)
+
+    # Process each azimuthal mode
+    for m in m_range
+        # Build grid for this m
+        grid_m = build_meridional_grid(Nθ, abs(m), lmax)
+
+        # Extract coefficients for this m
+        P_m, T_m = _extract_mode_coefficients(eigenvector, problem, m)
+
+        # Skip if empty
+        isempty(P_m) && isempty(T_m) && continue
+
+        # Transform to physical θ-space
+        P_phys = spectral_to_physical(P_m, grid_m, Nr)
+        T_phys = spectral_to_physical(T_m, grid_m, Nr)
+
+        # Compute velocity for this mode (2D)
+        ur_m, uθ_m, uφ_m = potentials_to_velocity(P_phys, T_phys;
+                                                   Dr=Dr,
+                                                   Dθ=grid_m.Dθ,
+                                                   Lθ=grid_m.Lθ,
+                                                   r=r,
+                                                   sintheta=grid_m.sinθ,
+                                                   m=abs(m))
+
+        # Add to 3D field with e^{imφ} phase
+        for k in 1:Nφ
+            phase = exp(im * m * φ[k])
+            ur[:, :, k] .+= ur_m .* phase
+            uθ[:, :, k] .+= uθ_m .* phase
+            uφ[:, :, k] .+= uφ_m .* phase
+        end
+    end
+
+    return ur, uθ, uφ
+end
+
+
+"""
+    _extract_mode_coefficients(eigenvector, problem, m)
+
+Extract P_ℓm and T_ℓm coefficients for a specific mode m from triglobal eigenvector.
+"""
+function _extract_mode_coefficients(eigenvector::AbstractVector{<:Complex},
+                                     problem, m::Int)
+    params = problem.params
+    lmax = params.lmax
+    Nr = params.Nr
+
+    # Get block indices for this m
+    if !haskey(problem.block_indices, m)
+        return Dict{Int, Vector{ComplexF64}}(), Dict{Int, Vector{ComplexF64}}()
+    end
+
+    block_range = problem.block_indices[m]
+    block_vec = eigenvector[block_range]
+
+    # Determine number of ℓ values for this m
+    m_abs = abs(m)
+    num_ell = lmax - m_abs + 1
+
+    # DOFs per (ℓ, field) after boundary removal
+    # P: Nr - 4 (4 tau rows), T: Nr - 2 (2 BCs), Θ: Nr - 2 (2 BCs)
+    # Interior DOFs = 3*Nr - 8 per ℓ
+    dofs_per_ell = 3 * Nr - 8
+
+    P_coeffs = Dict{Int, Vector{ComplexF64}}()
+    T_coeffs = Dict{Int, Vector{ComplexF64}}()
+
+    # This is a simplified extraction - actual implementation needs
+    # to match the exact DOF ordering used in triglobal_stability.jl
+    idx = 1
+    for ℓ in m_abs:lmax
+        # P block (Nr - 4 interior DOFs)
+        n_P = Nr - 4
+        if idx + n_P - 1 <= length(block_vec)
+            P_full = zeros(ComplexF64, Nr)
+            P_full[3:Nr-2] = block_vec[idx:idx+n_P-1]
+            P_coeffs[ℓ] = P_full
+        end
+        idx += n_P
+
+        # T block (Nr - 2 interior DOFs)
+        n_T = Nr - 2
+        if idx + n_T - 1 <= length(block_vec)
+            T_full = zeros(ComplexF64, Nr)
+            T_full[2:Nr-1] = block_vec[idx:idx+n_T-1]
+            T_coeffs[ℓ] = T_full
+        end
+        idx += n_T
+
+        # Θ block (Nr - 2 interior DOFs) - skip for velocity
+        n_Θ = Nr - 2
+        idx += n_Θ
+    end
+
+    return P_coeffs, T_coeffs
+end
+
+
+"""
+    _build_chebyshev_grid(Nr, ri, ro)
+
+Build simple Chebyshev grid and differentiation matrix.
+"""
+function _build_chebyshev_grid(Nr::Int, ri::T, ro::T) where T<:Real
+    # Chebyshev nodes on [-1, 1]
+    k = collect(0:Nr-1)
+    x_cheb = -cos.(π .* k ./ (Nr - 1))
+
+    # Map to [ri, ro]
+    x = ri .+ (ro - ri) .* (x_cheb .+ 1) ./ 2
+
+    # Differentiation matrix
+    D1 = _chebyshev_diff_matrix(Nr) .* (2 / (ro - ri))
+
+    return (x=x, D1=D1)
+end
+
+
+function _chebyshev_diff_matrix(N::Int)
+    D = zeros(Float64, N, N)
+    x = -cos.(π .* (0:N-1) ./ (N - 1))
+
+    c = [2.0; ones(N - 2); 2.0]
+    c[1:2:end] .*= -1
+
+    for i in 1:N
+        for j in 1:N
+            if i != j
+                D[i, j] = c[i] / (c[j] * (x[i] - x[j]))
+            end
+        end
+    end
+
+    for i in 1:N
+        D[i, i] = -sum(D[i, :])
+    end
+
+    return D
+end
+
+
+# =============================================================================
+#  Convenience Functions
+# =============================================================================
+
+"""
+    kinetic_energy_density(ur, uθ, uφ)
+
+Compute kinetic energy density (1/2)|u|² on the meridional grid.
+"""
+function kinetic_energy_density(ur::AbstractMatrix, uθ::AbstractMatrix,
+                                 uφ::AbstractMatrix)
+    return 0.5 .* (abs2.(ur) .+ abs2.(uθ) .+ abs2.(uφ))
+end
+
+
+"""
+    meridional_streamfunction(ur, uθ, r, θ, m)
+
+Compute meridional streamfunction ψ from (u_r, u_θ) for visualization.
+
+For axisymmetric flow (m=0): u_r = (1/r²sinθ) ∂ψ/∂θ, u_θ = -(1/r sinθ) ∂ψ/∂r
+"""
+function meridional_streamfunction(ur::AbstractMatrix, uθ::AbstractMatrix,
+                                    r::AbstractVector, θ::AbstractVector,
+                                    m::Int)
+    if m != 0
+        @warn "Meridional streamfunction is only well-defined for m=0"
+    end
+
+    Nr, Nθ = size(ur)
+    sinθ = sin.(θ)
+
+    # Integrate u_r × r² × sinθ in θ to get ψ
+    ψ = zeros(ComplexF64, Nr, Nθ)
+
+    dθ = θ[2] - θ[1]  # Assuming uniform spacing
+    for i in 1:Nr
+        ψ[i, 1] = 0.0
+        for j in 2:Nθ
+            ψ[i, j] = ψ[i, j-1] + 0.5 * (ur[i, j-1] * r[i]^2 * sinθ[j-1] +
+                                          ur[i, j] * r[i]^2 * sinθ[j]) * dθ
+        end
+    end
+
+    return ψ
 end

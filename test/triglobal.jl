@@ -306,10 +306,10 @@ using LinearAlgebra
         @test c_plus == 0.0
         @test c_minus == 0.0
 
-        # ℓ = 1, m = 0: should have non-zero c_plus (couples to ℓ=2)
+        # ℓ = 1, m = 0: should have non-zero c_plus (couples to ℓ=2) and c_minus (couples to ℓ=0)
         c_plus, c_minus = _theta_derivative_coeff(1, 0)
         @test c_plus != 0.0
-        @test c_minus == 0.0  # No ℓ-1 = 0 coupling for m=0
+        @test c_minus != 0.0  # ℓ=1, m=0 couples to ℓ=0 since 1 > |0|
 
         # ℓ = 2, m = 0: should have both non-zero
         c_plus, c_minus = _theta_derivative_coeff(2, 0)

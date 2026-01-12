@@ -35,14 +35,21 @@ end
     return spzeros(ComplexF64, n, n)
 end
 
-function combine_terms(terms::AbstractVector{<:Tuple{T,SparseF64}}) where {T<:Real}
-    isempty(terms) && return spzeros(Float64, 0, 0)
+combine_terms(terms::AbstractVector{<:Tuple}) = _combine_terms(Float64, terms)
+combine_terms(terms::AbstractVector{<:Tuple{ComplexF64,SparseC64}}) =
+    _combine_terms(ComplexF64, terms)
+
+function _combine_terms(::Type{T}, terms) where {T}
+    isempty(terms) && return spzeros(T, 0, 0)
     rows, cols = size(terms[1][2])
-    out = spzeros(Float64, rows, cols)
+    out = spzeros(T, rows, cols)
     for (coef, mat) in terms
-        c = Float64(coef)
-        if c != 0.0
-            out += c * mat
+        c = T(coef)
+        c == zero(T) && continue
+        if T <: Complex
+            out = out + c * SparseC64(mat)
+        else
+            out = out + c * SparseF64(mat)
         end
     end
     return out

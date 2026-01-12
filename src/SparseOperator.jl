@@ -141,6 +141,8 @@ struct SparseStabilityOperator{T<:Real}
     r2_D0_v::SparseMatrixCSC{Float64,Int}  # For Coriolis (toroidal diagonal)
     r2_D1_v::SparseMatrixCSC{Float64,Int}  # For toroidal-poloidal coupling
     r2_D2_v::SparseMatrixCSC{Float64,Int}
+    r3_D0_v::SparseMatrixCSC{Float64,Int}  # Extra weighting for coupling terms
+    r4_D1_v::SparseMatrixCSC{Float64,Int}
 
     # Radial operators for temperature (section h)
     r0_D0_h::SparseMatrixCSC{Float64,Int}
@@ -151,6 +153,7 @@ struct SparseStabilityOperator{T<:Real}
     r2_D2_h::SparseMatrixCSC{Float64,Int}
     r3_D0_h::SparseMatrixCSC{Float64,Int}  # For differential heating
     r3_D2_h::SparseMatrixCSC{Float64,Int}  # For differential heating
+    r4_D0_h::SparseMatrixCSC{Float64,Int}
 
     # l-mode information
     ll_top::Vector{Int}  # l values for poloidal (equatorially symmetric)
@@ -193,6 +196,8 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     r2_D0_v = sparse_radial_operator(2, 0, N, ri, ro)  # For Coriolis (toroidal diagonal)
     r2_D1_v = sparse_radial_operator(2, 1, N, ri, ro)  # For toroidal-poloidal coupling
     r2_D2_v = sparse_radial_operator(2, 2, N, ri, ro)
+    r3_D0_v = sparse_radial_operator(3, 0, N, ri, ro)
+    r4_D1_v = sparse_radial_operator(4, 1, N, ri, ro)
 
     # Pre-compute radial operators for temperature
     println("  Computing temperature operators...")
@@ -204,6 +209,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     r2_D2_h = sparse_radial_operator(2, 2, N, ri, ro)
     r3_D0_h = sparse_radial_operator(3, 0, N, ri, ro)  # For differential heating
     r3_D2_h = sparse_radial_operator(3, 2, N, ri, ro)  # For differential heating
+    r4_D0_h = sparse_radial_operator(4, 0, N, ri, ro)
 
     # Determine l-mode structure based on equatorial symmetry
     ll_top, ll_bot = compute_l_modes(params.m, params.lmax, params.symm)
@@ -224,8 +230,8 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     return SparseStabilityOperator{T}(
         params,
         r0_D0_u, r2_D0_u, r2_D2_u, r3_D0_u, r3_D1_u, r4_D0_u, r4_D1_u, r4_D2_u, r3_D3_u, r4_D4_u,
-        r0_D0_v, r1_D0_v, r1_D1_v, r2_D0_v, r2_D1_v, r2_D2_v,
-        r0_D0_h, r1_D0_h, r1_D1_h, r2_D0_h, r2_D1_h, r2_D2_h, r3_D0_h, r3_D2_h,
+        r0_D0_v, r1_D0_v, r1_D1_v, r2_D0_v, r2_D1_v, r2_D2_v, r3_D0_v, r4_D1_v,
+        r0_D0_h, r1_D0_h, r1_D1_h, r2_D0_h, r2_D1_h, r2_D2_h, r3_D0_h, r3_D2_h, r4_D0_h,
         ll_top, ll_bot, nl_modes,
         matrix_size
     )
@@ -359,15 +365,15 @@ Following Kore lines 68-86:
 function operator_coriolis_offdiag(op::SparseStabilityOperator{T},
                                   l::Int, m::Int, offset::Int) where {T}
     if offset == -1
-        # Coupling to l-1 mode
+        # Coupling to l-1 mode (acts on toroidal coefficients)
         C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-        mtx = 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
+        mtx = 2 * C * ((l - 1) * op.r3_D0_v - op.r4_D1_v)
         return mtx, -1
 
     elseif offset == 1
-        # Coupling to l+1 mode
+        # Coupling to l+1 mode (acts on toroidal coefficients)
         C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-        mtx = 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
+        mtx = 2 * C * (-(l + 2) * op.r3_D0_v - op.r4_D1_v)
         return mtx, 1
 
     else
@@ -426,8 +432,8 @@ function operator_buoyancy(op::SparseStabilityOperator{T},
     # L factor
     L = l * (l + 1)
 
-    # Full buoyancy operator: beyonce * L * r⁴D⁰
-    return beyonce * L * op.r4_D0_u
+    # Full buoyancy operator couples temperature → poloidal via temperature basis
+    return beyonce * L * op.r4_D0_h
 end
 
 """
@@ -452,12 +458,12 @@ function operator_coriolis_v_to_u(op::SparseStabilityOperator{T},
     if offset == -1
         # Coupling from v at mode l to u at mode l-1
         C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
-        return 2 * C * ((l - 1) * op.r1_D0_v - op.r2_D1_v)
+        return 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
 
     elseif offset == 1
         # Coupling from v at mode l to u at mode l+1
         C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
-        return 2 * C * (-(l + 2) * op.r1_D0_v - op.r2_D1_v)
+        return 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
 
     else
         error("offset must be ±1 for Coriolis v→u coupling")
@@ -594,10 +600,10 @@ function operator_thermal_advection(op::SparseStabilityOperator{T},
         # dT/dr = -beta * r⁻², eq. times r³
         ricb = op.params.ricb
         gap = one(T) - ricb
-        return L * op.r0_D0_h * (ricb / gap)
+        return L * op.r0_D0_u * (ricb / gap)
     else  # :internal
         # dT/dr = -beta * r, eq. times r²
-        return L * op.r2_D0_h
+        return L * op.r2_D0_u
     end
 end
 

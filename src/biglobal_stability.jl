@@ -103,6 +103,10 @@ See also: [`solve_biglobal_problem`](@ref), [`create_thermal_wind_basic_state`](
         tol = sqrt(eps(float(T)))
         @assert isapprox(first(basic_state.r), χ; rtol=tol, atol=tol) "basic_state.r must start at χ"
         @assert isapprox(last(basic_state.r), one(T); rtol=tol, atol=tol) "basic_state.r must end at 1"
+        expected_grid = ChebyshevDiffn(Nr, [χ, one(T)], 1).x
+        grid_error = maximum(abs.(basic_state.r .- expected_grid))
+        grid_tol = T(10) * tol
+        @assert grid_error <= grid_tol "basic_state.r must match Chebyshev nodes for the solver grid (max mismatch = $(grid_error))"
         for coeffs in values(basic_state.theta_coeffs)
             @assert length(coeffs) == Nr "basic_state.theta_coeffs entries must have length Nr"
         end
@@ -371,7 +375,8 @@ scale with Ra.
 - `m::Int` - Azimuthal wavenumber
 - `lmax::Int` - Maximum spherical harmonic degree
 - `Nr::Int` - Number of radial points
-- `basic_state::BasicState` - Axisymmetric basic state
+- `basic_state::BasicState` - Fixed axisymmetric basic state (optional)
+- `basic_state_builder::Function` - Callback `f(Ra) -> BasicState` for Ra-dependent states (optional)
 - `Ra_guess::Real` - Initial guess for Ra_c
 - `tol::Real` - Tolerance for convergence
 
@@ -381,7 +386,8 @@ scale with Ra.
 - `eigenvector` - Critical eigenmode
 """
 function find_critical_Ra_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int,
-                                    basic_state::BasicState{T},
+                                    basic_state::Union{BasicState{T},Nothing}=nothing,
+                                    basic_state_builder::Union{Nothing,Function}=nothing,
                                     Ra_guess::T=T(1e6),
                                     tol::T=T(1e-6),
                                     Ra_bracket::Tuple{T,T}=(Ra_guess/10, Ra_guess*10),
@@ -390,12 +396,33 @@ function find_critical_Ra_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::
                                     nev::Int=6,
                                     verbose::Bool=false) where {T<:Real}
 
-    # Use the existing find_critical_rayleigh with basic_state
+    if (basic_state === nothing) && (basic_state_builder === nothing)
+        error("find_critical_Ra_biglobal requires either `basic_state` or `basic_state_builder`")
+    elseif (basic_state !== nothing) && (basic_state_builder !== nothing)
+        error("Provide only one of `basic_state` or `basic_state_builder`")
+    end
+
+    rayleigh_kwargs = (; mechanical_bc=mechanical_bc,
+                        thermal_bc=thermal_bc,
+                        nev=nev)
+
+    if basic_state !== nothing
+        rayleigh_kwargs = (; rayleigh_kwargs..., basic_state=basic_state)
+    end
+
+    if basic_state_builder !== nothing
+        builder_wrapper = function (Ra_val)
+            bs = basic_state_builder(Ra_val)
+            bs isa BasicState || error("basic_state_builder must return a BasicState, got $(typeof(bs))")
+            return bs
+        end
+        rayleigh_kwargs = (; rayleigh_kwargs..., basic_state_builder=builder_wrapper)
+    end
+
     Ra_c, ω_c, vec_c = find_critical_rayleigh(
         E, Pr, χ, m, lmax, Nr;
         Ra_guess=Ra_guess, tol=tol, Ra_bracket=Ra_bracket,
-        mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
-        basic_state=basic_state, nev=nev
+        rayleigh_kwargs...
     )
 
     if verbose
@@ -558,10 +585,20 @@ function sweep_thermal_wind_amplitude(; E::T, Pr::T, χ::T, m::Int, lmax::Int, N
         end
     end
 
+    isempty(results) && return results
+
+    amp_tol = sqrt(eps(float(one(T))))
+    baseline_idx = findfirst(i -> abs(results[i].amplitude) <= amp_tol, eachindex(results))
+    baseline_idx === nothing && (baseline_idx = 1)
+
     if verbose
         println()
-        # Summarize effect
-        σ_ref = results[1].σ
+        if abs(results[baseline_idx].amplitude) <= amp_tol
+            @printf("  Reference amplitude (≈0): %.3f\n", results[baseline_idx].amplitude)
+        else
+            @printf("  Reference amplitude (no zero provided): %.3f\n", results[baseline_idx].amplitude)
+        end
+        σ_ref = results[baseline_idx].σ
         for r in results
             Δσ = r.σ - σ_ref
             effect = Δσ > 1e-10 ? "destabilizing" : (Δσ < -1e-10 ? "stabilizing" : "neutral")

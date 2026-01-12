@@ -41,7 +41,7 @@ end
 function construct_linear_map(A_shifted::SparseMatrixCSC{ComplexF64,Int},
                               B::SparseMatrixCSC{ComplexF64,Int})
     lu_factor = lu(A_shifted)
-    tmp = similar(B, ComplexF64, size(B, 1))
+    tmp = Vector{ComplexF64}(undef, size(B, 1))
     return LinearMap{ComplexF64}(ShiftInvertLinearMap(lu_factor, B, tmp),
                                  size(B, 1); ismutating=true)
 end

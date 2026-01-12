@@ -223,7 +223,7 @@ function ultraspherical_derivative(λ::Real, N::Int)
         if λ == 0.0
             push!(vals, n + 1)
         else
-            push!(vals, 2.0 * λ)
+            push!(vals, 2.0 * (λ + n))
         end
     end
 
@@ -247,37 +247,28 @@ For ricb>0, the Chebyshev domain [-1,1] is mapped to [ricb, rcmb].
 """
 function chebyshev_coefficients(power::Int, N::Int, ri::Real, ro::Real;
                                 tol::Real=1e-9)
-    # Evaluate function at Chebyshev-Gauss points
-    # x_i = cos(π(i+0.5)/N) for i = 0,...,N-1
+    isempty_cache = false
     x = [cos(π * (i + 0.5) / N) for i in 0:N-1]
 
-    # Map to physical domain
     if ri == 0
-        # No inner core: map [-1,1] → [-ro, ro]
         r = ro .* x
     else
-        # With inner core: map [-1,1] → [ri, ro]
         r = @. ri + (ro - ri) * (x + 1) / 2
     end
 
-    # Evaluate r^power
     f_vals = r .^ power
 
-    # Compute Chebyshev coefficients using DCT
-    # This is the discrete cosine transform (DCT-II)
-    # Using the definition: a_k = (2/N) * Σ f_i * cos(πk(i+0.5)/N)
     coeffs = zeros(N)
     for k in 0:N-1
-        s = sum(f_vals[i+1] * cos(π * k * (i + 0.5) / N) for i in 0:N-1)
+        s = zero(eltype(f_vals))
+        for (i, xi) in enumerate(x)
+            s += f_vals[i] * cos(π * k * (i - 0.5) / N)
+        end
         coeffs[k+1] = (2.0 / N) * s
     end
 
-    # First coefficient gets factor of 1/2
     coeffs[1] /= 2.0
-
-    # Truncate small coefficients
     coeffs[abs.(coeffs) .<= tol] .= 0.0
-
     return coeffs
 end
 
@@ -408,7 +399,7 @@ function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
 
     # Extend coefficient vector
     a1 = zeros(2 * N)
-    a1[1:N] = a0
+    copyto!(a1, a0)
 
     # Determine row and column ranges based on parity
     if vector_parity != 0
@@ -441,30 +432,17 @@ function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
             k2 = min(N - 1, j + bw + 1)
             ka = k1:k2
 
-            if vector_parity != 0
-                # Filter columns by parity
-                krange = [k for k in ka if k % 2 == idk]
-            else
-                krange = collect(ka)
-            end
+            krange = vector_parity != 0 ? [k for k in ka if k % 2 == idk] : collect(ka)
 
             for k in krange
                 s0 = max(0, k - j)
                 s = s0:k
-                idx = 2 .* s .+ j .- k .+ 1  # Convert to 1-indexed
-                a = a1[idx]
+                isempty(s) && continue
 
-                # Compute Gegenbauer coefficients
-                # Following Kore utils.py:1025-1028
-                # s0 = max(0, k-j), so either s0=0 (when k<j) or s0=k-j (when k>=j)
-                if s0 == 0
-                    cvec = csl(collect(s), λ, k, j - k)
-                elseif s0 == k - j
-                    cvec = csl(collect(s), λ, k, k - j)
-                else
-                    # This should never happen given s0 = max(0, k-j)
-                    error("Unexpected case in multiplication_matrix: s0=$s0, k=$k, j=$j")
-                end
+                idx = 2 .* s .+ j .- k .+ 1  # Convert to 1-indexed
+                a = view(a1, idx)
+
+                cvec = s0 == 0 ? csl(collect(s), λ, k, j - k) : csl(collect(s), λ, k, k - j)
 
                 val = dot(a, cvec)
                 if abs(val) > 1e-14
@@ -512,18 +490,6 @@ function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
 
         # Combine: out = 0.5 * (Toeplitz + Hankel)
         tmp = 0.5 * (T + H)
-
-        # Apply parity constraints
-        if vector_parity != 0
-            idj0 = (1 + overall_parity) ÷ 2
-            idk0 = (1 + vector_parity * lamb_parity) ÷ 2
-            for j in idj0:2:N-1
-                tmp[j+1, :] .= 0.0
-            end
-            for k in idk0:2:N-1
-                tmp[:, k+1] .= 0.0
-            end
-        end
 
         return sparse(tmp)
     end

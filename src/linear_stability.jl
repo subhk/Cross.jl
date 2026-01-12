@@ -657,6 +657,7 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
                                 Ra_guess::T=one(T)*1e6,
                                 tol::T=1e-6,
                                 Ra_bracket::Tuple{T,T}=(Ra_guess/10, Ra_guess*10),
+                                basic_state_builder=nothing,
                                 kwargs...) where {T<:Real}
     m_int = Int(m)
     lmax ≥ m_int || error("lmax must be ≥ m (got lmax=$lmax, m=$m_int)")
@@ -664,8 +665,11 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
     onset_fields = Set(fieldnames(OnsetParams{T}))
     param_pairs = Pair{Symbol,Any}[]
     solver_pairs = Pair{Symbol,Any}[]
+    basic_state_kw = nothing
     for (key, val) in kwargs
-        if key in onset_fields
+        if key == :basic_state
+            basic_state_kw = val
+        elseif key in onset_fields
             push!(param_pairs, key => val)
         else
             push!(solver_pairs, key => val)
@@ -675,7 +679,11 @@ function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
     solver_kwargs = isempty(solver_pairs) ? NamedTuple() : (; solver_pairs...)
 
     function build_operator(Ra_val::T)
-        params = OnsetParams(E=E, Pr=Pr, Ra=Ra_val, χ=χ, m=m_int, lmax=lmax, Nr=Nr; onset_kwargs...)
+        bs_override = basic_state_builder === nothing ? nothing : basic_state_builder(Ra_val)
+        bs = bs_override === nothing ? basic_state_kw : bs_override
+        bs_kwargs = bs === nothing ? NamedTuple() : (basic_state=bs,)
+        params = OnsetParams(E=E, Pr=Pr, Ra=Ra_val, χ=χ, m=m_int, lmax=lmax, Nr=Nr;
+                             onset_kwargs..., bs_kwargs...)
         return LinearStabilityOperator(params)
     end
 

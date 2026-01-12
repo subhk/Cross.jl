@@ -40,8 +40,10 @@ struct BasicStateOperators{T<:Real}
     advection_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
     shear_radial_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
     shear_theta_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
+    shear_theta_toroidal_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
     temp_grad_radial_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
     temp_grad_theta_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
+    temp_grad_theta_toroidal_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
     coupling_structure::Vector{Tuple{Int,Int}}
 end
 
@@ -269,6 +271,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
     # Extract radial operators
     r = collect(op.r)  # Radial collocation points
     Nr = length(r)
+    inv_r = 1.0 ./ r
 
     # Radial differentiation operator (from Chebyshev differentiation structure)
     Dr = op.cd.D1
@@ -278,8 +281,10 @@ function build_basic_state_operators(basic_state::BasicState{T},
     advection_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     shear_radial_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     shear_theta_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
+    shear_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     temp_grad_radial_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     temp_grad_theta_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
+    temp_grad_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     coupling_structure = Tuple{Int,Int}[]
 
     # Get basic state modes
@@ -425,6 +430,16 @@ function build_basic_state_operators(basic_state::BasicState{T},
                         else
                             shear_theta_blocks[(ℓ_output, ℓ_input)] .+= Matrix(shear_theta_op)
                         end
+
+                        if m != 0
+                            tor_factor = (im * m) .* (uphi_coeff .* inv_r)
+                            shear_theta_t_op = -meridional_coeff * Diagonal(tor_factor)
+                            if !haskey(shear_theta_toroidal_blocks, (ℓ_output, ℓ_input))
+                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = Matrix(shear_theta_t_op)
+                            else
+                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= Matrix(shear_theta_t_op)
+                            end
+                        end
                     end
 
                     if theta_max > coupling_tol
@@ -433,6 +448,16 @@ function build_basic_state_operators(basic_state::BasicState{T},
                             temp_grad_theta_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_theta_op)
                         else
                             temp_grad_theta_blocks[(ℓ_output, ℓ_input)] .+= Matrix(temp_grad_theta_op)
+                        end
+
+                        if m != 0
+                            tor_factor = (im * m) .* (theta_coeff .* inv_r)
+                            temp_grad_theta_t_op = -meridional_coeff * Diagonal(tor_factor)
+                            if !haskey(temp_grad_theta_toroidal_blocks, (ℓ_output, ℓ_input))
+                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_theta_t_op)
+                            else
+                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= Matrix(temp_grad_theta_t_op)
+                            end
                         end
                     end
                 end
@@ -450,8 +475,10 @@ function build_basic_state_operators(basic_state::BasicState{T},
         advection_blocks,
         shear_radial_blocks,
         shear_theta_blocks,
+        shear_theta_toroidal_blocks,
         temp_grad_radial_blocks,
         temp_grad_theta_blocks,
+        temp_grad_theta_toroidal_blocks,
         coupling_structure
     )
 end
@@ -543,6 +570,10 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
                 temp_grad_theta_block = basic_state_ops.temp_grad_theta_blocks[(ℓ_output, ℓ_input)]
                 A[Θ_out_idx, P_in_idx] .+= temp_grad_theta_block
             end
+            if T_in_idx !== nothing && haskey(basic_state_ops.temp_grad_theta_toroidal_blocks, (ℓ_output, ℓ_input))
+                temp_grad_theta_t_block = basic_state_ops.temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)]
+                A[Θ_out_idx, T_in_idx] .+= temp_grad_theta_t_block
+            end
         end
 
         # =====================================================================
@@ -565,6 +596,10 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
             if haskey(basic_state_ops.shear_theta_blocks, (ℓ_output, ℓ_input))
                 shear_theta_block = basic_state_ops.shear_theta_blocks[(ℓ_output, ℓ_input)]
                 A[T_out_idx, P_in_idx] .+= shear_theta_block
+            end
+            if T_in_idx !== nothing && haskey(basic_state_ops.shear_theta_toroidal_blocks, (ℓ_output, ℓ_input))
+                shear_theta_t_block = basic_state_ops.shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)]
+                A[T_out_idx, T_in_idx] .+= shear_theta_t_block
             end
         end
     end

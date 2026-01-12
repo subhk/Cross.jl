@@ -671,6 +671,12 @@ function _triglobal_velocity_slice(eigenvector::AbstractVector{<:Complex},
         P_phys = spectral_to_physical(P_m, grid_m, Nr)
         T_phys = spectral_to_physical(T_m, grid_m, Nr)
 
+        if m < 0
+            phase_lat = isodd(abs(m)) ? -one(ComplexF64) : one(ComplexF64)
+            P_phys .*= phase_lat
+            T_phys .*= phase_lat
+        end
+
         # Compute velocity for this mode
         ur_m, uθ_m, uφ_m = potentials_to_velocity(P_phys, T_phys;
                                                    Dr=Dr,
@@ -732,6 +738,12 @@ function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
         P_phys = spectral_to_physical(P_m, grid_m, Nr)
         T_phys = spectral_to_physical(T_m, grid_m, Nr)
 
+        if m < 0
+            phase_lat = isodd(abs(m)) ? -one(ComplexF64) : one(ComplexF64)
+            P_phys .*= phase_lat
+            T_phys .*= phase_lat
+        end
+
         # Compute velocity for this mode (2D)
         ur_m, uθ_m, uφ_m = potentials_to_velocity(P_phys, T_phys;
                                                    Dr=Dr,
@@ -754,6 +766,34 @@ function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
 end
 
 
+const _mode_layout_cache = IdDict{UInt64, Dict{Int, NamedTuple{(:P, :T, :Θ),
+    Tuple{Vector{Int}, Vector{Int}, Vector{Int}}}}}()
+
+function _mode_layout(problem, m_abs::Int)
+    prob_key = objectid(problem)
+    cache = get!(_mode_layout_cache, prob_key) do
+        Dict{Int, NamedTuple{(:P, :T, :Θ), Tuple{Vector{Int}, Vector{Int}, Vector{Int}}}}()
+    end
+
+    return get!(cache, m_abs) do
+        params_tri = problem.params
+        params_m = OnsetParams(
+            E = params_tri.E,
+            Pr = params_tri.Pr,
+            Ra = params_tri.Ra,
+            χ = params_tri.χ,
+            m = m_abs,
+            lmax = params_tri.lmax,
+            Nr = params_tri.Nr,
+            mechanical_bc = params_tri.mechanical_bc,
+            thermal_bc = params_tri.thermal_bc,
+            basic_state = nothing
+        )
+        op = LinearStabilityOperator(params_m)
+        return (P = copy(op.l_sets[:P]), T = copy(op.l_sets[:T]), Θ = copy(op.l_sets[:Θ]))
+    end
+end
+
 """
     _extract_mode_coefficients(eigenvector, problem, m)
 
@@ -761,11 +801,8 @@ Extract P_ℓm and T_ℓm coefficients for a specific mode m from triglobal eige
 """
 function _extract_mode_coefficients(eigenvector::AbstractVector{<:Complex},
                                      problem, m::Int)
-    params = problem.params
-    lmax = params.lmax
-    Nr = params.Nr
+    Nr = problem.params.Nr
 
-    # Get block indices for this m
     if !haskey(problem.block_indices, m)
         return Dict{Int, Vector{ComplexF64}}(), Dict{Int, Vector{ComplexF64}}()
     end
@@ -773,43 +810,40 @@ function _extract_mode_coefficients(eigenvector::AbstractVector{<:Complex},
     block_range = problem.block_indices[m]
     block_vec = eigenvector[block_range]
 
-    # Determine number of ℓ values for this m
-    m_abs = abs(m)
-    num_ell = lmax - m_abs + 1
+    layout = _mode_layout(problem, abs(m))
 
-    # DOFs per (ℓ, field) after boundary removal
-    # P: Nr - 4 (4 tau rows), T: Nr - 2 (2 BCs), Θ: Nr - 2 (2 BCs)
-    # Interior DOFs = 3*Nr - 8 per ℓ
-    dofs_per_ell = 3 * Nr - 8
+    nP = max(Nr - 4, 0)
+    nT = max(Nr - 2, 0)
+    nΘ = nT
 
     P_coeffs = Dict{Int, Vector{ComplexF64}}()
     T_coeffs = Dict{Int, Vector{ComplexF64}}()
 
-    # This is a simplified extraction - actual implementation needs
-    # to match the exact DOF ordering used in triglobal_stability.jl
     idx = 1
-    for ℓ in m_abs:lmax
-        # P block (Nr - 4 interior DOFs)
-        n_P = Nr - 4
-        if idx + n_P - 1 <= length(block_vec)
-            P_full = zeros(ComplexF64, Nr)
-            P_full[3:Nr-2] = block_vec[idx:idx+n_P-1]
-            P_coeffs[ℓ] = P_full
+    for ℓ in layout.P
+        if nP > 0 && idx + nP - 1 <= length(block_vec)
+            coeffs = zeros(ComplexF64, Nr)
+            coeffs[3:Nr-2] .= block_vec[idx:idx+nP-1]
+            P_coeffs[ℓ] = coeffs
+        else
+            P_coeffs[ℓ] = zeros(ComplexF64, Nr)
         end
-        idx += n_P
+        idx += nP
+    end
 
-        # T block (Nr - 2 interior DOFs)
-        n_T = Nr - 2
-        if idx + n_T - 1 <= length(block_vec)
-            T_full = zeros(ComplexF64, Nr)
-            T_full[2:Nr-1] = block_vec[idx:idx+n_T-1]
-            T_coeffs[ℓ] = T_full
+    for ℓ in layout.T
+        if nT > 0 && idx + nT - 1 <= length(block_vec)
+            coeffs = zeros(ComplexF64, Nr)
+            coeffs[2:Nr-1] .= block_vec[idx:idx+nT-1]
+            T_coeffs[ℓ] = coeffs
+        else
+            T_coeffs[ℓ] = zeros(ComplexF64, Nr)
         end
-        idx += n_T
+        idx += nT
+    end
 
-        # Θ block (Nr - 2 interior DOFs) - skip for velocity
-        n_Θ = Nr - 2
-        idx += n_Θ
+    for _ in layout.Θ
+        idx += nΘ
     end
 
     return P_coeffs, T_coeffs
@@ -894,12 +928,13 @@ function meridional_streamfunction(ur::AbstractMatrix, uθ::AbstractMatrix,
     # Integrate u_r × r² × sinθ in θ to get ψ
     ψ = zeros(ComplexF64, Nr, Nθ)
 
-    dθ = θ[2] - θ[1]  # Assuming uniform spacing
     for i in 1:Nr
         ψ[i, 1] = 0.0
         for j in 2:Nθ
-            ψ[i, j] = ψ[i, j-1] + 0.5 * (ur[i, j-1] * r[i]^2 * sinθ[j-1] +
-                                          ur[i, j] * r[i]^2 * sinθ[j]) * dθ
+            Δθ = θ[j] - θ[j-1]
+            integrand_prev = ur[i, j-1] * r[i]^2 * sinθ[j-1]
+            integrand_curr = ur[i, j] * r[i]^2 * sinθ[j]
+            ψ[i, j] = ψ[i, j-1] + 0.5 * (integrand_prev + integrand_curr) * Δθ
         end
     end
 

@@ -111,6 +111,7 @@ MHD linear stability analysis or dynamo onset calculations.
 - `symm::Int`: **Equatorial symmetry**
   - symm = +1: Equatorially symmetric modes
   - symm = -1: Equatorially antisymmetric modes
+  - symm = 0: Include both parities (full system)
   - Affects mode parity selection
 
 - `N::Int`: **Number of radial collocation points**
@@ -267,7 +268,7 @@ struct MHDParams{T<:Real}
         @assert Ra > 0 "Rayleigh number must be positive"
         @assert lmax >= m "lmax must be >= m"
         @assert N >= 4 && iseven(N) "N must be even and >= 4"
-        @assert symm in (-1, 1) "symm must be ±1"
+        @assert symm in (-1, 0, 1) "symm must be -1, 0, or 1"
         @assert heating in (:internal, :differential) "heating must be :internal or :differential"
 
         # Dipole field requires non-zero inner core radius

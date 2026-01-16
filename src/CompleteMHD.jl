@@ -32,6 +32,9 @@ include("SparseOperator.jl")
 # Include MHD operator functions
 include("MHDOperatorFunctions.jl")
 
+# Include boundary conditions (mechanical, thermal, and magnetic)
+include("boundary_conditions.jl")
+
 # Include MHD assembly
 include("MHDAssembly.jl")
 
@@ -52,7 +55,8 @@ export MHDParams,
        operator_induction_toroidal_from_v,
        operator_magnetic_diffusion_poloidal,
        operator_magnetic_diffusion_toroidal,
-       spherical_bessel_j_logderiv
+       spherical_bessel_j_logderiv,
+       apply_magnetic_boundary_conditions!
 
 println("CompleteMHD module loaded successfully")
 println("  - MHD parameters and operators")

@@ -173,9 +173,54 @@ This is automatically enforced when constructing `BasicState3D` from physical da
 
 ## Creating 3D Basic States
 
-### Method 1: From Boundary Conditions
+### The Full Geostrophic Basic State
 
-Solve $\nabla^2 \bar{T} = 0$ with non-axisymmetric boundary heating:
+For non-axisymmetric basic states, Cross.jl computes the **complete velocity field** including:
+
+1. **Zonal flow** $\bar{u}_\phi$ from thermal wind balance (∂T/∂θ forcing)
+2. **Meridional circulation** $\bar{u}_\theta$, $\bar{u}_r$ from the φ-component of thermal wind (∂T/∂φ forcing)
+
+The key insight is that for **m ≠ 0** modes:
+- $\partial \bar{T}/\partial \phi \propto im \bar{T} \neq 0$ drives meridional flow
+- The operator $(\hat{z}\cdot\nabla)$ couples modes $\ell$ to $\ell\pm1$
+- A block-tridiagonal solve is required for full accuracy
+
+See [Basic States: Full Geostrophic Balance](../basic_states.md#full-geostrophic-balance-with-meridional-circulation) for detailed theory.
+
+### Method 1: Self-Consistent Solver (Recommended)
+
+For non-axisymmetric cases, use `basic_state_selfconsistent` which:
+- Iteratively solves the advection-diffusion equation
+- Computes full meridional circulation using toroidal-poloidal decomposition
+- Handles mode coupling exactly
+
+```julia
+using Cross
+
+# Chebyshev setup
+Nr = 64
+χ = 0.35
+cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
+
+# Non-axisymmetric heat flux BC
+flux = Y00(-1.0) + Y22(-0.2)
+
+# Self-consistent solver with full geostrophic balance
+bs3d, info = basic_state_selfconsistent(
+    cd, χ, E, Ra, Pr;
+    flux_bc = flux,
+    verbose = true
+)
+
+# All three velocity components are computed
+println("Zonal modes: ", keys(bs3d.uphi_coeffs))
+println("Meridional modes: ", keys(bs3d.utheta_coeffs))
+println("Radial modes: ", keys(bs3d.ur_coeffs))
+```
+
+### Method 2: Standard Solver (Laplace Approximation)
+
+For quick estimates or small amplitudes, use the standard solver:
 
 ```julia
 using Cross
@@ -192,13 +237,13 @@ boundary_modes = Dict(
     (3, 2) => 0.02,   # Y₃₂: higher order
 )
 
-# Create 3D basic state
+# Create 3D basic state (Laplace approximation)
 bs3d = nonaxisymmetric_basic_state(
     cd, χ, E, Ra, Pr, 8, 4, boundary_modes
 )
 ```
 
-### Method 2: Manual Construction
+### Method 3: Manual Construction
 
 For custom profiles from simulations:
 
@@ -243,7 +288,7 @@ bs3d = BasicState3D(
 )
 ```
 
-### Method 3: Import from Simulation
+### Method 4: Import from Simulation
 
 ```julia
 using JLD2
@@ -680,4 +725,9 @@ Before running triglobal analysis:
 ---
 
 !!! info "Example Scripts"
-    See `example/triglobal_analysis_demo.jl` and `example/nonaxisymmetric_basic_state.jl` for complete working examples.
+    See the following examples in the `example/` directory:
+
+    - `triglobal_analysis_demo.jl` - Complete triglobal stability workflow
+    - `nonaxisymmetric_basic_state.jl` - Creating 3D basic states
+    - `flux_bc_mean_flow.jl` - Non-axisymmetric flux BC with Y₂₂ pattern
+    - `flux_bc_axisymmetric_flow.jl` - Axisymmetric flux BC with Y₂₀ pattern

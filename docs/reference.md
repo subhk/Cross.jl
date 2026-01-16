@@ -345,7 +345,13 @@ Ra_c, ω_c, eigvec = find_critical_rayleigh_triglobal(
 Create pure conduction basic state.
 
 ```julia
-bs = conduction_basic_state(cd::ChebyshevDiffn, χ; lmax_bs=6)
+# Fixed temperature at both boundaries (default)
+bs = conduction_basic_state(cd, χ, lmax_bs)
+
+# Fixed flux at outer boundary
+bs = conduction_basic_state(cd, χ, lmax_bs;
+                            thermal_bc = :fixed_flux,
+                            outer_flux = -1.0)
 ```
 
 **Source:** `src/basic_state.jl`
@@ -357,12 +363,17 @@ bs = conduction_basic_state(cd::ChebyshevDiffn, χ; lmax_bs=6)
 Create basic state with meridional temperature variation.
 
 ```julia
-bs = meridional_basic_state(
-    cd, χ, E, Ra, Pr;
-    lmax_bs = 6,
-    amplitude = 0.05,
-    mechanical_bc = :no_slip,
-)
+# Fixed temperature at outer boundary
+bs = meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, amplitude;
+                            mechanical_bc = :no_slip,
+                            thermal_bc = :fixed_temperature)
+
+# Fixed flux at outer boundary
+bs = meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, 0.0;
+                            mechanical_bc = :no_slip,
+                            thermal_bc = :fixed_flux,
+                            outer_flux_mean = -1.0,
+                            outer_flux_Y20 = 0.1)
 ```
 
 **Source:** `src/basic_state.jl`
@@ -374,10 +385,189 @@ bs = meridional_basic_state(
 Create 3D basic state with specified boundary modes.
 
 ```julia
+# Fixed temperature at outer boundary
 bs3d = nonaxisymmetric_basic_state(
-    cd, χ, E, Ra, Pr, 8, 4, Dict((2,2) => 0.1)
+    cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amplitudes;
+    thermal_bc = :fixed_temperature
+)
+
+# Fixed flux at outer boundary
+bs3d = nonaxisymmetric_basic_state(
+    cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, Dict{Tuple{Int,Int},Float64}();
+    thermal_bc = :fixed_flux,
+    outer_fluxes = Dict((0,0) => -1.0, (2,0) => 0.1)
 )
 ```
+
+**Source:** `src/basic_state.jl`
+
+---
+
+### `basic_state`
+
+High-level convenience function that accepts symbolic spherical harmonic BCs.
+
+```julia
+# Pure conduction
+bs = basic_state(cd, χ, E, Ra, Pr)
+
+# With symbolic temperature BC
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=Y20(0.1))
+
+# With symbolic flux BC
+bs = basic_state(cd, χ, E, Ra, Pr; flux_bc=Y00(-1.0) + Y20(0.1))
+
+# Full signature
+basic_state(cd, χ, E, Ra, Pr;
+            temperature_bc = nothing,
+            flux_bc = nothing,
+            mechanical_bc = :no_slip,
+            lmax_bs = nothing)
+```
+
+**Automatic dispatch:**
+- Returns `BasicState` for axisymmetric BCs (m=0 only)
+- Returns `BasicState3D` for non-axisymmetric BCs (m≠0)
+
+**Source:** `src/basic_state.jl`
+
+---
+
+### `basic_state_selfconsistent`
+
+Self-consistent basic state solver that accounts for temperature advection in non-axisymmetric cases.
+
+```julia
+# Self-consistent solver for non-axisymmetric BCs
+bs, info = basic_state_selfconsistent(cd, χ, E, Ra, Pr;
+                                       temperature_bc=Y20(0.1) + Y22(0.05),
+                                       verbose=true)
+
+# Full signature
+basic_state_selfconsistent(cd, χ, E, Ra, Pr;
+                           temperature_bc = nothing,
+                           flux_bc = nothing,
+                           mechanical_bc = :no_slip,
+                           lmax_bs = nothing,
+                           max_iterations = 20,
+                           tolerance = 1e-8,
+                           verbose = false)
+```
+
+**Returns:** `(BasicState3D, ConvergenceInfo)` where `ConvergenceInfo` is a named tuple with:
+- `iterations`: Number of iterations used
+- `converged`: `true` if converged
+- `residual_history`: Vector of residuals
+
+**Note:** For axisymmetric BCs (m=0 only), falls back to standard solver since advection is zero.
+
+**Source:** `src/basic_state.jl`
+
+---
+
+### `nonaxisymmetric_basic_state_selfconsistent`
+
+Low-level self-consistent solver for non-axisymmetric basic states.
+
+```julia
+bs, info = nonaxisymmetric_basic_state_selfconsistent(
+    cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amplitudes;
+    mechanical_bc = :no_slip,
+    thermal_bc = :fixed_temperature,
+    outer_fluxes = Dict{Tuple{Int,Int}, Float64}(),
+    max_iterations = 20,
+    tolerance = 1e-8,
+    verbose = false
+)
+```
+
+**Source:** `src/basic_state.jl`
+
+---
+
+### `solve_poisson_mode`
+
+Solve the radial Poisson equation for a single spherical harmonic mode.
+
+```julia
+T_lm, dT_dr = solve_poisson_mode(ℓ, m, r, D2, D1, r_i, r_o, forcing;
+                                  inner_value = 0.0,
+                                  outer_value = 0.0,
+                                  outer_bc = :fixed_temperature,
+                                  inner_bc = :fixed_temperature)
+```
+
+Solves: $\nabla^2 \bar{T}_{\ell m} = f_{\ell m}(r)$
+
+**Source:** `src/basic_state.jl`
+
+---
+
+### `compute_phi_advection_spectral`
+
+Compute the φ-advection term in spectral space for the advection-diffusion solver.
+
+```julia
+forcing = compute_phi_advection_spectral(theta_coeffs, uphi_coeffs, lmax_bs, mmax_bs, r)
+```
+
+**Source:** `src/basic_state.jl`
+
+---
+
+## Symbolic Spherical Harmonic BCs
+
+### `SphericalHarmonicBC{T}`
+
+Type representing boundary conditions in spherical harmonic expansion.
+
+```julia
+struct SphericalHarmonicBC{T<:Real}
+    coeffs::Dict{Tuple{Int,Int}, T}
+end
+```
+
+**Supported operators:** `+`, `-`, `*`, `/`
+
+**Source:** `src/basic_state.jl`
+
+---
+
+### Harmonic Constructors
+
+| Function | Description |
+|----------|-------------|
+| `Ylm(ℓ, m, amp)` | General spherical harmonic |
+| `Y00(amp)` | Monopole (uniform) |
+| `Y10(amp)` | Axial dipole |
+| `Y11(amp)` | Equatorial dipole |
+| `Y20(amp)` | Quadrupole (equator-pole) |
+| `Y21(amp)` | Tesseral quadrupole |
+| `Y22(amp)` | Sectoral quadrupole |
+| `Y30(amp)` - `Y44(amp)` | Higher orders |
+
+**Example:**
+```julia
+# Combined pattern
+bc = Y20(0.1) + Y22(0.05) + 0.5 * Y40(0.02)
+
+# Use with basic_state
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc)
+```
+
+**Source:** `src/basic_state.jl`
+
+---
+
+### Utility Functions
+
+| Function | Description |
+|----------|-------------|
+| `to_dict(bc)` | Convert to `Dict{Tuple{Int,Int}, T}` |
+| `get_lmax(bc)` | Maximum ℓ in BC |
+| `get_mmax(bc)` | Maximum m in BC |
+| `get_lmax_mmax(bc)` | Tuple (lmax, mmax) |
+| `is_axisymmetric(bc)` | True if m=0 only |
 
 **Source:** `src/basic_state.jl`
 
@@ -488,8 +678,15 @@ Cross (main module)
 │   ├── OnsetParams, ShellParams
 │   ├── LinearStabilityOperator
 │   ├── BasicState, BasicState3D
+│   ├── SphericalHarmonicBC    # Symbolic boundary conditions
 │   ├── TriglobalParams
 │   └── CoupledModeProblem
+│
+├── Symbolic BC Constructors
+│   ├── Ylm(ℓ, m, amp)         # General constructor
+│   ├── Y00, Y10, Y11          # Monopole, dipole
+│   ├── Y20, Y21, Y22          # Quadrupole
+│   └── Y30-Y44                # Higher orders
 │
 ├── Analysis Modes
 │   ├── Onset Convection       # No mean flow
@@ -500,6 +697,7 @@ Cross (main module)
     ├── solve_eigenvalue_problem
     ├── leading_modes, find_growth_rate
     ├── find_critical_rayleigh
+    ├── basic_state             # High-level BC interface
     ├── solve_triglobal_eigenvalue_problem
     └── ... (see exports in Cross.jl)
 ```

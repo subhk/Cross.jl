@@ -82,13 +82,21 @@ m    Re(λ₁)          Im(λ₁)          iterations
 
 **Key concepts:**
 - `ChebyshevDiffn` construction
-- `conduction_basic_state` function
+- `basic_state` function with symbolic BCs
 - Passing basic state to `ShellParams`
 
 ```julia
-# Create basic state
+# Create basic state using symbolic BCs (recommended)
 cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
-bs = conduction_basic_state(cd, χ; lmax_bs=6)
+
+# Pure conduction
+bs = basic_state(cd, χ, E, Ra, Pr)
+
+# With meridional temperature variation (Y₂₀)
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=Y20(0.1))
+
+# With fixed flux at outer boundary
+bs = basic_state(cd, χ, E, Ra, Pr; flux_bc=Y00(-1.0) + Y20(0.1))
 
 # Use in onset calculation
 params = ShellParams(..., basic_state=bs)
@@ -126,16 +134,24 @@ params = ShellParams(..., basic_state=bs)
 - Prepares for tri-global coupling
 
 **Key concepts:**
-- $(l, m)$ indexed coefficients
-- `nonaxisymmetric_basic_state` function
-- Reality conditions
+- Symbolic spherical harmonic BCs (`Y20`, `Y22`, etc.)
+- `basic_state` convenience function
+- `nonaxisymmetric_basic_state` for dictionary syntax
 
 ```julia
+# Using symbolic BCs (recommended)
+bc = Y20(0.1) + Y22(0.05)
+bs3d = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc)
+
+# With fixed flux BC
+flux = Y00(-1.0) + Y20(0.1) + Y22(0.05)
+bs3d = basic_state(cd, χ, E, Ra, Pr; flux_bc=flux)
+
+# Alternatively, using dictionary syntax
 boundary_modes = Dict(
     (2, 0) => 0.1,    # Axisymmetric Y₂₀
     (2, 2) => 0.05,   # Non-axisymmetric Y₂₂
 )
-
 bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 ```
 
@@ -232,6 +248,82 @@ A, B, interior_dofs, _ = assemble_mhd_matrices(op)
 
 ---
 
+## Heat Flux Boundary Condition Examples
+
+### Non-Axisymmetric Flux: Y₂₂ Pattern
+
+**File:** `example/flux_bc_mean_flow.jl`
+
+**Purpose:** Demonstrate self-consistent basic state with non-axisymmetric heat flux boundary conditions.
+
+**What it does:**
+- Applies Y₂₂ heat flux pattern at outer boundary (sectoral cooling)
+- Computes full geostrophic balance including meridional circulation
+- Shows mode coupling through the toroidal-poloidal decomposition
+- Compares zonal vs meridional flow components
+
+**Key concepts:**
+- `basic_state_selfconsistent` function
+- Non-axisymmetric forcing (m ≠ 0)
+- Meridional circulation from φ-gradient of temperature
+- Block-tridiagonal mode coupling
+
+```julia
+# Non-axisymmetric flux pattern
+flux = Y00(-1.0) + Y22(-0.2)
+bs, info = basic_state_selfconsistent(cd, χ, E, Ra, Pr; flux_bc=flux, verbose=true)
+
+# Access all velocity components
+println("Zonal: ", maximum(abs, bs.uphi_coeffs[(3,2)]))
+println("Meridional: ", maximum(abs, bs.utheta_coeffs[(2,2)]))
+println("Radial: ", maximum(abs, bs.ur_coeffs[(3,2)]))
+```
+
+**Physical insight:** The Y₂₂ pattern drives:
+- Zonal flow via ∂T/∂θ coupling
+- Meridional circulation via ∂T/∂φ (non-zero for m=2)
+- Mode coupling cascade: ℓ=2,3,4,... all participate
+
+---
+
+### Axisymmetric Flux: Y₂₀ Pattern
+
+**File:** `example/flux_bc_axisymmetric_flow.jl`
+
+**Purpose:** Demonstrate basic state with axisymmetric heat flux and compare to non-axisymmetric case.
+
+**What it does:**
+- Applies Y₂₀ heat flux pattern (latitudinal cooling variation)
+- Shows that meridional circulation is exactly zero for m=0
+- Computes zonal jets from thermal wind balance
+- Highlights differences from Y₂₂ case
+
+**Key concepts:**
+- Axisymmetric forcing (m = 0 only)
+- No iteration needed (advection term is zero)
+- Zonal flow modes Y₁₀, Y₃₀
+- Zero meridional circulation
+
+```julia
+# Axisymmetric flux pattern
+flux = Y00(-1.0) + Y20(-0.2)
+bs = basic_state(cd, χ, E, Ra, Pr; flux_bc=flux)
+
+# Only zonal flow, no meridional
+println("Zonal Y₃₀: ", maximum(abs, bs.uphi_coeffs[3]))
+# u_θ = u_r = 0 for axisymmetric basic states
+```
+
+**Physical insight:** Comparison with Y₂₂:
+
+| Property | Y₂₀ (m=0) | Y₂₂ (m=2) |
+|----------|-----------|-----------|
+| Zonal flow | Yes | Yes |
+| Meridional flow | **No** | **Yes** |
+| Iteration needed | No | Yes |
+
+---
+
 ## Quick Reference Table
 
 | Script | Complexity | Compute Time | Key Learning |
@@ -241,6 +333,8 @@ A, B, interior_dofs, _ = assemble_mhd_matrices(op)
 | `basic_state_onset_example.jl` | Intermediate | ~2 min | Custom basic states |
 | `boundary_driven_jet.jl` | Intermediate | ~3 min | Thermal wind |
 | `nonaxisymmetric_basic_state.jl` | Intermediate | ~1 min | 3D states |
+| `flux_bc_mean_flow.jl` | Intermediate | ~2 min | Non-axisymmetric flux BC |
+| `flux_bc_axisymmetric_flow.jl` | Intermediate | ~1 min | Axisymmetric flux BC |
 | `triglobal_analysis_demo.jl` | Advanced | ~10+ min | Mode coupling |
 | `mhd_dynamo_example.jl` | Advanced | ~5 min | MHD physics |
 | `test_thermal_wind.jl` | Intermediate | ~1 min | Verification |
@@ -293,6 +387,31 @@ end
 # === Save ===
 @save "my_results.jld2" params eigenvalues eigenvectors
 println("\nResults saved to my_results.jld2")
+```
+
+### With Custom Basic State
+
+```julia
+# === Basic State with Symbolic BCs ===
+cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
+
+# Meridional temperature variation
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=Y20(0.1))
+
+# Or with combined patterns
+bc = Y20(0.1) + Y22(0.05)
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc)
+
+# Or with fixed flux at outer boundary
+flux = Y00(-1.0) + Y20(0.1)
+bs = basic_state(cd, χ, E, Ra, Pr; flux_bc=flux)
+
+# Use in problem setup
+params = ShellParams(
+    E = E, Pr = Pr, Ra = Ra, χ = χ,
+    m = m, lmax = lmax, Nr = Nr,
+    basic_state = bs,
+)
 ```
 
 ---

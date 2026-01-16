@@ -97,8 +97,298 @@ The eigenvalue problem becomes block-coupled across different m values.
 end
 
 
+# =============================================================================
+#  Symbolic Spherical Harmonic Boundary Conditions
+#
+#  Provides an intuitive interface for specifying temperature boundary
+#  conditions using spherical harmonic notation:
+#
+#    bc = Y20(0.1) + Y22(0.05)  # Meridional + longitudinal pattern
+#    bc = 0.5 * Y10()           # Scaled dipole
+#
+#  These can be passed directly to basic state functions.
+# =============================================================================
+
 """
-    conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int) where T
+    SphericalHarmonicBC{T<:Real}
+
+Symbolic representation of boundary conditions expanded in spherical harmonics.
+
+This type provides a convenient way to specify temperature boundary conditions
+using standard spherical harmonic notation (Y_ℓm) rather than dictionary syntax.
+
+# Constructor Functions
+- `Ylm(ℓ, m, amplitude)` - General spherical harmonic mode
+- `Y00(amp)`, `Y10(amp)`, `Y11(amp)` - Monopole and dipole
+- `Y20(amp)`, `Y21(amp)`, `Y22(amp)` - Quadrupole
+- `Y30(amp)`, ..., `Y44(amp)` - Higher orders
+
+# Operators
+- `+` : Combine multiple harmonics: `Y20(0.1) + Y22(0.05)`
+- `*` : Scale amplitude: `0.5 * Y20(0.1)` or `Y20(0.1) * 0.5`
+- `-` : Negate or subtract: `-Y20(0.1)` or `Y20(0.1) - Y22(0.05)`
+
+# Examples
+
+## Simple meridional variation (Y₂₀)
+```julia
+bc = Y20(0.1)
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc)
+```
+
+## Combined meridional and longitudinal variation
+```julia
+bc = Y20(0.1) + Y22(0.05)
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc)
+```
+
+## Dipole pattern with negative amplitude
+```julia
+bc = Y10(-0.2)  # Hot at one pole, cold at other
+```
+
+## Complex pattern with scaling
+```julia
+bc = 0.5 * (Y20(1.0) + 2.0 * Y40(0.5))
+```
+
+## Flux boundary condition
+```julia
+bc = Y20(0.1)  # Interpreted as flux when thermal_bc=:fixed_flux
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc, thermal_bc=:fixed_flux)
+```
+
+# Physical Interpretation
+
+The spherical harmonics Y_ℓm represent different angular patterns:
+
+- **Y₀₀**: Uniform (spherically symmetric)
+- **Y₁₀**: North-south dipole (one hemisphere hot, other cold)
+- **Y₁₁**: East-west dipole
+- **Y₂₀**: Equator-pole contrast (equator different from poles)
+- **Y₂₂**: Four-fold longitudinal pattern (warm at 0°,180°, cold at 90°,270°)
+- **Y₃₀**: More complex latitudinal structure
+- **Y₄₀**: Even more latitudinal bands
+
+For convection studies:
+- Y₂₀ is most common: represents differential heating between equator and poles
+- Y₂₂ represents tidal or orbital forcing patterns
+- Y₁₀ represents hemispherical asymmetry
+"""
+struct SphericalHarmonicBC{T<:Real}
+    coeffs::Dict{Tuple{Int,Int}, T}
+end
+
+# Empty constructor
+SphericalHarmonicBC{T}() where T = SphericalHarmonicBC{T}(Dict{Tuple{Int,Int}, T}())
+
+# Single mode constructor
+function SphericalHarmonicBC(ℓ::Int, m::Int, amplitude::T) where T<:Real
+    if ℓ < 0
+        throw(ArgumentError("ℓ must be non-negative, got ℓ=$ℓ"))
+    end
+    if m < 0 || m > ℓ
+        throw(ArgumentError("m must satisfy 0 ≤ m ≤ ℓ, got ℓ=$ℓ, m=$m"))
+    end
+    SphericalHarmonicBC{T}(Dict((ℓ, m) => amplitude))
+end
+
+# Addition: combine multiple spherical harmonic BCs
+function Base.:+(a::SphericalHarmonicBC{T}, b::SphericalHarmonicBC{S}) where {T,S}
+    R = promote_type(T, S)
+    result = Dict{Tuple{Int,Int}, R}()
+    for (k, v) in a.coeffs
+        result[k] = get(result, k, zero(R)) + R(v)
+    end
+    for (k, v) in b.coeffs
+        result[k] = get(result, k, zero(R)) + R(v)
+    end
+    SphericalHarmonicBC{R}(result)
+end
+
+# Scalar multiplication (from left)
+function Base.:*(c::Real, bc::SphericalHarmonicBC{T}) where T
+    R = promote_type(typeof(c), T)
+    SphericalHarmonicBC{R}(Dict(k => R(c) * R(v) for (k, v) in bc.coeffs))
+end
+
+# Scalar multiplication (from right)
+Base.:*(bc::SphericalHarmonicBC, c::Real) = c * bc
+
+# Division by scalar
+Base.:/(bc::SphericalHarmonicBC, c::Real) = (1/c) * bc
+
+# Negation
+Base.:-(bc::SphericalHarmonicBC) = (-1) * bc
+
+# Subtraction
+Base.:-(a::SphericalHarmonicBC, b::SphericalHarmonicBC) = a + (-b)
+
+# Zero check
+Base.iszero(bc::SphericalHarmonicBC) = isempty(bc.coeffs) || all(iszero, values(bc.coeffs))
+
+# =============================================================================
+#  Convenience Constructors for Common Spherical Harmonics
+# =============================================================================
+
+"""
+    Ylm(ℓ::Int, m::Int, amplitude::Real=1.0)
+
+Create a spherical harmonic boundary condition for mode (ℓ, m).
+
+# Arguments
+- `ℓ` : Spherical harmonic degree (ℓ ≥ 0)
+- `m` : Azimuthal order (0 ≤ m ≤ ℓ)
+- `amplitude` : Amplitude of this mode (default: 1.0)
+
+# Example
+```julia
+bc = Ylm(3, 2, 0.1)  # Y₃₂ mode with amplitude 0.1
+```
+"""
+Ylm(ℓ::Int, m::Int, amplitude::Real=1.0) = SphericalHarmonicBC(ℓ, m, Float64(amplitude))
+
+# ℓ = 0: Monopole (uniform)
+"""Y00(amplitude=1.0) - Uniform (monopole) spherical harmonic"""
+Y00(amplitude::Real=1.0) = SphericalHarmonicBC(0, 0, Float64(amplitude))
+
+# ℓ = 1: Dipole
+"""Y10(amplitude=1.0) - Axial dipole: cos(θ) pattern (north-south asymmetry)"""
+Y10(amplitude::Real=1.0) = SphericalHarmonicBC(1, 0, Float64(amplitude))
+
+"""Y11(amplitude=1.0) - Equatorial dipole: sin(θ)cos(φ) pattern"""
+Y11(amplitude::Real=1.0) = SphericalHarmonicBC(1, 1, Float64(amplitude))
+
+# ℓ = 2: Quadrupole
+"""Y20(amplitude=1.0) - Axisymmetric quadrupole: (3cos²θ - 1) pattern (equator-pole contrast)"""
+Y20(amplitude::Real=1.0) = SphericalHarmonicBC(2, 0, Float64(amplitude))
+
+"""Y21(amplitude=1.0) - Tesseral quadrupole: sin(θ)cos(θ)cos(φ) pattern"""
+Y21(amplitude::Real=1.0) = SphericalHarmonicBC(2, 1, Float64(amplitude))
+
+"""Y22(amplitude=1.0) - Sectoral quadrupole: sin²(θ)cos(2φ) pattern (four-fold longitudinal)"""
+Y22(amplitude::Real=1.0) = SphericalHarmonicBC(2, 2, Float64(amplitude))
+
+# ℓ = 3: Octupole
+"""Y30(amplitude=1.0) - Axisymmetric octupole"""
+Y30(amplitude::Real=1.0) = SphericalHarmonicBC(3, 0, Float64(amplitude))
+
+"""Y31(amplitude=1.0) - Tesseral octupole m=1"""
+Y31(amplitude::Real=1.0) = SphericalHarmonicBC(3, 1, Float64(amplitude))
+
+"""Y32(amplitude=1.0) - Tesseral octupole m=2"""
+Y32(amplitude::Real=1.0) = SphericalHarmonicBC(3, 2, Float64(amplitude))
+
+"""Y33(amplitude=1.0) - Sectoral octupole"""
+Y33(amplitude::Real=1.0) = SphericalHarmonicBC(3, 3, Float64(amplitude))
+
+# ℓ = 4: Hexadecapole
+"""Y40(amplitude=1.0) - Axisymmetric hexadecapole"""
+Y40(amplitude::Real=1.0) = SphericalHarmonicBC(4, 0, Float64(amplitude))
+
+"""Y41(amplitude=1.0) - Tesseral hexadecapole m=1"""
+Y41(amplitude::Real=1.0) = SphericalHarmonicBC(4, 1, Float64(amplitude))
+
+"""Y42(amplitude=1.0) - Tesseral hexadecapole m=2"""
+Y42(amplitude::Real=1.0) = SphericalHarmonicBC(4, 2, Float64(amplitude))
+
+"""Y43(amplitude=1.0) - Tesseral hexadecapole m=3"""
+Y43(amplitude::Real=1.0) = SphericalHarmonicBC(4, 3, Float64(amplitude))
+
+"""Y44(amplitude=1.0) - Sectoral hexadecapole"""
+Y44(amplitude::Real=1.0) = SphericalHarmonicBC(4, 4, Float64(amplitude))
+
+# =============================================================================
+#  Utility Functions for SphericalHarmonicBC
+# =============================================================================
+
+"""
+    to_dict(bc::SphericalHarmonicBC)
+
+Convert SphericalHarmonicBC to Dict{Tuple{Int,Int}, T} format.
+
+This is the internal format used by basic state functions.
+"""
+to_dict(bc::SphericalHarmonicBC{T}) where T = Dict{Tuple{Int,Int}, T}(bc.coeffs)
+
+"""
+    get_lmax(bc::SphericalHarmonicBC)
+
+Get the maximum spherical harmonic degree in the boundary condition.
+"""
+function get_lmax(bc::SphericalHarmonicBC)
+    isempty(bc.coeffs) && return 0
+    maximum(first(k) for k in keys(bc.coeffs))
+end
+
+"""
+    get_mmax(bc::SphericalHarmonicBC)
+
+Get the maximum azimuthal order in the boundary condition.
+"""
+function get_mmax(bc::SphericalHarmonicBC)
+    isempty(bc.coeffs) && return 0
+    maximum(last(k) for k in keys(bc.coeffs))
+end
+
+"""
+    get_lmax_mmax(bc::SphericalHarmonicBC)
+
+Get both (lmax, mmax) from the boundary condition.
+"""
+get_lmax_mmax(bc::SphericalHarmonicBC) = (get_lmax(bc), get_mmax(bc))
+
+"""
+    is_axisymmetric(bc::SphericalHarmonicBC)
+
+Check if the boundary condition is axisymmetric (m=0 only).
+"""
+is_axisymmetric(bc::SphericalHarmonicBC) = get_mmax(bc) == 0
+
+# Pretty printing
+function Base.show(io::IO, bc::SphericalHarmonicBC{T}) where T
+    if isempty(bc.coeffs)
+        print(io, "SphericalHarmonicBC{$T}(empty)")
+        return
+    end
+
+    terms = String[]
+    for ((ℓ, m), amp) in sort(collect(bc.coeffs), by=x->(x[1][1], x[1][2]))
+        if abs(amp) < eps(T) * 1000
+            continue
+        end
+        if amp == 1.0
+            push!(terms, "Y$ℓ$m")
+        elseif amp == -1.0
+            push!(terms, "-Y$ℓ$m")
+        else
+            push!(terms, "$(amp)*Y$ℓ$m")
+        end
+    end
+
+    if isempty(terms)
+        print(io, "SphericalHarmonicBC{$T}(zero)")
+    else
+        print(io, join(terms, " + "))
+    end
+end
+
+function Base.show(io::IO, ::MIME"text/plain", bc::SphericalHarmonicBC{T}) where T
+    println(io, "SphericalHarmonicBC{$T}:")
+    if isempty(bc.coeffs)
+        println(io, "  (empty)")
+        return
+    end
+    for ((ℓ, m), amp) in sort(collect(bc.coeffs), by=x->(x[1][1], x[1][2]))
+        println(io, "  Y_$ℓ,$m : $amp")
+    end
+end
+
+
+"""
+    conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int;
+                           thermal_bc::Symbol=:fixed_temperature,
+                           outer_flux::T=zero(T)) where T
 
 Create a basic state corresponding to pure conduction (no meridional variation).
 
@@ -110,18 +400,56 @@ Arguments:
 - `cd` - Chebyshev differentiation structure
 - `χ` - Radius ratio r_i/r_o
 - `lmax_bs` - Maximum ℓ for basic state (typically small, e.g., 4)
+- `thermal_bc` - Outer thermal boundary condition:
+  - `:fixed_temperature` (default): θ̄(r_o) = 0
+  - `:fixed_flux`: dθ̄/dr|_{r_o} = outer_flux
+- `outer_flux` - Heat flux at outer boundary (only used if thermal_bc=:fixed_flux)
+                 Positive = heat flowing outward, negative = heat flowing inward.
+                 For standard convection with hot inner boundary, use negative flux
+                 (e.g., outer_flux = -1/(r_o² × (1 - χ)) for unit total flux).
+
+# Physical Interpretation
+For fixed temperature BCs:
+  - θ̄(r_i) = 1 (hot inner boundary)
+  - θ̄(r_o) = 0 (cold outer boundary)
+
+For fixed flux at outer:
+  - θ̄(r_i) = 1 (hot inner boundary)
+  - dθ̄/dr|_{r_o} = outer_flux (prescribed heat flux)
+
+The conduction profile for ℓ=0 with fixed flux at outer is:
+  θ̄_0(r) = √(4π) × [1 + outer_flux × r_o² × (1/r - 1/r_i)]
 """
-function conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int) where T
+function conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int;
+                                thermal_bc::Symbol=:fixed_temperature,
+                                outer_flux::T=zero(T)) where T
     r = cd.x
     Nr = length(r)
 
-    r_i = χ
-    r_o = 1.0
+    r_i = T(χ)
+    r_o = T(1.0)
 
+    # Validate thermal BC
+    if !(thermal_bc in (:fixed_temperature, :fixed_flux))
+        error("thermal_bc must be :fixed_temperature or :fixed_flux, got: $thermal_bc")
+    end
+
+    # ℓ=0 conduction profile
     inner_value = sqrt(T(4) * T(pi))   # θ̄_00(r_i) = 1 × √(4π)
-    outer_value = zero(T)               # θ̄_00(r_o) = 0
-    theta_cond, dtheta_dr_cond = laplace_mode_profile(0, r, r_i, r_o,
-                                                     inner_value, outer_value)
+
+    if thermal_bc == :fixed_temperature
+        outer_value = zero(T)           # θ̄_00(r_o) = 0
+        theta_cond, dtheta_dr_cond = laplace_mode_profile(0, r, r_i, r_o,
+                                                         inner_value, outer_value;
+                                                         outer_bc=:fixed_temperature)
+    else  # fixed_flux
+        # For ℓ=0: dθ̄_00/dr|_{r_o} = outer_flux × √(4π)
+        # (normalize by √(4π) to match the spherical harmonic coefficient)
+        outer_flux_normalized = outer_flux * sqrt(T(4) * T(pi))
+        theta_cond, dtheta_dr_cond = laplace_mode_profile(0, r, r_i, r_o,
+                                                         inner_value, outer_flux_normalized;
+                                                         outer_bc=:fixed_flux)
+    end
 
     # Initialize dictionaries
     theta_coeffs = Dict{Int,Vector{T}}()
@@ -130,7 +458,6 @@ function conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int) wher
     duphi_dr_coeffs = Dict{Int,Vector{T}}()
 
     # Only ℓ=0 component is non-zero
-    # Need to normalize by spherical harmonic coefficient
     # Y_00 = 1/√(4π), so θ̄_00(r) = √(4π) × θ_cond(r)
     theta_coeffs[0] = theta_cond
     dtheta_dr_coeffs[0] = dtheta_dr_cond
@@ -161,10 +488,14 @@ end
 """
     meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T,
                           lmax_bs::Int, amplitude::T;
-                          mechanical_bc::Symbol=:no_slip) where T
+                          mechanical_bc::Symbol=:no_slip,
+                          thermal_bc::Symbol=:fixed_temperature,
+                          outer_flux_mean::T=zero(T),
+                          outer_flux_Y20::T=zero(T)) where T
 
 Create a basic state with meridional temperature variation at the outer boundary.
 
+# Fixed Temperature Boundary Conditions (default)
 The inner boundary is held at uniform temperature:
     θ̄(r_i, θ) = 1
 
@@ -173,31 +504,71 @@ The outer boundary has zero-mean meridional variation:
 
 This represents differential heating (e.g., equator hotter than poles).
 
-The basic state temperature θ̄(r,θ) is found by solving the conduction equation:
-    ∇²θ̄ = 0
+# Fixed Flux Boundary Conditions
+The inner boundary is held at uniform temperature:
+    θ̄(r_i, θ) = 1
 
-with these boundary conditions. The zonal flow ū_φ(r,θ) is then computed from
-thermal wind balance:
-    cos(θ) ∂ū_φ/∂r - sin(θ) ū_φ/r = -(Ra E²)/(2Pr) × (r/r_o) × (1/r) × ∂Θ̄/∂θ
+The outer boundary has prescribed heat flux:
+    dθ̄/dr|_{r_o} = outer_flux_mean + outer_flux_Y20 × Y_20(θ)
 
-Arguments:
+This represents:
+- `outer_flux_mean` : Mean (spherically symmetric) heat flux at outer boundary
+- `outer_flux_Y20` : Meridional variation in heat flux (amplitude of Y_20 component)
+
+# Arguments
 - `cd` - Chebyshev differentiation structure
 - `χ` - Radius ratio r_i/r_o
 - `E` - Ekman number (REQUIRED for thermal wind balance scaling)
 - `Ra` - Rayleigh number (needed for thermal wind balance)
 - `Pr` - Prandtl number
 - `lmax_bs` - Maximum ℓ for basic state expansion
-- `amplitude` - Amplitude of meridional variation at outer boundary (typically 0.01-0.1)
-- `mechanical_bc` - Mechanical boundary conditions: `:no_slip` (default) or `:stress_free`
+- `amplitude` - For :fixed_temperature: amplitude of Y_20 temperature at outer boundary
+               For :fixed_flux: amplitude of Y_20 FLUX at outer boundary (overrides outer_flux_Y20)
+- `mechanical_bc` - Mechanical BCs: `:no_slip` (default) or `:stress_free`
+- `thermal_bc` - Outer thermal BC: `:fixed_temperature` (default) or `:fixed_flux`
+- `outer_flux_mean` - Mean heat flux at outer (for :fixed_flux only)
+- `outer_flux_Y20` - Y_20 flux amplitude at outer (for :fixed_flux only, overridden by amplitude)
+
+# Physical Examples
+
+1. Differential heating with fixed temperatures:
+   ```julia
+   bs = meridional_basic_state(cd, χ, E, Ra, Pr, 4, 0.1)
+   # θ̄(r_i) = 1 (uniform hot), θ̄(r_o) = 0.1 × Y_20 (equator warmer than poles)
+   ```
+
+2. Fixed inner temperature, uniform flux out:
+   ```julia
+   bs = meridional_basic_state(cd, χ, E, Ra, Pr, 4, 0.0;
+                               thermal_bc=:fixed_flux,
+                               outer_flux_mean=-1.0)
+   # θ̄(r_i) = 1, dθ̄/dr|_{r_o} = -1 (heat flowing out uniformly)
+   ```
+
+3. Fixed inner temperature, meridionally-varying flux:
+   ```julia
+   bs = meridional_basic_state(cd, χ, E, Ra, Pr, 4, 0.1;
+                               thermal_bc=:fixed_flux,
+                               outer_flux_mean=-1.0)
+   # θ̄(r_i) = 1, dθ̄/dr|_{r_o} = -1 + 0.1 × Y_20 (more heat loss at equator)
+   ```
 """
 function meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T,
                                lmax_bs::Int, amplitude::T;
-                               mechanical_bc::Symbol=:no_slip) where T
+                               mechanical_bc::Symbol=:no_slip,
+                               thermal_bc::Symbol=:fixed_temperature,
+                               outer_flux_mean::T=zero(T),
+                               outer_flux_Y20::T=zero(T)) where T
 
     r = cd.x
     Nr = length(r)
-    r_i = χ
-    r_o = 1.0
+    r_i = T(χ)
+    r_o = T(1.0)
+
+    # Validate BCs
+    if !(thermal_bc in (:fixed_temperature, :fixed_flux))
+        error("thermal_bc must be :fixed_temperature or :fixed_flux, got: $thermal_bc")
+    end
 
     # Initialize dictionaries
     theta_coeffs = Dict{Int,Vector{T}}()
@@ -205,18 +576,56 @@ function meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T
     uphi_coeffs = Dict{Int,Vector{T}}()
     duphi_dr_coeffs = Dict{Int,Vector{T}}()
 
-    # ℓ=0 mode matches Eq. (6) exactly (constant boundary temperatures)
-    theta_0, dtheta_0 = laplace_mode_profile(0, r, r_i, r_o, sqrt(4π), zero(T))
-    theta_coeffs[0] = theta_0
-    dtheta_dr_coeffs[0] = dtheta_0
+    # Spherical harmonic normalization for Y_20
+    norm_Y20 = sqrt(T(5) / (T(4) * T(pi)))
+
+    if thermal_bc == :fixed_temperature
+        # =====================================================================
+        # Fixed temperature at both boundaries
+        # =====================================================================
+
+        # ℓ=0 mode: uniform inner temp, zero outer temp
+        theta_0, dtheta_0 = laplace_mode_profile(0, r, r_i, r_o,
+                                                 sqrt(T(4)*T(pi)), zero(T);
+                                                 outer_bc=:fixed_temperature)
+        theta_coeffs[0] = theta_0
+        dtheta_dr_coeffs[0] = dtheta_0
+
+        # ℓ=2 mode: zero at inner, amplitude × Y_20 pattern at outer
+        theta_2, dtheta_2 = laplace_mode_profile(2, r, r_i, r_o,
+                                                zero(T), amplitude / norm_Y20;
+                                                outer_bc=:fixed_temperature)
+        theta_coeffs[2] = theta_2
+        dtheta_dr_coeffs[2] = dtheta_2
+
+    else  # fixed_flux
+        # =====================================================================
+        # Fixed temperature at inner, fixed flux at outer
+        # =====================================================================
+
+        # ℓ=0 mode: uniform inner temp, prescribed mean flux at outer
+        # Normalize flux by √(4π) for spherical harmonic coefficient
+        flux_0_normalized = outer_flux_mean * sqrt(T(4) * T(pi))
+        theta_0, dtheta_0 = laplace_mode_profile(0, r, r_i, r_o,
+                                                 sqrt(T(4)*T(pi)), flux_0_normalized;
+                                                 outer_bc=:fixed_flux)
+        theta_coeffs[0] = theta_0
+        dtheta_dr_coeffs[0] = dtheta_0
+
+        # ℓ=2 mode: zero at inner, prescribed Y_20 flux at outer
+        # Use amplitude as the flux amplitude (overrides outer_flux_Y20 if non-zero)
+        flux_Y20 = amplitude != zero(T) ? amplitude : outer_flux_Y20
+        flux_2_normalized = flux_Y20 / norm_Y20
+        theta_2, dtheta_2 = laplace_mode_profile(2, r, r_i, r_o,
+                                                zero(T), flux_2_normalized;
+                                                outer_bc=:fixed_flux)
+        theta_coeffs[2] = theta_2
+        dtheta_dr_coeffs[2] = dtheta_2
+    end
+
+    # Initialize velocity modes to zero
     uphi_coeffs[0] = zeros(T, Nr)
     duphi_dr_coeffs[0] = zeros(T, Nr)
-
-    norm_Y20 = sqrt(T(5) / (T(4) * T(pi)))
-    theta_2, dtheta_2 = laplace_mode_profile(2, r, r_i, r_o,
-                                            zero(T), amplitude / norm_Y20)
-    theta_coeffs[2] = theta_2
-    dtheta_dr_coeffs[2] = dtheta_2
     uphi_coeffs[2] = zeros(T, Nr)
     duphi_dr_coeffs[2] = zeros(T, Nr)
 
@@ -224,7 +633,7 @@ function meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T
     # Higher ℓ modes: zero (no higher-order boundary variations)
     # =========================================================================
     for ℓ in 1:lmax_bs
-        if ℓ == 2
+        if ℓ == 0 || ℓ == 2
             continue
         end
         theta_coeffs[ℓ] = zeros(T, Nr)
@@ -281,13 +690,76 @@ function legendre_derivative_coefficients(lmax::Int)
 end
 
 
+"""
+    laplace_mode_profile(ℓ, r, r_i, r_o, inner_value, outer_value;
+                         outer_bc=:fixed_temperature)
+
+Solve the radial Laplace equation for spherical harmonic mode ℓ.
+
+The equation is: d²θ̄_ℓ/dr² + (2/r) dθ̄_ℓ/dr - ℓ(ℓ+1)/r² θ̄_ℓ = 0
+
+General solution: θ̄_ℓ(r) = A r^ℓ + B r^{-(ℓ+1)}
+
+# Arguments
+- `ℓ::Int` - Spherical harmonic degree
+- `r` - Radial grid points
+- `r_i, r_o` - Inner and outer radii
+- `inner_value` - Value or flux at inner boundary (always Dirichlet for temperature)
+- `outer_value` - Value (for :fixed_temperature) or flux (for :fixed_flux) at outer boundary
+- `outer_bc` - Outer boundary condition type:
+  - `:fixed_temperature` (default): θ̄_ℓ(r_o) = outer_value
+  - `:fixed_flux`: dθ̄_ℓ/dr|_{r_o} = outer_value
+
+# Returns
+- `θ` - Temperature profile θ̄_ℓ(r)
+- `dθ` - Radial derivative dθ̄_ℓ/dr
+
+# Mathematical Details
+For fixed temperature at both boundaries:
+  - θ̄_ℓ(r_i) = inner_value
+  - θ̄_ℓ(r_o) = outer_value
+
+For fixed temperature at inner, fixed flux at outer:
+  - θ̄_ℓ(r_i) = inner_value
+  - dθ̄_ℓ/dr|_{r_o} = outer_value
+
+The derivative is: dθ̄_ℓ/dr = A ℓ r^{ℓ-1} - B (ℓ+1) r^{-(ℓ+2)}
+"""
 function laplace_mode_profile(ℓ::Int, r::AbstractVector{T}, r_i::T, r_o::T,
-                             inner_value::T, outer_value::T) where T
-    M = T[
-        r_i^ℓ          r_i^(-(ℓ+1));
-        r_o^ℓ          r_o^(-(ℓ+1))
-    ]
-    rhs = T[inner_value, outer_value]
+                             inner_value::T, outer_value::T;
+                             outer_bc::Symbol=:fixed_temperature) where T
+
+    if outer_bc == :fixed_temperature
+        # Both boundaries have Dirichlet conditions (fixed temperature)
+        # θ̄_ℓ(r_i) = inner_value
+        # θ̄_ℓ(r_o) = outer_value
+        M = T[
+            r_i^ℓ          r_i^(-(ℓ+1));
+            r_o^ℓ          r_o^(-(ℓ+1))
+        ]
+        rhs = T[inner_value, outer_value]
+
+    elseif outer_bc == :fixed_flux
+        # Inner: Dirichlet (fixed temperature)
+        # Outer: Neumann (fixed flux)
+        # θ̄_ℓ(r_i) = inner_value
+        # dθ̄_ℓ/dr|_{r_o} = outer_value
+        #
+        # From θ̄_ℓ = A r^ℓ + B r^{-(ℓ+1)}:
+        #   dθ̄_ℓ/dr = A ℓ r^{ℓ-1} - B (ℓ+1) r^{-(ℓ+2)}
+        #
+        # At r = r_o:
+        #   dθ̄_ℓ/dr|_{r_o} = A ℓ r_o^{ℓ-1} - B (ℓ+1) r_o^{-(ℓ+2)}
+        M = T[
+            r_i^ℓ                    r_i^(-(ℓ+1));
+            ℓ * r_o^(ℓ-1)           -(ℓ+1) * r_o^(-(ℓ+2))
+        ]
+        rhs = T[inner_value, outer_value]
+
+    else
+        error("outer_bc must be :fixed_temperature or :fixed_flux, got: $outer_bc")
+    end
+
     α, β = M \ rhs
 
     θ = α .* r.^ℓ .+ β .* r.^(-(ℓ+1))
@@ -428,15 +900,28 @@ end
     nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::Real, Pr::Real,
                                 lmax_bs::Int, mmax_bs::Int,
                                 amplitudes::AbstractDict;
-                                mechanical_bc::Symbol=:no_slip)
+                                mechanical_bc::Symbol=:no_slip,
+                                thermal_bc::Symbol=:fixed_temperature,
+                                outer_fluxes::AbstractDict=Dict{Tuple{Int,Int},Float64}())
 
 Create a 3D basic state with both meridional and longitudinal temperature variations.
 
+# Fixed Temperature Boundary Conditions (default)
 The inner boundary is held at uniform temperature:
     θ̄(r_i, θ, φ) = 1
 
 The outer boundary has zero-mean variations:
     θ̄(r_o, θ, φ) = Σ_{ℓ,m} amplitude_{ℓm} × Y_ℓm(θ,φ)
+
+# Fixed Flux Boundary Conditions
+The inner boundary is held at uniform temperature:
+    θ̄(r_i, θ, φ) = 1
+
+The outer boundary has prescribed heat flux:
+    dθ̄/dr|_{r_o} = Σ_{ℓ,m} flux_{ℓm} × Y_ℓm(θ,φ)
+
+where `flux_{ℓm}` values are taken from `outer_fluxes` dictionary, and `amplitudes`
+provides the flux values for any (ℓ,m) not in `outer_fluxes`.
 
 This represents fully 3D differential heating scenarios, such as:
 - Longitudinally-varying solar heating
@@ -448,7 +933,7 @@ The interior temperature θ̄(r,θ,φ) satisfies ∇²θ̄ = 0 with these BCs.
 The velocity field ū(r,θ,φ) is computed from simplified thermal wind balance
 (assuming ū_r = ū_θ = 0, only ū_φ ≠ 0 as an approximation).
 
-Arguments:
+# Arguments
 - `cd` - Chebyshev differentiation structure
 - `χ` - Radius ratio r_i/r_o
 - `E` - Ekman number (REQUIRED for thermal wind balance scaling)
@@ -456,26 +941,60 @@ Arguments:
 - `Pr` - Prandtl number
 - `lmax_bs` - Maximum ℓ for basic state
 - `mmax_bs` - Maximum m for basic state (e.g., 0-4)
-- `amplitudes` - Dict{(ℓ,m) => amplitude} specifying boundary temperature modes
+- `amplitudes` - Dict{(ℓ,m) => value} specifying:
+  - For :fixed_temperature: boundary temperature amplitudes
+  - For :fixed_flux: flux amplitudes (if not specified in outer_fluxes)
 - `mechanical_bc` - Mechanical boundary conditions: `:no_slip` (default) or `:stress_free`
+- `thermal_bc` - Outer thermal BC: `:fixed_temperature` (default) or `:fixed_flux`
+- `outer_fluxes` - Dict{(ℓ,m) => flux} specifying heat flux at outer boundary
+                   (only used if thermal_bc=:fixed_flux)
 
-Example:
-    amplitudes = Dict(
-        (2,0) => 0.1,   # Meridional Y_20 component
-        (2,2) => 0.05   # Longitudinal Y_22 component
-    )
-    bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 4, 2, amplitudes)
+# Examples
+
+1. Fixed temperature at outer boundary (standard differential heating):
+```julia
+amplitudes = Dict(
+    (2,0) => 0.1,   # Meridional Y_20 temperature pattern
+    (2,2) => 0.05   # Longitudinal Y_22 temperature pattern
+)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 4, 2, amplitudes)
+```
+
+2. Fixed flux at outer boundary:
+```julia
+outer_fluxes = Dict(
+    (0,0) => -1.0,   # Mean heat flux (negative = outward)
+    (2,0) => 0.1,    # Meridional flux variation
+    (2,2) => 0.05    # Longitudinal flux variation
+)
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 4, 2, Dict{Tuple{Int,Int},Float64}();
+                                    thermal_bc=:fixed_flux, outer_fluxes=outer_fluxes)
+```
+
+3. Mixed specification (amplitudes provide defaults for flux):
+```julia
+amplitudes = Dict((2,0) => 0.1, (2,2) => 0.05)  # Treated as flux amplitudes
+bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 4, 2, amplitudes;
+                                    thermal_bc=:fixed_flux)
+```
 """
 function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::Real, Pr::Real,
                                      lmax_bs::Int, mmax_bs::Int,
                                      amplitudes::AbstractDict;
-                                     mechanical_bc::Symbol=:no_slip)
+                                     mechanical_bc::Symbol=:no_slip,
+                                     thermal_bc::Symbol=:fixed_temperature,
+                                     outer_fluxes::AbstractDict=Dict{Tuple{Int,Int},Float64}())
 
     r = cd.x
     T = eltype(r)  # Get the element type from the Chebyshev grid
     Nr = length(r)
     r_i = T(χ)
     r_o = T(1.0)
+
+    # Validate thermal BC
+    if !(thermal_bc in (:fixed_temperature, :fixed_flux))
+        error("thermal_bc must be :fixed_temperature or :fixed_flux, got: $thermal_bc")
+    end
 
     # Initialize all coefficient dictionaries
     theta_coeffs = Dict{Tuple{Int,Int},Vector{T}}()
@@ -487,60 +1006,83 @@ function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::
     dutheta_dr_coeffs = Dict{Tuple{Int,Int},Vector{T}}()
     duphi_dr_coeffs = Dict{Tuple{Int,Int},Vector{T}}()
 
+    # Spherical harmonic normalization
+    # For m=0: norm = sqrt((2ℓ+1)/(4π))
+    # For m≠0: norm = sqrt((2ℓ+1)/(4π) × 2)
+    Y_norm(ℓ::Int, m::Int) = m == 0 ? sqrt(T(2ℓ+1)/(4*T(π))) : sqrt(T(2ℓ+1)/(4*T(π)) * 2)
+
     # =========================================================================
     # Solve ∇²θ̄ = 0 for each (ℓ,m) mode
     # =========================================================================
 
     for ℓ in 0:lmax_bs
         for m in 0:min(ℓ, mmax_bs)
-            # Get amplitude for this mode (default to 0 if not specified)
-            amp = get(amplitudes, (ℓ,m), zero(T))
+            norm_Ylm = Y_norm(ℓ, m)
 
             if ℓ == 0 && m == 0
-                # ℓ=0, m=0: Radial conduction profile
-                theta_cond = @. (r_o/r - 1.0)/(r_o/r_i - 1.0)
-                dtheta_dr_cond = cd.D1 * theta_cond
+                # =============================================================
+                # ℓ=0, m=0: Radial conduction profile (mean temperature)
+                # =============================================================
+                # Inner BC: θ̄_00(r_i) = 1 × √(4π) (uniform temperature = 1)
+                inner_value = sqrt(T(4) * T(π))
 
-                # Normalize by Y_00 = 1/√(4π)
-                theta_coeffs[(0,0)] = sqrt(4π) .* theta_cond
-                dtheta_dr_coeffs[(0,0)] = sqrt(4π) .* dtheta_dr_cond
+                if thermal_bc == :fixed_temperature
+                    # Outer BC: θ̄_00(r_o) = 0 (cold outer boundary)
+                    outer_value = zero(T)
+                    theta_00, dtheta_00 = laplace_mode_profile(0, r, r_i, r_o,
+                                                               inner_value, outer_value;
+                                                               outer_bc=:fixed_temperature)
+                else  # fixed_flux
+                    # Outer BC: dθ̄_00/dr|_{r_o} = flux_00 × √(4π)
+                    # Get flux from outer_fluxes or amplitudes
+                    flux_00 = get(outer_fluxes, (0,0), get(amplitudes, (0,0), zero(T)))
+                    outer_flux_normalized = T(flux_00) * sqrt(T(4) * T(π))
+                    theta_00, dtheta_00 = laplace_mode_profile(0, r, r_i, r_o,
+                                                               inner_value, outer_flux_normalized;
+                                                               outer_bc=:fixed_flux)
+                end
 
-            elseif amp != 0
-                # Non-zero amplitude: Solve boundary value problem
-                # d²θ̄_ℓm/dr² + (2/r) dθ̄_ℓm/dr - ℓ(ℓ+1)/r² θ̄_ℓm = 0
-                # BC: θ̄_ℓm(r_i) = 0, θ̄_ℓm(r_o) = amp / norm(Y_ℓm)
-
-                # Construct Laplacian operator for this ℓ
-                Lℓ_op = cd.D2 + Diagonal(2 ./ r) * cd.D1 - Diagonal(ℓ*(ℓ+1) ./ r.^2)
-
-                # Apply boundary conditions
-                A_system = copy(Lℓ_op)
-                A_system[1, :] .= 0.0
-                A_system[1, 1] = 1.0  # θ̄(r_i) = 0
-                A_system[end, :] .= 0.0
-                A_system[end, end] = 1.0  # θ̄(r_o) = amp / norm(Y_ℓm)
-
-                # Normalization of Y_ℓm (Schmidt semi-normalized)
-                # For m=0: norm = sqrt((2ℓ+1)/(4π))
-                # For m≠0: norm = sqrt((2ℓ+1)/(4π) × 2)
-                norm_Ylm = m == 0 ? sqrt((2ℓ+1)/(4π)) : sqrt((2ℓ+1)/(4π) * 2)
-
-                # Right-hand side
-                rhs = zeros(T, Nr)
-                rhs[1] = 0.0
-                rhs[end] = amp / norm_Ylm
-
-                # Solve for θ̄_ℓm(r)
-                theta_lm = A_system \ rhs
-                dtheta_lm_dr = cd.D1 * theta_lm
-
-                theta_coeffs[(ℓ,m)] = theta_lm
-                dtheta_dr_coeffs[(ℓ,m)] = dtheta_lm_dr
+                theta_coeffs[(0,0)] = theta_00
+                dtheta_dr_coeffs[(0,0)] = dtheta_00
 
             else
-                # Zero amplitude: Initialize to zero
-                theta_coeffs[(ℓ,m)] = zeros(T, Nr)
-                dtheta_dr_coeffs[(ℓ,m)] = zeros(T, Nr)
+                # =============================================================
+                # ℓ > 0 or m > 0: Higher-order modes
+                # =============================================================
+                # Get amplitude/flux for this mode
+                # For fixed_flux: check outer_fluxes first, then amplitudes
+                if thermal_bc == :fixed_flux
+                    value = get(outer_fluxes, (ℓ,m), get(amplitudes, (ℓ,m), zero(T)))
+                else
+                    value = get(amplitudes, (ℓ,m), zero(T))
+                end
+
+                if value != 0
+                    # Inner BC: θ̄_ℓm(r_i) = 0 (uniform inner temperature)
+                    inner_value = zero(T)
+
+                    if thermal_bc == :fixed_temperature
+                        # Outer BC: θ̄_ℓm(r_o) = amplitude / norm_Ylm
+                        outer_value = T(value) / norm_Ylm
+                        theta_lm, dtheta_lm = laplace_mode_profile(ℓ, r, r_i, r_o,
+                                                                   inner_value, outer_value;
+                                                                   outer_bc=:fixed_temperature)
+                    else  # fixed_flux
+                        # Outer BC: dθ̄_ℓm/dr|_{r_o} = flux / norm_Ylm
+                        outer_flux_normalized = T(value) / norm_Ylm
+                        theta_lm, dtheta_lm = laplace_mode_profile(ℓ, r, r_i, r_o,
+                                                                   inner_value, outer_flux_normalized;
+                                                                   outer_bc=:fixed_flux)
+                    end
+
+                    theta_coeffs[(ℓ,m)] = theta_lm
+                    dtheta_dr_coeffs[(ℓ,m)] = dtheta_lm
+
+                else
+                    # Zero value: Initialize to zero
+                    theta_coeffs[(ℓ,m)] = zeros(T, Nr)
+                    dtheta_dr_coeffs[(ℓ,m)] = zeros(T, Nr)
+                end
             end
 
             # Initialize velocity components to zero (will be filled by thermal wind)
@@ -623,13 +1165,196 @@ end
 
 
 # =============================================================================
+#  Convenience Function: basic_state with Symbolic BCs
+#
+#  High-level interface that accepts SphericalHarmonicBC objects and
+#  automatically dispatches to the appropriate low-level function.
+# =============================================================================
+
+"""
+    basic_state(cd, χ, E, Ra, Pr;
+                temperature_bc=nothing,
+                flux_bc=nothing,
+                mechanical_bc=:no_slip,
+                lmax_bs=nothing)
+
+Create a basic state with symbolic spherical harmonic boundary conditions.
+
+This is a convenience wrapper that accepts `SphericalHarmonicBC` objects
+(created with `Y20()`, `Y22()`, etc.) and automatically dispatches to the
+appropriate low-level function (`conduction_basic_state`, `meridional_basic_state`,
+or `nonaxisymmetric_basic_state`).
+
+# Arguments
+- `cd` : ChebyshevDiffn - Chebyshev differentiation structure
+- `χ` : Radius ratio r_i/r_o
+- `E` : Ekman number
+- `Ra` : Rayleigh number
+- `Pr` : Prandtl number
+
+# Keyword Arguments
+- `temperature_bc` : SphericalHarmonicBC specifying temperature at outer boundary
+- `flux_bc` : SphericalHarmonicBC specifying heat flux at outer boundary
+  (Cannot specify both temperature_bc and flux_bc)
+- `mechanical_bc` : `:no_slip` (default) or `:stress_free`
+- `lmax_bs` : Maximum ℓ for basic state (auto-determined if not specified)
+
+# Returns
+- `BasicState` if boundary condition is axisymmetric (m=0 only)
+- `BasicState3D` if boundary condition has m≠0 components
+
+# Examples
+
+## Pure conduction (no temperature variation at outer boundary)
+```julia
+bs = basic_state(cd, χ, E, Ra, Pr)
+```
+
+## Meridional temperature variation (Y₂₀ pattern)
+```julia
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=Y20(0.1))
+```
+
+## Combined meridional and longitudinal variation
+```julia
+bc = Y20(0.1) + Y22(0.05)
+bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc)
+```
+
+## Fixed flux at outer boundary
+```julia
+# Uniform outward heat flux plus meridional variation
+flux = Y00(-1.0) + Y20(0.1)
+bs = basic_state(cd, χ, E, Ra, Pr; flux_bc=flux)
+```
+
+## Stress-free boundaries with temperature variation
+```julia
+bs = basic_state(cd, χ, E, Ra, Pr;
+                 temperature_bc=Y20(0.1),
+                 mechanical_bc=:stress_free)
+```
+
+# Automatic Dispatch Logic
+
+The function automatically selects the appropriate implementation:
+
+1. If `temperature_bc` is `nothing` (or only Y00 component) and no `flux_bc`:
+   → `conduction_basic_state` (pure conduction profile)
+
+2. If boundary condition is axisymmetric (only m=0 modes):
+   → `meridional_basic_state` (returns `BasicState`)
+
+3. If boundary condition has m≠0 modes:
+   → `nonaxisymmetric_basic_state` (returns `BasicState3D`)
+"""
+function basic_state(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
+                     temperature_bc::Union{Nothing, SphericalHarmonicBC}=nothing,
+                     flux_bc::Union{Nothing, SphericalHarmonicBC}=nothing,
+                     mechanical_bc::Symbol=:no_slip,
+                     lmax_bs::Union{Nothing, Int}=nothing)
+
+    # Validate: can't have both temperature_bc and flux_bc
+    if temperature_bc !== nothing && flux_bc !== nothing
+        error("Cannot specify both temperature_bc and flux_bc. Choose one.")
+    end
+
+    T = eltype(cd.x)
+
+    # Determine thermal BC type and the boundary condition
+    if flux_bc !== nothing
+        thermal_bc = :fixed_flux
+        bc = flux_bc
+    elseif temperature_bc !== nothing
+        thermal_bc = :fixed_temperature
+        bc = temperature_bc
+    else
+        # No BC specified → pure conduction
+        _lmax = lmax_bs === nothing ? 4 : lmax_bs
+        return conduction_basic_state(cd, T(χ), _lmax;
+                                      thermal_bc=:fixed_temperature)
+    end
+
+    # Get lmax and mmax from boundary condition
+    bc_lmax, bc_mmax = get_lmax_mmax(bc)
+
+    # Use provided lmax_bs or auto-determine (add 2 for thermal wind coupling)
+    _lmax = lmax_bs === nothing ? max(bc_lmax + 2, 4) : lmax_bs
+
+    # Check if BC is effectively zero (only conduction)
+    if iszero(bc)
+        return conduction_basic_state(cd, T(χ), _lmax; thermal_bc=thermal_bc)
+    end
+
+    # Check if BC is purely Y00 (uniform outer temperature/flux)
+    if bc_lmax == 0 && bc_mmax == 0
+        # Only Y00 component - use conduction with outer_flux if flux BC
+        if thermal_bc == :fixed_flux
+            outer_flux_val = get(bc.coeffs, (0,0), zero(T))
+            return conduction_basic_state(cd, T(χ), _lmax;
+                                          thermal_bc=:fixed_flux,
+                                          outer_flux=T(outer_flux_val))
+        else
+            # temperature_bc with only Y00 is unusual but valid
+            # Use meridional with zero Y20 amplitude
+            return meridional_basic_state(cd, T(χ), T(E), T(Ra), T(Pr),
+                                          _lmax, zero(T);
+                                          mechanical_bc=mechanical_bc,
+                                          thermal_bc=:fixed_temperature)
+        end
+    end
+
+    # Check if axisymmetric (m=0 only) → use meridional_basic_state
+    if is_axisymmetric(bc)
+        # Extract Y20 amplitude for meridional_basic_state
+        amp_Y20 = get(bc.coeffs, (2,0), zero(T))
+
+        if thermal_bc == :fixed_temperature
+            return meridional_basic_state(cd, T(χ), T(E), T(Ra), T(Pr),
+                                          _lmax, T(amp_Y20);
+                                          mechanical_bc=mechanical_bc,
+                                          thermal_bc=:fixed_temperature)
+        else  # fixed_flux
+            # Get mean flux (Y00) and Y20 flux
+            flux_mean = get(bc.coeffs, (0,0), zero(T))
+            flux_Y20 = get(bc.coeffs, (2,0), zero(T))
+            return meridional_basic_state(cd, T(χ), T(E), T(Ra), T(Pr),
+                                          _lmax, zero(T);  # amplitude=0 since we use explicit fluxes
+                                          mechanical_bc=mechanical_bc,
+                                          thermal_bc=:fixed_flux,
+                                          outer_flux_mean=T(flux_mean),
+                                          outer_flux_Y20=T(flux_Y20))
+        end
+    end
+
+    # Non-axisymmetric → use nonaxisymmetric_basic_state
+    amplitudes = to_dict(bc)
+
+    if thermal_bc == :fixed_temperature
+        return nonaxisymmetric_basic_state(cd, T(χ), T(E), T(Ra), T(Pr),
+                                           _lmax, bc_mmax, amplitudes;
+                                           mechanical_bc=mechanical_bc,
+                                           thermal_bc=:fixed_temperature)
+    else  # fixed_flux
+        return nonaxisymmetric_basic_state(cd, T(χ), T(E), T(Ra), T(Pr),
+                                           _lmax, bc_mmax,
+                                           Dict{Tuple{Int,Int},T}();  # empty amplitudes
+                                           mechanical_bc=mechanical_bc,
+                                           thermal_bc=:fixed_flux,
+                                           outer_fluxes=amplitudes)
+    end
+end
+
+
+# =============================================================================
 #  CORRECTED Thermal Wind Balance Solver
 #
 #  Key fixes:
 #  1. Added missing E² factor in the prefactor
 #  2. Corrected spherical harmonic coupling for ∂Y_ℓ0/∂θ
 #  3. Fixed boundary condition application
-#  4. Proper homogeneous solution adjustment for no-slip BCs
+#  4. Proper Chebyshev spectral BVP solver (replaces trapezoidal integration)
+#  5. Full stress-free boundary condition support
 # =============================================================================
 
 """
@@ -653,7 +1378,7 @@ For linear gravity profile g(r) = g_o × r/r_o.
 Arguments:
 - `uphi_coeffs` : Dict{Int, Vector{T}} - zonal flow coefficients Ū_L(r) (modified in place)
 - `duphi_dr_coeffs` : Dict{Int, Vector{T}} - derivatives ∂Ū_L/∂r (modified in place)
-- `theta_coeffs` : Dict{Int, Vector{T}} - temperature coefficients Θ̄_ℓ(r)  
+- `theta_coeffs` : Dict{Int, Vector{T}} - temperature coefficients Θ̄_ℓ(r)
 - `cd` : ChebyshevDiffn - radial discretization
 - `r_i, r_o` : inner and outer radii (non-dimensional, typically χ and 1)
 - `Ra` : Rayleigh number
@@ -674,6 +1399,14 @@ And the recurrence relation:
     sin(θ) dP_ℓ/d(cosθ) = ℓ(ℓ+1)/(2ℓ+1) × [P_{ℓ+1} - P_{ℓ-1}]
 
 We get coupling from temperature mode ℓ to velocity modes L = ℓ±1.
+
+ODE Solver:
+-----------
+Uses Chebyshev spectral collocation to solve the BVP:
+    r dŪ/dr + Ū = f(r)
+with boundary conditions:
+- No-slip: Ū(r_i) = Ū(r_o) = 0
+- Stress-free: dŪ/dr - Ū/r = 0 at both boundaries
 """
 function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
                             duphi_dr_coeffs::Dict{Int,Vector{T}},
@@ -691,9 +1424,9 @@ function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
     r = cd.x
     Nr = length(r)
     D1 = cd.D1
-    
+
     lmax_theta = maximum(keys(theta_coeffs))
-    
+
     # Spherical harmonic normalization: Y_ℓ0 = √((2ℓ+1)/(4π)) × P_ℓ(cosθ)
     Y_norm(ℓ::Int) = sqrt(T(2ℓ + 1) / (4 * T(π)))
 
@@ -715,152 +1448,129 @@ function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
     #   ⟨∂Θ̄/∂θ, Y_L0⟩ = Σ_ℓ Θ̄_ℓ(r) × ⟨∂Y_ℓ0/∂θ, Y_L0⟩
     #
     # Non-zero contributions when L = ℓ±1.
-    
+
     forcing = Dict{Int, Vector{T}}()
-    
+
     for (ℓ, θ_coeff) in theta_coeffs
         if ℓ == 0
             continue  # ∂Y_00/∂θ = 0 (uniform temperature has no θ-gradient)
         end
-        
+
         # Base coupling coefficient from the recurrence relation
         base_coeff = T(ℓ * (ℓ + 1)) / T(2ℓ + 1)
-        
+
         # Contribution to L = ℓ + 1 mode
         L_plus = ℓ + 1
         norm_ratio_plus = Y_norm(ℓ) / Y_norm(L_plus)
         c_plus = -base_coeff * norm_ratio_plus  # Negative from ∂Y/∂θ formula
-        
+
         if !haskey(forcing, L_plus)
             forcing[L_plus] = zeros(T, Nr)
         end
         forcing[L_plus] .+= c_plus .* θ_coeff
-        
+
         # Contribution to L = ℓ - 1 mode (if ℓ ≥ 1)
         if ℓ >= 1
             L_minus = ℓ - 1
-            norm_ratio_minus = Y_norm(ℓ) / Y_norm(max(L_minus, 0) == 0 ? 1 : L_minus)
-            if L_minus == 0
-                norm_ratio_minus = Y_norm(ℓ) / Y_norm(0)
-            end
+            norm_ratio_minus = L_minus == 0 ? Y_norm(ℓ) / Y_norm(0) : Y_norm(ℓ) / Y_norm(L_minus)
             c_minus = base_coeff * norm_ratio_minus  # Positive (double negative)
-            
+
             if !haskey(forcing, L_minus)
                 forcing[L_minus] = zeros(T, Nr)
             end
             forcing[L_minus] .+= c_minus .* θ_coeff
         end
     end
-    # 
 
     # =========================================================================
     # Step 2: Compute prefactor with CORRECT scaling
     # =========================================================================
     #
     # Thermal wind equation (non-dimensional with viscous time scale D²/ν):
-    #   
+    #
     #   cos(θ) ∂ū_φ/∂r - sin(θ) ū_φ/r = -(Ra E²)/(2 Pr) × (g(r)/g_o) × (1/r) × ∂Θ̄/∂θ
     #
     # For linear gravity g(r) = g_o × r/r_o:
-    #   
+    #
     #   RHS = -(Ra E²)/(2 Pr r_o) × ∂Θ̄/∂θ
     #
     # IMPORTANT: The E² factor is ESSENTIAL and was missing in the original code!
     # Without E², the zonal flow amplitude is wrong by a factor of E².
-    #
-    # If using a different non-dimensionalization (e.g., rotation time scale),
-    # adjust accordingly.
-    
+
     prefactor = -(Ra * E^2) / (2 * Pr * r_o)
-    
+
     # =========================================================================
-    # Step 3: Solve ODE for each L mode using diagonal approximation
+    # Step 3: Solve BVP for each L mode using Chebyshev spectral method
     # =========================================================================
     #
-    # The full thermal wind equation couples different L modes through the
-    # cos(θ) and sin(θ)/r terms on the LHS. However, for the leading-order
-    # balance (valid for small Ro = E × Ra), we use the diagonal approximation:
+    # The thermal wind ODE in the diagonal approximation:
+    #   d(r Ū_L)/dr = prefactor × r² × F_L(r)
     #
-    #   ∂(r Ū_L)/∂r ≈ prefactor × r² × F_L(r)
+    # Rewritten as:
+    #   r dŪ/dr + Ū = f(r)   where f(r) = prefactor × r² × F_L(r)
     #
-    # This ODE is solved by direct integration.
-    
+    # In matrix form: (diag(r) @ D1 + I) @ Ū = f
+    #
+    # Boundary conditions:
+    # - No-slip: Ū(r_boundary) = 0
+    # - Stress-free: dŪ/dr - Ū/r = 0  ⟺  (D1 - diag(1/r)) @ Ū = 0 at boundary
+
+    # Determine boundary indices (depends on grid ordering)
+    # Chebyshev grids typically have r[1] at one boundary, r[Nr] at the other
+    # We need to identify which is inner (r_i) and which is outer (r_o)
+    idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
+    idx_outer = idx_inner == 1 ? Nr : 1
+
     for (L, F_L) in forcing
-        # RHS for the ODE: d(r·Ū_L)/dr = prefactor × r² × F_L
-        rhs = prefactor .* (r.^2) .* F_L
-        
-        # Initialize integrated quantity: r × Ū_L
-        r_uphi = zeros(T, Nr)
-        
-        # Inner boundary condition
+        # RHS for the ODE: r dŪ/dr + Ū = f(r)
+        f_rhs = prefactor .* (r.^2) .* F_L
+
+        # Build the system matrix: A = diag(r) @ D1 + I
+        A = Diagonal(r) * D1 + I
+        A_mat = Matrix(A)  # Convert to dense for modification
+
+        # Apply boundary conditions
         if mechanical_bc == :no_slip
-            # ū_φ(r_i) = 0  →  (r·ū_φ)(r_i) = 0
-            r_uphi[1] = zero(T)
+            # Dirichlet: Ū = 0 at boundaries
+            # Replace boundary rows with identity constraints
+            A_mat[idx_inner, :] .= zero(T)
+            A_mat[idx_inner, idx_inner] = one(T)
+            f_rhs[idx_inner] = zero(T)
+
+            A_mat[idx_outer, :] .= zero(T)
+            A_mat[idx_outer, idx_outer] = one(T)
+            f_rhs[idx_outer] = zero(T)
+
         else  # stress_free
-            # ∂ū_φ/∂r(r_i) = 0
-            # From ū_φ = (r·ū_φ)/r, we have:
-            #   ∂ū_φ/∂r = [r × d(r·ū_φ)/dr - (r·ū_φ)] / r²
-            #           = [rhs - (r·ū_φ)/r] / r  at r = r_i
-            # Setting to zero: (r·ū_φ)(r_i) = r_i × rhs(r_i) / 1 = ... 
-            # Actually simpler: ∂ū/∂r = 0 means d(rū)/dr = ū at boundary
-            # So rhs = ū, hence (rū) starts at whatever makes ∂ū/∂r = 0
-            # For first-order accuracy: (r·ū)(r_i) ≈ 0, then adjust
-            r_uphi[1] = zero(T)
+            # Robin BC: dŪ/dr - Ū/r = 0
+            # Replace boundary rows with: D1[boundary,:] @ Ū - Ū[boundary]/r[boundary] = 0
+            # Which is: (D1[boundary,:] - e_boundary/r[boundary]) @ Ū = 0
+
+            # Inner boundary
+            A_mat[idx_inner, :] = D1[idx_inner, :]
+            A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
+            f_rhs[idx_inner] = zero(T)
+
+            # Outer boundary
+            A_mat[idx_outer, :] = D1[idx_outer, :]
+            A_mat[idx_outer, idx_outer] -= one(T) / r[idx_outer]
+            f_rhs[idx_outer] = zero(T)
         end
-        
-        # Trapezoidal integration from r_i to r_o
-        for i in 2:Nr
-            dr = r[i] - r[i-1]
-            r_uphi[i] = r_uphi[i-1] + T(0.5) * (rhs[i-1] + rhs[i]) * dr
-        end
-        
-        # Convert to ū_φ = (r·ū_φ) / r
-        uphi_L = r_uphi ./ r
-        
-        # =====================================================================
-        # Step 4: Apply boundary conditions
-        # =====================================================================
-        
-        if mechanical_bc == :no_slip
-            # Need ū_φ(r_i) = ū_φ(r_o) = 0
-            # 
-            # The particular solution from integration satisfies ū_φ(r_i) = 0.
-            # To also satisfy ū_φ(r_o) = 0, we add a homogeneous solution.
-            #
-            # Homogeneous equation: d(r·ū_hom)/dr = 0  →  r·ū_hom = C (constant)
-            # So ū_hom = C/r
-            #
-            # Choose C so that: ū_part(r_o) + C/r_o = 0
-            #                   C = -r_o × ū_part(r_o)
-            
-            uphi_ro = uphi_L[end]
-            C_hom = -r_o * uphi_ro
-            uphi_L .+= C_hom ./ r
-            
-            # Enforce BCs exactly (numerical cleanup)
-            uphi_L[1] = zero(T)
-            uphi_L[end] = zero(T)
-            
-        else  # stress_free
-            # Inner BC: ∂ū_φ/∂r(r_i) = 0 is approximately satisfied
-            # Outer BC: ∂ū_φ/∂r(r_o) = 0 can be enforced similarly
-            #
-            # For stress-free, we need to solve a proper BVP.
-            # Simplified approach: no adjustment (acceptable for small flows)
-            nothing
-        end
-        
+
+        # Solve the linear system
+        uphi_L = A_mat \ f_rhs
+
         # Store results
         uphi_coeffs[L] = uphi_L
-        
+
         # Compute radial derivative using Chebyshev differentiation
         duphi_dr_coeffs[L] = D1 * uphi_L
     end
-    
+
     # =========================================================================
-    # Step 5: Zero out modes that have no forcing
+    # Step 4: Zero out modes that have no forcing
     # =========================================================================
-    
+
     forced_modes = Set(keys(forcing))
     for ℓ in keys(theta_coeffs)
         if !haskey(uphi_coeffs, ℓ) || !(ℓ in forced_modes)
@@ -868,7 +1578,7 @@ function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
             duphi_dr_coeffs[ℓ] = zeros(T, Nr)
         end
     end
-    
+
     return nothing
 end
 
@@ -1015,40 +1725,63 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
     prefactor = -(Ra * E^2) / (2 * Pr * r_o)
 
     # =========================================================================
-    # Solve ODE for each L mode
+    # Solve BVP for each L mode using Chebyshev spectral method
     # =========================================================================
+    #
+    # The thermal wind ODE in the diagonal approximation:
+    #   d(r Ū_L)/dr = prefactor × r² × F_L(r)
+    #
+    # Rewritten as:
+    #   r dŪ/dr + Ū = f(r)   where f(r) = prefactor × r² × F_L(r)
+    #
+    # In matrix form: (diag(r) @ D1 + I) @ Ū = f
+    #
+    # Boundary conditions:
+    # - No-slip: Ū(r_boundary) = 0
+    # - Stress-free: dŪ/dr - Ū/r = 0  ⟺  (D1 - diag(1/r)) @ Ū = 0 at boundary
+
+    # Determine boundary indices
+    idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
+    idx_outer = idx_inner == 1 ? Nr : 1
+
     for (L, F_L) in forcing
         if L < m_bs
             continue  # L must be ≥ m
         end
 
-        # RHS for ODE: d(r·Ū_L)/dr = prefactor × r² × F_L
-        rhs = prefactor .* (r.^2) .* F_L
+        # RHS for the ODE: r dŪ/dr + Ū = f(r)
+        f_rhs = prefactor .* (r.^2) .* F_L
 
-        # Integrate from inner boundary
-        r_uphi = zeros(T, Nr)
-        r_uphi[1] = zero(T)  # BC at inner boundary
-
-        # Trapezoidal integration
-        for i in 2:Nr
-            dr = r[i] - r[i-1]
-            r_uphi[i] = r_uphi[i-1] + T(0.5) * (rhs[i-1] + rhs[i]) * dr
-        end
-
-        # Convert to ū_φ = (r·ū_φ) / r
-        uphi_L = r_uphi ./ r
+        # Build the system matrix: A = diag(r) @ D1 + I
+        A = Diagonal(r) * D1 + I
+        A_mat = Matrix(A)  # Convert to dense for modification
 
         # Apply boundary conditions
         if mechanical_bc == :no_slip
-            # Add homogeneous solution C/r to satisfy ū_φ(r_o) = 0
-            uphi_ro = uphi_L[end]
-            C_hom = -r_o * uphi_ro
-            uphi_L .+= C_hom ./ r
+            # Dirichlet: Ū = 0 at boundaries
+            A_mat[idx_inner, :] .= zero(T)
+            A_mat[idx_inner, idx_inner] = one(T)
+            f_rhs[idx_inner] = zero(T)
 
-            # Enforce BCs exactly
-            uphi_L[1] = zero(T)
-            uphi_L[end] = zero(T)
+            A_mat[idx_outer, :] .= zero(T)
+            A_mat[idx_outer, idx_outer] = one(T)
+            f_rhs[idx_outer] = zero(T)
+
+        else  # stress_free
+            # Robin BC: dŪ/dr - Ū/r = 0
+            # Inner boundary
+            A_mat[idx_inner, :] = D1[idx_inner, :]
+            A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
+            f_rhs[idx_inner] = zero(T)
+
+            # Outer boundary
+            A_mat[idx_outer, :] = D1[idx_outer, :]
+            A_mat[idx_outer, idx_outer] -= one(T) / r[idx_outer]
+            f_rhs[idx_outer] = zero(T)
         end
+
+        # Solve the linear system
+        uphi_L = A_mat \ f_rhs
 
         # Store results
         uphi_coeffs[L] = uphi_L
@@ -1084,7 +1817,8 @@ end
                        m::Int,
                        r_i::Float64,
                        r_o::Union{Nothing,Float64}=nothing,
-                       sintheta::Union{Nothing,AbstractVector}=nothing)
+                       sintheta::Union{Nothing,AbstractVector}=nothing,
+                       mechanical_bc::Symbol=:no_slip)
 
 Build thermal wind sparse matrices for the linear stability operator.
 
@@ -1104,6 +1838,7 @@ The thermal wind equation is:
 - `r_i`: Inner radius
 - `r_o`: Outer radius (optional, defaults to max(r))
 - `sintheta`: sin(θ) at collocation points (required)
+- `mechanical_bc`: Boundary condition type: `:no_slip` (default) or `:stress_free`
 
 # Returns
 - `U_m`: Sparse diagonal matrix for −Ū ∂φ term
@@ -1116,7 +1851,8 @@ U_m, S_r, S_θ = build_thermal_wind(fθ, r;
                                     Dθ=Dθ, m=m,
                                     gα_2Ω=Ra * E^2 / (2 * Pr),
                                     r_i=r_i, r_o=r_o,
-                                    sintheta=sintheta)
+                                    sintheta=sintheta,
+                                    mechanical_bc=:no_slip)
 ```
 """
 function build_thermal_wind(fθ::AbstractVector,
@@ -1126,7 +1862,13 @@ function build_thermal_wind(fθ::AbstractVector,
                             m::Int,
                             r_i::Float64,
                             r_o::Union{Nothing,Float64}=nothing,
-                            sintheta::Union{Nothing,AbstractVector}=nothing)
+                            sintheta::Union{Nothing,AbstractVector}=nothing,
+                            mechanical_bc::Symbol=:no_slip)
+
+    # Validate BC type
+    if !(mechanical_bc in (:no_slip, :stress_free))
+        error("mechanical_bc must be :no_slip or :stress_free, got: $mechanical_bc")
+    end
 
     N_θ = length(fθ)
     N_r = length(r)
@@ -1158,39 +1900,57 @@ function build_thermal_wind(fθ::AbstractVector,
     r_o_val = r_o === nothing ? T(r_max) : T(r_o)
     gα_2Ω_val = T(gα_2Ω)
 
-    # Thermal wind: dU/dr + U/r = -(gα/2Ω) * (1/(r_o sinθ)) * dθ̄/dθ
+    # Thermal wind: dU/dr + U/r = RHS
+    # where RHS = -(gα/2Ω) * (1/(r_o sinθ)) * dθ̄/dθ
     # Rewrite as: d(r·U)/dr = r × RHS
-    # Integrate with U(r_i) = 0: r·U = (r² - r_i²)/2 × RHS
-    # Particular solution: U_part = (r² - r_i²)/(2r) × RHS
     rhs = -(gα_2Ω_val / r_o_val) .* (df_dθ ./ sinθ)   # length N_θ
-    r2_minus = r .^ 2 .- r_i_val^2                    # length N_r
-    Ubar_part = (0.5 .* r2_minus) .* rhs' ./ r        # (N_r x N_θ) particular solution
 
-    # Add homogeneous solution to satisfy outer BC: U(r_o) = 0
-    # Homogeneous solution: U_hom = C/r (satisfies d(r·U)/dr = 0)
-    # Choose C so that U_part(r_o) + C/r_o = 0
-    # C = -r_o × U_part(r_o)
-    Ubar_ro = (0.5 * (r_o_val^2 - r_i_val^2)) .* rhs' ./ r_o_val  # U_part at r_o (1 x N_θ)
-    C_hom = -r_o_val .* Ubar_ro                                   # (1 x N_θ)
-    Ubar = Ubar_part .+ C_hom ./ r                                # Add homogeneous solution
+    if mechanical_bc == :no_slip
+        # =====================================================================
+        # No-slip: Ū(r_i) = Ū(r_o) = 0
+        # =====================================================================
+        # Particular solution with U(r_i) = 0: U_part = (r² - r_i²)/(2r) × RHS
+        r2_minus = r .^ 2 .- r_i_val^2                    # length N_r
+        Ubar_part = (0.5 .* r2_minus) .* rhs' ./ r        # (N_r x N_θ)
 
-    # Enforce BCs exactly (numerical cleanup)
-    # After adding C/r, U(r_i) = C/r_i ≠ 0 in general, so we force it to zero
-    Ubar[1, :] .= zero(T)
-    Ubar[end, :] .= zero(T)
+        # Add homogeneous solution C/r to satisfy U(r_o) = 0
+        Ubar_ro = (0.5 * (r_o_val^2 - r_i_val^2)) .* rhs' ./ r_o_val
+        C_hom = -r_o_val .* Ubar_ro
+        Ubar = Ubar_part .+ C_hom ./ r
 
-    # Derivative: dU/dr = d(U_part)/dr + d(C/r)/dr
-    #           = RHS - U_part/r - C/r²
-    dU_dr = rhs' .- (Ubar_part ./ r) .- (C_hom ./ (r.^2))
+        # Enforce BCs exactly (numerical cleanup)
+        Ubar[1, :] .= zero(T)
+        Ubar[end, :] .= zero(T)
 
-    # flatten in (r,θ) lexicographic order (r fastest: column-major from N_r × N_θ matrix)
-    # Index pattern: (r₁,θ₁), (r₂,θ₁), ..., (r_Nr,θ₁), (r₁,θ₂), ...
+        # Derivative: dU/dr = RHS - U/r for the particular solution part
+        #             plus d(C/r)/dr = -C/r² for the homogeneous part
+        dU_dr = rhs' .- (Ubar_part ./ r) .- (C_hom ./ (r.^2))
+
+    else  # stress_free
+        # =====================================================================
+        # Stress-free: dŪ/dr - Ū/r = 0 at both boundaries
+        # =====================================================================
+        # The analytical solution that satisfies stress-free at both boundaries:
+        #   U(r) = RHS × r / 2
+        # Verification:
+        #   d(rU)/dr = d(r × RHS × r/2)/dr = d(RHS × r²/2)/dr = RHS × r ✓
+        #   dU/dr = RHS/2, U/r = RHS/2, so dU/dr - U/r = 0 ✓
+        #
+        # However, this gives U(r_i) ≠ 0 and U(r_o) ≠ 0 in general.
+        # For consistency with the stress-free condition (no tangential stress),
+        # this is the physically correct solution.
+
+        Ubar = (0.5 .* r) .* rhs'   # (N_r x N_θ): U = r × RHS / 2
+
+        # Derivative: dU/dr = RHS / 2
+        dU_dr = 0.5 .* ones(T, N_r) .* rhs'   # (N_r x N_θ)
+    end
+
+    # Flatten in (r,θ) lexicographic order (r fastest: column-major from N_r × N_θ matrix)
     Uvec   = vec(Ubar)
     dUvec  = vec(dU_dr)
 
-    # Repeat patterns for r-fastest ordering:
-    # - rs: each r value appears once, then repeats for each θ: [r₁,r₂,...,r_Nr, r₁,r₂,...,r_Nr, ...]
-    # - sint/dfvec: each θ value repeats N_r times: [s₁,s₁,...,s₁, s₂,s₂,...,s₂, ...]
+    # Repeat patterns for r-fastest ordering
     rs     = repeat(r, outer=N_θ)              # r values repeated for each θ block
     sint   = repeat(vec(sinθ), inner=N_r)      # sin(θ) repeated N_r times per θ value
     dfvec  = repeat(vec(df_dθ), inner=N_r)     # ∂θf repeated N_r times per θ value
@@ -1336,45 +2096,68 @@ function build_thermal_wind_3d(theta_coeffs::Dict{Int, Vector{T}},
     end
 
     # =========================================================================
-    # Thermal wind prefactor (includes E² scaling)
+    # Thermal wind prefactor (includes E² scaling via gα_2Ω)
     # =========================================================================
     prefactor = -gα_2Ω / r_o
 
     # =========================================================================
-    # Solve ODE for each L mode: d(r·ū_φ)/dr = prefactor × r² × F_L
+    # Solve BVP for each L mode using Chebyshev spectral method
     # =========================================================================
+    #
+    # The thermal wind ODE:
+    #   d(r·ū_φ)/dr = prefactor × r² × F_L
+    #
+    # Rewritten as:
+    #   r dŪ/dr + Ū = f(r)   where f(r) = prefactor × r² × F_L
+    #
+    # In matrix form: (diag(r) @ D1 + I) @ Ū = f
+    #
+    # Boundary conditions:
+    # - No-slip: Ū(r_boundary) = 0
+    # - Stress-free: dŪ/dr - Ū/r = 0 at boundaries
+
+    # Determine boundary indices
+    idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
+    idx_outer = idx_inner == 1 ? Nr : 1
+
     for (L, F_L) in forcing
         if L < abs(m_bs)
             continue  # L must be ≥ |m|
         end
 
-        # RHS for ODE after multiplying by r
-        rhs = prefactor .* (r.^2) .* F_L
+        # RHS for the ODE: r dŪ/dr + Ū = f(r)
+        f_rhs = prefactor .* (r.^2) .* F_L
 
-        # Integrate from inner boundary using trapezoidal rule
-        r_uphi = zeros(T, Nr)
-        r_uphi[1] = zero(T)  # BC: r×ū_φ = 0 at r = r_i
-
-        for i in 2:Nr
-            dr = r[i] - r[i-1]
-            r_uphi[i] = r_uphi[i-1] + T(0.5) * (rhs[i-1] + rhs[i]) * dr
-        end
-
-        # Convert to ū_φ = (r·ū_φ) / r
-        uphi_L = r_uphi ./ r
+        # Build the system matrix: A = diag(r) @ D1 + I
+        A = Diagonal(r) * D1 + I
+        A_mat = Matrix(A)  # Convert to dense for modification
 
         # Apply boundary conditions
         if mechanical_bc == :no_slip
-            # Add homogeneous solution C/r to satisfy ū_φ(r_o) = 0
-            # Homogeneous solution: d(r·U)/dr = 0 → r·U = const → U = C/r
-            uphi_ro = uphi_L[end]
-            C_hom = -r_o * uphi_ro
-            uphi_L .+= C_hom ./ r
+            # Dirichlet: Ū = 0 at boundaries
+            A_mat[idx_inner, :] .= zero(T)
+            A_mat[idx_inner, idx_inner] = one(T)
+            f_rhs[idx_inner] = zero(T)
 
-            # Enforce BCs exactly (numerical cleanup)
-            uphi_L[1] = zero(T)
-            uphi_L[end] = zero(T)
+            A_mat[idx_outer, :] .= zero(T)
+            A_mat[idx_outer, idx_outer] = one(T)
+            f_rhs[idx_outer] = zero(T)
+
+        else  # stress_free
+            # Robin BC: dŪ/dr - Ū/r = 0
+            # Inner boundary
+            A_mat[idx_inner, :] = D1[idx_inner, :]
+            A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
+            f_rhs[idx_inner] = zero(T)
+
+            # Outer boundary
+            A_mat[idx_outer, :] = D1[idx_outer, :]
+            A_mat[idx_outer, idx_outer] -= one(T) / r[idx_outer]
+            f_rhs[idx_outer] = zero(T)
         end
+
+        # Solve the linear system
+        uphi_L = A_mat \ f_rhs
 
         # Store results
         uphi_coeffs[L] = uphi_L
@@ -1440,3 +2223,4 @@ function theta_derivative_coeff_3d(ℓ::Int, m::Int)
 
     return (c_plus, c_minus)
 end
+

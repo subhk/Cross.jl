@@ -15,6 +15,7 @@ module Cross
     include("banner.jl")
     include("get_velocity.jl")
     include("basic_state.jl")
+    include("advection_diffusion.jl")  # Self-consistent basic state solver
     include("basic_state_operators.jl")
     include("linear_stability.jl")
 
@@ -44,15 +45,49 @@ module Cross
 
         # Basic state structures
         BasicState,
+        BasicState3D,
         conduction_basic_state,
         meridional_basic_state,
+        nonaxisymmetric_basic_state,
+        basic_state,  # High-level convenience function
+
+        # Self-consistent basic state (with advection)
+        nonaxisymmetric_basic_state_selfconsistent,
+        basic_state_selfconsistent,
+        AdvectionDiffusionSolver,
+        compute_phi_advection_spectral,
+        compute_full_advection_spectral,
+        solve_poisson_mode,
+
+        # Meridional circulation (toroidal-poloidal decomposition)
+        solve_meridional_coupled!,    # Full block-tridiagonal solver (exact)
+        solve_meridional_simple!,     # Diagonal approximation (fast)
+        solve_meridional_circulation_toroidal_poloidal!,  # Main wrapper
+        sin_theta_coupling,
+        cos_theta_coupling,
+        theta_derivative_coupling,    # sinθ × ∂Y/∂θ coupling coefficients
+        inv_sin_theta_gaunt,          # ⟨Y_Lm|1/sinθ|Y_ℓm⟩ integrals
+        inv_sin_theta_coupling,       # Approximate 1/sinθ coupling
+
+        # Symbolic spherical harmonic boundary conditions
+        SphericalHarmonicBC,
+        Ylm,  # General constructor
+        Y00, Y10, Y11,  # Monopole and dipole
+        Y20, Y21, Y22,  # Quadrupole
+        Y30, Y31, Y32, Y33,  # Octupole
+        Y40, Y41, Y42, Y43, Y44,  # Hexadecapole
+        to_dict,
+        get_lmax, get_mmax, get_lmax_mmax,
+        is_axisymmetric,
+
+        # Thermal wind solvers
         solve_thermal_wind_balance!,
+        solve_thermal_wind_balance_3d!,
         build_thermal_wind,
         build_thermal_wind_3d,
         theta_derivative_coeff_3d,
-        BasicState3D,
-        nonaxisymmetric_basic_state,
-        solve_thermal_wind_balance_3d!,
+
+        # Basic state operators
         BasicStateOperators,
         build_basic_state_operators,
         add_basic_state_operators!,

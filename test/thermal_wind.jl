@@ -67,10 +67,10 @@ Integrating with no-slip BC at r_i:
     r·ū_L = prefactor × c_L × A × (r³ - r_i³)/3
 
 Then: ū_L(r) = prefactor × c_L × A × (r³ - r_i³)/(3r)
+             = prefactor × c_L × A × (r² - r_i³/r) / 3
 
-With homogeneous solution to satisfy ū_L(r_o) = 0:
-    ū_L(r) = prefactor × c_L × A × [(r³ - r_i³)/(3r) - (r_o³ - r_i³)/(3r_o) × (r_o/r)]
-           = prefactor × c_L × A / 3 × [(r² - r_i³/r) - (r_o² - r_i³/r_o)]
+This satisfies ū_L(r_i) = 0. The outer BC ū_L(r_o) ≠ 0 in general because
+a first-order ODE can only satisfy one boundary condition.
 """
 function analytical_uphi_constant_theta(r, r_i, r_o, Ra, E, Pr, ℓ_theta, A, L)
     prefactor = thermal_wind_prefactor(Ra, E, Pr, r_o)
@@ -84,16 +84,8 @@ function analytical_uphi_constant_theta(r, r_i, r_o, Ra, E, Pr, ℓ_theta, A, L)
         return zeros(length(r))  # No coupling
     end
 
-    # Particular solution (satisfies BC at r_i)
-    uphi_part = @. prefactor * c_L * A * (r^2 - r_i^3 / r) / 3
-
-    # Value at outer boundary
-    uphi_ro = prefactor * c_L * A * (r_o^2 - r_i^3 / r_o) / 3
-
-    # Add homogeneous solution C/r to make uphi(r_o) = 0
-    C_hom = -r_o * uphi_ro
-
-    return @. uphi_part + C_hom / r
+    # Solution satisfying BC at r_i: ū(r_i) = 0
+    return @. prefactor * c_L * A * (r^2 - r_i^3 / r) / 3
 end
 
 """
@@ -106,6 +98,9 @@ Integrating with no-slip BC at r_i:
     r·ū_L = prefactor × c_L × A × (r⁴ - r_i⁴)/4
 
 Then: ū_L(r) = prefactor × c_L × A × (r⁴ - r_i⁴)/(4r)
+             = prefactor × c_L × A × (r³ - r_i⁴/r) / 4
+
+This satisfies ū_L(r_i) = 0.
 """
 function analytical_uphi_linear_theta(r, r_i, r_o, Ra, E, Pr, ℓ_theta, A, L)
     prefactor = thermal_wind_prefactor(Ra, E, Pr, r_o)
@@ -119,16 +114,8 @@ function analytical_uphi_linear_theta(r, r_i, r_o, Ra, E, Pr, ℓ_theta, A, L)
         return zeros(length(r))
     end
 
-    # Particular solution
-    uphi_part = @. prefactor * c_L * A * (r^3 - r_i^4 / r) / 4
-
-    # Value at outer boundary
-    uphi_ro = prefactor * c_L * A * (r_o^3 - r_i^4 / r_o) / 4
-
-    # Homogeneous solution
-    C_hom = -r_o * uphi_ro
-
-    return @. uphi_part + C_hom / r
+    # Solution satisfying BC at r_i: ū(r_i) = 0
+    return @. prefactor * c_L * A * (r^3 - r_i^4 / r) / 4
 end
 
 """
@@ -137,7 +124,12 @@ Analytical solution for thermal wind with r² temperature coefficient.
 For θ̄_ℓ(r) = A × r², the forcing F_L = c_L × A × r².
 The ODE: d(r·ū_L)/dr = prefactor × c_L × A × r⁴
 
-Integrating: r·ū_L = prefactor × c_L × A × (r⁵ - r_i⁵)/5
+Integrating with BC at r_i:
+    r·ū_L = prefactor × c_L × A × (r⁵ - r_i⁵)/5
+
+Then: ū_L(r) = prefactor × c_L × A × (r⁴ - r_i⁵/r) / 5
+
+This satisfies ū_L(r_i) = 0.
 """
 function analytical_uphi_quadratic_theta(r, r_i, r_o, Ra, E, Pr, ℓ_theta, A, L)
     prefactor = thermal_wind_prefactor(Ra, E, Pr, r_o)
@@ -150,11 +142,8 @@ function analytical_uphi_quadratic_theta(r, r_i, r_o, Ra, E, Pr, ℓ_theta, A, L
         return zeros(length(r))
     end
 
-    uphi_part = @. prefactor * c_L * A * (r^4 - r_i^5 / r) / 5
-    uphi_ro = prefactor * c_L * A * (r_o^4 - r_i^5 / r_o) / 5
-    C_hom = -r_o * uphi_ro
-
-    return @. uphi_part + C_hom / r
+    # Solution satisfying BC at r_i: ū(r_i) = 0
+    return @. prefactor * c_L * A * (r^4 - r_i^5 / r) / 5
 end
 
 
@@ -232,11 +221,12 @@ end
             @test rel_error_L3 < 0.05
         end
 
-        # Check boundary conditions: ū_φ(r_i) = ū_φ(r_o) = 0
+        # Check inner boundary condition: ū_φ(r_i) = 0
+        # NOTE: The first-order thermal wind ODE can only satisfy ONE BC.
+        # We enforce the inner BC; the outer BC will have a small non-zero value.
         for L in keys(uphi_coeffs)
             if maximum(abs.(uphi_coeffs[L])) > 1e-14
                 @test abs(uphi_coeffs[L][1]) < 1e-10  # Inner BC
-                @test abs(uphi_coeffs[L][end]) < 1e-10  # Outer BC
             end
         end
     end
@@ -280,11 +270,10 @@ end
             @test rel_error < 0.05
         end
 
-        # BCs
+        # Inner BC only (first-order ODE can only satisfy one BC)
         for L in keys(uphi_coeffs)
             if maximum(abs.(uphi_coeffs[L])) > 1e-14
                 @test abs(uphi_coeffs[L][1]) < 1e-10
-                @test abs(uphi_coeffs[L][end]) < 1e-10
             end
         end
     end
@@ -467,11 +456,10 @@ end
                    maximum(abs.(bs.uphi_coeffs[3])) > 1e-14
         @test has_flow
 
-        # Check no-slip BCs
+        # Check inner BC (first-order ODE can only satisfy one BC)
         for (L, uphi) in bs.uphi_coeffs
             if maximum(abs.(uphi)) > 1e-14
                 @test abs(uphi[1]) < 1e-10
-                @test abs(uphi[end]) < 1e-10
             end
         end
     end
@@ -648,9 +636,8 @@ end  # @testset "Triglobal"
             if maximum(abs.(uphi)) > 1e-14
                 has_uphi = true
 
-                # Check BCs (no-slip)
+                # Check inner BC (first-order ODE can only satisfy one BC)
                 @test abs(uphi[1]) < 1e-10
-                @test abs(uphi[end]) < 1e-10
             end
         end
 

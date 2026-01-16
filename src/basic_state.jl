@@ -1404,9 +1404,13 @@ ODE Solver:
 -----------
 Uses Chebyshev spectral collocation to solve the BVP:
     r dŪ/dr + Ū = f(r)
-with boundary conditions:
-- No-slip: Ū(r_i) = Ū(r_o) = 0
-- Stress-free: dŪ/dr - Ū/r = 0 at both boundaries
+with boundary condition at the INNER boundary only:
+- No-slip: Ū(r_i) = 0
+- Stress-free: dŪ/dr - Ū/r = 0 at r_i
+
+NOTE: The thermal wind equation is a first-order ODE, so we can only satisfy
+ONE boundary condition. We enforce the inner BC; the outer boundary will have
+a small non-zero value consistent with the diagonal approximation.
 """
 function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
                             duphi_dr_coeffs::Dict{Int,Vector{T}},
@@ -1530,31 +1534,21 @@ function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
         A_mat = Matrix(A)  # Convert to dense for modification
 
         # Apply boundary conditions
+        # NOTE: The thermal wind ODE is first-order, so we can only satisfy ONE BC.
+        # We enforce the inner boundary condition (ū(r_i) = 0) to match the
+        # analytical solution. The outer BC will have a small non-zero value
+        # consistent with the diagonal approximation.
         if mechanical_bc == :no_slip
-            # Dirichlet: Ū = 0 at boundaries
-            # Replace boundary rows with identity constraints
+            # Dirichlet: Ū = 0 at inner boundary only
             A_mat[idx_inner, :] .= zero(T)
             A_mat[idx_inner, idx_inner] = one(T)
             f_rhs[idx_inner] = zero(T)
 
-            A_mat[idx_outer, :] .= zero(T)
-            A_mat[idx_outer, idx_outer] = one(T)
-            f_rhs[idx_outer] = zero(T)
-
         else  # stress_free
-            # Robin BC: dŪ/dr - Ū/r = 0
-            # Replace boundary rows with: D1[boundary,:] @ Ū - Ū[boundary]/r[boundary] = 0
-            # Which is: (D1[boundary,:] - e_boundary/r[boundary]) @ Ū = 0
-
-            # Inner boundary
+            # Robin BC: dŪ/dr - Ū/r = 0 at inner boundary only
             A_mat[idx_inner, :] = D1[idx_inner, :]
             A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
             f_rhs[idx_inner] = zero(T)
-
-            # Outer boundary
-            A_mat[idx_outer, :] = D1[idx_outer, :]
-            A_mat[idx_outer, idx_outer] -= one(T) / r[idx_outer]
-            f_rhs[idx_outer] = zero(T)
         end
 
         # Solve the linear system
@@ -1736,9 +1730,9 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
     #
     # In matrix form: (diag(r) @ D1 + I) @ Ū = f
     #
-    # Boundary conditions:
-    # - No-slip: Ū(r_boundary) = 0
-    # - Stress-free: dŪ/dr - Ū/r = 0  ⟺  (D1 - diag(1/r)) @ Ū = 0 at boundary
+    # Boundary condition (INNER only - first-order ODE can only satisfy one BC):
+    # - No-slip: Ū(r_i) = 0
+    # - Stress-free: dŪ/dr - Ū/r = 0 at r_i
 
     # Determine boundary indices
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
@@ -1756,28 +1750,18 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
         A = Diagonal(r) * D1 + I
         A_mat = Matrix(A)  # Convert to dense for modification
 
-        # Apply boundary conditions
+        # Apply boundary conditions (inner BC only - first-order ODE)
         if mechanical_bc == :no_slip
-            # Dirichlet: Ū = 0 at boundaries
+            # Dirichlet: Ū = 0 at inner boundary only
             A_mat[idx_inner, :] .= zero(T)
             A_mat[idx_inner, idx_inner] = one(T)
             f_rhs[idx_inner] = zero(T)
 
-            A_mat[idx_outer, :] .= zero(T)
-            A_mat[idx_outer, idx_outer] = one(T)
-            f_rhs[idx_outer] = zero(T)
-
         else  # stress_free
-            # Robin BC: dŪ/dr - Ū/r = 0
-            # Inner boundary
+            # Robin BC: dŪ/dr - Ū/r = 0 at inner boundary only
             A_mat[idx_inner, :] = D1[idx_inner, :]
             A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
             f_rhs[idx_inner] = zero(T)
-
-            # Outer boundary
-            A_mat[idx_outer, :] = D1[idx_outer, :]
-            A_mat[idx_outer, idx_outer] -= one(T) / r[idx_outer]
-            f_rhs[idx_outer] = zero(T)
         end
 
         # Solve the linear system
@@ -1907,38 +1891,34 @@ function build_thermal_wind(fθ::AbstractVector,
 
     if mechanical_bc == :no_slip
         # =====================================================================
-        # No-slip: Ū(r_i) = Ū(r_o) = 0
+        # No-slip: Ū(r_i) = 0 (inner boundary only)
         # =====================================================================
+        # The thermal wind ODE is first-order, so we can only satisfy ONE BC.
+        # We enforce the inner BC; the outer boundary will have a small
+        # non-zero value consistent with the diagonal approximation.
+        #
         # Particular solution with U(r_i) = 0: U_part = (r² - r_i²)/(2r) × RHS
         r2_minus = r .^ 2 .- r_i_val^2                    # length N_r
-        Ubar_part = (0.5 .* r2_minus) .* rhs' ./ r        # (N_r x N_θ)
+        Ubar = (0.5 .* r2_minus) .* rhs' ./ r             # (N_r x N_θ)
 
-        # Add homogeneous solution C/r to satisfy U(r_o) = 0
-        Ubar_ro = (0.5 * (r_o_val^2 - r_i_val^2)) .* rhs' ./ r_o_val
-        C_hom = -r_o_val .* Ubar_ro
-        Ubar = Ubar_part .+ C_hom ./ r
-
-        # Enforce BCs exactly (numerical cleanup)
+        # Enforce inner BC exactly (numerical cleanup)
         Ubar[1, :] .= zero(T)
-        Ubar[end, :] .= zero(T)
 
-        # Derivative: dU/dr = RHS - U/r for the particular solution part
-        #             plus d(C/r)/dr = -C/r² for the homogeneous part
-        dU_dr = rhs' .- (Ubar_part ./ r) .- (C_hom ./ (r.^2))
+        # Derivative: dU/dr = RHS - U/r
+        dU_dr = rhs' .- (Ubar ./ r)
 
     else  # stress_free
         # =====================================================================
-        # Stress-free: dŪ/dr - Ū/r = 0 at both boundaries
+        # Stress-free: dŪ/dr - Ū/r = 0 at inner boundary
         # =====================================================================
-        # The analytical solution that satisfies stress-free at both boundaries:
-        #   U(r) = RHS × r / 2
+        # For stress-free, the solution U = RHS × r/2 automatically satisfies
+        # dU/dr - U/r = 0 EVERYWHERE (not just at boundaries).
         # Verification:
         #   d(rU)/dr = d(r × RHS × r/2)/dr = d(RHS × r²/2)/dr = RHS × r ✓
         #   dU/dr = RHS/2, U/r = RHS/2, so dU/dr - U/r = 0 ✓
         #
-        # However, this gives U(r_i) ≠ 0 and U(r_o) ≠ 0 in general.
-        # For consistency with the stress-free condition (no tangential stress),
-        # this is the physically correct solution.
+        # This gives U(r_i) ≠ 0 and U(r_o) ≠ 0 in general, but the stress-free
+        # condition (no tangential stress) is satisfied everywhere.
 
         Ubar = (0.5 .* r) .* rhs'   # (N_r x N_θ): U = r × RHS / 2
 
@@ -2112,13 +2092,12 @@ function build_thermal_wind_3d(theta_coeffs::Dict{Int, Vector{T}},
     #
     # In matrix form: (diag(r) @ D1 + I) @ Ū = f
     #
-    # Boundary conditions:
-    # - No-slip: Ū(r_boundary) = 0
-    # - Stress-free: dŪ/dr - Ū/r = 0 at boundaries
+    # Boundary condition (INNER only - first-order ODE can only satisfy one BC):
+    # - No-slip: Ū(r_i) = 0
+    # - Stress-free: dŪ/dr - Ū/r = 0 at r_i
 
-    # Determine boundary indices
+    # Determine inner boundary index
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
-    idx_outer = idx_inner == 1 ? Nr : 1
 
     for (L, F_L) in forcing
         if L < abs(m_bs)
@@ -2132,28 +2111,18 @@ function build_thermal_wind_3d(theta_coeffs::Dict{Int, Vector{T}},
         A = Diagonal(r) * D1 + I
         A_mat = Matrix(A)  # Convert to dense for modification
 
-        # Apply boundary conditions
+        # Apply boundary conditions (inner BC only - first-order ODE)
         if mechanical_bc == :no_slip
-            # Dirichlet: Ū = 0 at boundaries
+            # Dirichlet: Ū = 0 at inner boundary only
             A_mat[idx_inner, :] .= zero(T)
             A_mat[idx_inner, idx_inner] = one(T)
             f_rhs[idx_inner] = zero(T)
 
-            A_mat[idx_outer, :] .= zero(T)
-            A_mat[idx_outer, idx_outer] = one(T)
-            f_rhs[idx_outer] = zero(T)
-
         else  # stress_free
-            # Robin BC: dŪ/dr - Ū/r = 0
-            # Inner boundary
+            # Robin BC: dŪ/dr - Ū/r = 0 at inner boundary only
             A_mat[idx_inner, :] = D1[idx_inner, :]
             A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
             f_rhs[idx_inner] = zero(T)
-
-            # Outer boundary
-            A_mat[idx_outer, :] = D1[idx_outer, :]
-            A_mat[idx_outer, idx_outer] -= one(T) / r[idx_outer]
-            f_rhs[idx_outer] = zero(T)
         end
 
         # Solve the linear system

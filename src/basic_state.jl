@@ -983,7 +983,8 @@ function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::
                                      amplitudes::AbstractDict;
                                      mechanical_bc::Symbol=:no_slip,
                                      thermal_bc::Symbol=:fixed_temperature,
-                                     outer_fluxes::AbstractDict=Dict{Tuple{Int,Int},Float64}())
+                                     outer_fluxes::AbstractDict=Dict{Tuple{Int,Int},Float64}(),
+                                     coupled_thermal_wind::Bool=false)
 
     r = cd.x
     T = eltype(r)  # Get the element type from the Chebyshev grid
@@ -1133,10 +1134,19 @@ function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::
         duphi_dr_m = Dict{Int, Vector{T}}(ℓ => zeros(T, Nr) for ℓ in 0:lmax_bs)
 
         # Solve thermal wind for this azimuthal mode
-        solve_thermal_wind_balance_3d!(uphi_m, duphi_dr_m, theta_m, m_bs,
-                                       cd, r_i, r_o, Ra, Pr;
-                                       mechanical_bc=mechanical_bc,
-                                       E=E)
+        if coupled_thermal_wind
+            # Full coupled solver (no diagonal approximation)
+            solve_thermal_wind_coupled!(uphi_m, duphi_dr_m, theta_m, m_bs,
+                                        cd, r_i, r_o, Ra, Pr;
+                                        mechanical_bc=mechanical_bc,
+                                        E=E, lmax=lmax_bs + 1)
+        else
+            # Diagonal approximation (faster but less accurate)
+            solve_thermal_wind_balance_3d!(uphi_m, duphi_dr_m, theta_m, m_bs,
+                                           cd, r_i, r_o, Ra, Pr;
+                                           mechanical_bc=mechanical_bc,
+                                           E=E)
+        end
 
         # Copy results to 3D storage
         for ℓ in 0:lmax_bs
@@ -1252,7 +1262,8 @@ function basic_state(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
                      temperature_bc::Union{Nothing, SphericalHarmonicBC}=nothing,
                      flux_bc::Union{Nothing, SphericalHarmonicBC}=nothing,
                      mechanical_bc::Symbol=:no_slip,
-                     lmax_bs::Union{Nothing, Int}=nothing)
+                     lmax_bs::Union{Nothing, Int}=nothing,
+                     coupled_thermal_wind::Bool=false)
 
     # Validate: can't have both temperature_bc and flux_bc
     if temperature_bc !== nothing && flux_bc !== nothing
@@ -1334,14 +1345,16 @@ function basic_state(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
         return nonaxisymmetric_basic_state(cd, T(χ), T(E), T(Ra), T(Pr),
                                            _lmax, bc_mmax, amplitudes;
                                            mechanical_bc=mechanical_bc,
-                                           thermal_bc=:fixed_temperature)
+                                           thermal_bc=:fixed_temperature,
+                                           coupled_thermal_wind=coupled_thermal_wind)
     else  # fixed_flux
         return nonaxisymmetric_basic_state(cd, T(χ), T(E), T(Ra), T(Pr),
                                            _lmax, bc_mmax,
                                            Dict{Tuple{Int,Int},T}();  # empty amplitudes
                                            mechanical_bc=mechanical_bc,
                                            thermal_bc=:fixed_flux,
-                                           outer_fluxes=amplitudes)
+                                           outer_fluxes=amplitudes,
+                                           coupled_thermal_wind=coupled_thermal_wind)
     end
 end
 
@@ -1776,6 +1789,312 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
     forced_modes = Set(keys(forcing))
     for ℓ in keys(theta_coeffs)
         if !haskey(uphi_coeffs, ℓ) || !(ℓ in forced_modes)
+            uphi_coeffs[ℓ] = zeros(T, Nr)
+            duphi_dr_coeffs[ℓ] = zeros(T, Nr)
+        end
+    end
+
+    return nothing
+end
+
+
+# =============================================================================
+#  Full Coupled Thermal Wind Solver (No Diagonal Approximation)
+#
+#  Solves the thermal wind equation without the diagonal approximation by
+#  treating the full mode coupling from the (ẑ·∇) operator on the LHS.
+#
+#  The equation is:
+#    cos(θ) ∂ū_φ/∂r - (sin(θ)/r) ∂ū_φ/∂θ = -(Ra E²)/(2 Pr r_o) × ∂Θ̄/∂θ
+#
+#  The cos(θ) and sin(θ)∂/∂θ terms couple mode L to modes L±1, creating a
+#  tridiagonal system of coupled ODEs that must be solved simultaneously.
+# =============================================================================
+
+"""
+    solve_thermal_wind_coupled!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+                                m_bs, cd, r_i, r_o, Ra, Pr;
+                                mechanical_bc=:no_slip, E=1e-4, lmax=nothing)
+
+Solve thermal wind balance WITHOUT the diagonal approximation.
+
+This solver accounts for the full mode coupling from the (ẑ·∇) operator:
+- cos(θ) couples Y_Lm → Y_{L±1,m}
+- sin(θ) ∂/∂θ also couples Y_Lm → Y_{L±1,m}
+
+The result is a coupled tridiagonal system of ODEs in L that is solved
+simultaneously using a spectral Chebyshev discretization.
+
+# Arguments
+- `uphi_coeffs` : Output dictionary for velocity coefficients (modified in place)
+- `duphi_dr_coeffs` : Output dictionary for velocity derivatives (modified in place)
+- `theta_coeffs` : Input temperature coefficients {ℓ => θ̄_ℓm(r)}
+- `m_bs` : Azimuthal wavenumber
+- `cd` : ChebyshevDiffn structure
+- `r_i, r_o` : Inner and outer radii
+- `Ra, Pr, E` : Rayleigh, Prandtl, Ekman numbers
+- `mechanical_bc` : :no_slip or :stress_free
+- `lmax` : Maximum L for velocity (defaults to max key in theta_coeffs + 1)
+"""
+function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
+                                     duphi_dr_coeffs::Dict{Int,Vector{T}},
+                                     theta_coeffs::Dict{Int,Vector{T}},
+                                     m_bs::Int,
+                                     cd,
+                                     r_i::T, r_o::T, Ra::T, Pr::T;
+                                     mechanical_bc::Symbol=:no_slip,
+                                     E::T=T(1e-4),
+                                     lmax::Union{Nothing,Int}=nothing) where T<:Real
+
+    # For m=0, the equations decouple and we can use the simpler solver
+    if m_bs == 0
+        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+                                    cd, r_i, r_o, Ra, Pr;
+                                    mechanical_bc=mechanical_bc, E=E)
+        return nothing
+    end
+
+    if !(mechanical_bc in (:no_slip, :stress_free))
+        error("mechanical_bc must be :no_slip or :stress_free, got: $mechanical_bc")
+    end
+
+    r = cd.x
+    Nr = length(r)
+    D1 = cd.D1
+
+    # Determine lmax from temperature coefficients
+    lmax_theta = isempty(theta_coeffs) ? m_bs : maximum(keys(theta_coeffs))
+    lmax_vel = lmax === nothing ? lmax_theta + 1 : lmax
+    lmax_vel = max(lmax_vel, m_bs)  # L ≥ m required
+
+    # Number of velocity modes: L = m, m+1, ..., lmax_vel
+    n_modes = lmax_vel - m_bs + 1
+    if n_modes < 1
+        return nothing
+    end
+
+    # Mode indices: mode_idx[k] = L means the k-th mode corresponds to degree L
+    mode_idx = collect(m_bs:lmax_vel)
+
+    # =========================================================================
+    # Coupling coefficients
+    # =========================================================================
+    #
+    # cos(θ) Y_Lm = α_L^+ Y_{L+1,m} + α_L^- Y_{L-1,m}
+    # where:
+    #   α_L^+ = √[((L+1)²-m²)/((2L+1)(2L+3))]
+    #   α_L^- = √[(L²-m²)/((2L-1)(2L+1))]
+    #
+    # sin(θ) ∂Y_Lm/∂θ (derived from Legendre recurrence):
+    #   Starting from: (1-x²) dP_L^m/dx = L x P_L^m - (L+m) P_{L-1}^m
+    #   With x = cos(θ): sin(θ) ∂Y_Lm/∂θ = -L cos(θ) Y_Lm + √[(L²-m²)(2L+1)/(2L-1)] Y_{L-1,m}
+    #
+    # After expanding cos(θ) Y_Lm and simplifying:
+    #   sin(θ) ∂Y_Lm/∂θ = -L α_L^+ Y_{L+1,m} + (L+1) α_L^- Y_{L-1,m}
+
+    function alpha_plus(L::Int)
+        num = (L + 1)^2 - m_bs^2
+        den = (2L + 1) * (2L + 3)
+        return num > 0 && den > 0 ? sqrt(T(num) / T(den)) : zero(T)
+    end
+
+    function alpha_minus(L::Int)
+        num = L^2 - m_bs^2
+        den = (2L - 1) * (2L + 1)
+        return num > 0 && den > 0 ? sqrt(T(num) / T(den)) : zero(T)
+    end
+
+    # =========================================================================
+    # Build the coupling matrices A and B
+    # =========================================================================
+    #
+    # The thermal wind equation projected onto Y_Km:
+    #   Σ_L [A_{KL} dŪ_L/dr - (1/r) B_{KL} Ū_L] = F_K(r)
+    #
+    # where:
+    #   A_{KL} = ⟨cos(θ) Y_Lm, Y_Km⟩
+    #   B_{KL} = ⟨sin(θ) ∂Y_Lm/∂θ, Y_Km⟩
+
+    A = zeros(T, n_modes, n_modes)  # cos(θ) coupling
+    B = zeros(T, n_modes, n_modes)  # sin(θ)∂/∂θ coupling
+
+    for (k, K) in enumerate(mode_idx)
+        # Contribution from L = K-1 (if valid)
+        if K > m_bs
+            l = K - 1
+            j = findfirst(==(l), mode_idx)
+            if j !== nothing
+                # A_{K,L} where L = K-1: ⟨cos(θ) Y_{K-1,m}, Y_Km⟩ = α_{K-1}^+
+                A[k, j] = alpha_plus(l)
+
+                # B_{K,L} where L = K-1:
+                # From: sin(θ)∂Y_{K-1,m}/∂θ = -(K-1) α_{K-1}^+ Y_{K,m} + K α_{K-1}^- Y_{K-2,m}
+                # Projection onto Y_Km: ⟨sin(θ)∂Y_{K-1,m}/∂θ, Y_Km⟩ = -(K-1) α_{K-1}^+
+                B[k, j] = -(l) * alpha_plus(l)  # = -(K-1) α_{K-1}^+
+            end
+        end
+
+        # Contribution from L = K+1 (if valid)
+        if K < lmax_vel
+            l = K + 1
+            j = findfirst(==(l), mode_idx)
+            if j !== nothing
+                # A_{K,L} where L = K+1: ⟨cos(θ) Y_{K+1,m}, Y_Km⟩ = α_{K+1}^-
+                A[k, j] = alpha_minus(l)
+
+                # B_{K,L} where L = K+1:
+                # From: sin(θ)∂Y_{K+1,m}/∂θ = -(K+1) α_{K+1}^+ Y_{K+2,m} + (K+2) α_{K+1}^- Y_{K,m}
+                # Projection onto Y_Km: ⟨sin(θ)∂Y_{K+1,m}/∂θ, Y_Km⟩ = (K+2) α_{K+1}^-
+                B[k, j] = (l + 1) * alpha_minus(l)  # = (K+2) α_{K+1}^-
+            end
+        end
+    end
+
+    # =========================================================================
+    # Compute forcing F_K(r) from temperature gradient
+    # =========================================================================
+    #
+    # F_K(r) = -(Ra E²)/(2 Pr r_o) × ⟨∂Θ̄/∂θ, Y_Km⟩
+    #
+    # Using ∂Y_ℓm/∂θ = c_+^ℓ Y_{ℓ+1,m} + c_-^ℓ Y_{ℓ-1,m}
+
+    prefactor = -(Ra * E^2) / (2 * Pr * r_o)
+
+    F = zeros(T, n_modes, Nr)  # F[k, i] = F_{mode_idx[k]}(r[i])
+
+    for (ℓ, θ_coeff) in theta_coeffs
+        if ℓ < m_bs || maximum(abs.(θ_coeff)) < 1e-15
+            continue
+        end
+
+        # θ-derivative coupling: ∂Y_ℓm/∂θ → Y_{ℓ±1,m}
+        c_plus, c_minus = theta_derivative_coeff_3d(ℓ, m_bs)
+
+        # Contribution to K = ℓ+1
+        if ℓ + 1 <= lmax_vel
+            k = findfirst(==(ℓ + 1), mode_idx)
+            if k !== nothing
+                F[k, :] .+= prefactor * c_plus .* θ_coeff
+            end
+        end
+
+        # Contribution to K = ℓ-1
+        if ℓ - 1 >= m_bs
+            k = findfirst(==(ℓ - 1), mode_idx)
+            if k !== nothing
+                F[k, :] .+= prefactor * c_minus .* θ_coeff
+            end
+        end
+    end
+
+    # =========================================================================
+    # Build and solve the full linear system
+    # =========================================================================
+    #
+    # The equation A × dŪ/dr - (1/r) × B × Ū = F becomes:
+    # (A ⊗ D1 - diag(1/r) × B ⊗ I) × vec(Ū) = vec(F)
+    #
+    # where vec(Ū) stacks all modes: [Ū_{m}; Ū_{m+1}; ...; Ū_{lmax}]
+    # and each Ū_L has Nr components.
+
+    # Total unknowns: n_modes × Nr
+    n_total = n_modes * Nr
+
+    # Build the system matrix
+    # Index convention: u[(k-1)*Nr + i] = Ū_{mode_idx[k]}(r[i])
+    L_op = zeros(T, n_total, n_total)
+
+    for k1 in 1:n_modes  # row (equation for mode K = mode_idx[k1])
+        for k2 in 1:n_modes  # column (contribution from mode L = mode_idx[k2])
+            # Block (k1, k2) has size Nr × Nr
+            row_start = (k1 - 1) * Nr + 1
+            row_end = k1 * Nr
+            col_start = (k2 - 1) * Nr + 1
+            col_end = k2 * Nr
+
+            if abs(A[k1, k2]) > 1e-15
+                # A_{k1,k2} × D1 contribution
+                L_op[row_start:row_end, col_start:col_end] .+= A[k1, k2] .* D1
+            end
+
+            if abs(B[k1, k2]) > 1e-15
+                # -(1/r) × B_{k1,k2} × I contribution
+                for i in 1:Nr
+                    L_op[row_start + i - 1, col_start + i - 1] -= B[k1, k2] / r[i]
+                end
+            end
+        end
+    end
+
+    # RHS vector
+    F_vec = vec(F')  # Flatten: [F[1,:]; F[2,:]; ...]
+
+    # =========================================================================
+    # Apply boundary conditions
+    # =========================================================================
+    #
+    # For each mode K, apply BC at inner boundary:
+    # - No-slip: Ū_K(r_i) = 0
+    # - Stress-free: dŪ_K/dr - Ū_K/r = 0
+
+    idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
+    idx_outer = idx_inner == 1 ? Nr : 1
+
+    for k in 1:n_modes
+        # Row index for the BC at inner boundary for mode k
+        bc_row = (k - 1) * Nr + idx_inner
+
+        if mechanical_bc == :no_slip
+            # Dirichlet: Ū = 0 at inner boundary
+            L_op[bc_row, :] .= zero(T)
+            L_op[bc_row, bc_row] = one(T)
+            F_vec[bc_row] = zero(T)
+        else  # stress_free
+            # Robin: dŪ/dr - Ū/r = 0 at inner boundary
+            L_op[bc_row, :] .= zero(T)
+            col_start = (k - 1) * Nr + 1
+            col_end = k * Nr
+            L_op[bc_row, col_start:col_end] .= D1[idx_inner, :]
+            L_op[bc_row, bc_row] -= one(T) / r[idx_inner]
+            F_vec[bc_row] = zero(T)
+        end
+
+        # Also apply BC at outer boundary for better conditioning
+        bc_row_outer = (k - 1) * Nr + idx_outer
+        if mechanical_bc == :no_slip
+            L_op[bc_row_outer, :] .= zero(T)
+            L_op[bc_row_outer, bc_row_outer] = one(T)
+            F_vec[bc_row_outer] = zero(T)
+        else
+            L_op[bc_row_outer, :] .= zero(T)
+            col_start = (k - 1) * Nr + 1
+            col_end = k * Nr
+            L_op[bc_row_outer, col_start:col_end] .= D1[idx_outer, :]
+            L_op[bc_row_outer, bc_row_outer] -= one(T) / r[idx_outer]
+            F_vec[bc_row_outer] = zero(T)
+        end
+    end
+
+    # =========================================================================
+    # Solve the system
+    # =========================================================================
+
+    U_vec = L_op \ F_vec
+
+    # =========================================================================
+    # Extract results
+    # =========================================================================
+
+    for (k, L) in enumerate(mode_idx)
+        start_idx = (k - 1) * Nr + 1
+        end_idx = k * Nr
+        uphi_coeffs[L] = U_vec[start_idx:end_idx]
+        duphi_dr_coeffs[L] = D1 * uphi_coeffs[L]
+    end
+
+    # Zero out modes without forcing
+    for ℓ in keys(theta_coeffs)
+        if !haskey(uphi_coeffs, ℓ)
             uphi_coeffs[ℓ] = zeros(T, Nr)
             duphi_dr_coeffs[ℓ] = zeros(T, Nr)
         end

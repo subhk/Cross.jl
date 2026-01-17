@@ -674,6 +674,9 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                     add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                                               m_from, m_to, ℓ_bs, m_bs_eff,
                                                               r, theta_interp, cd.D1, params)
+                    add_temperature_gradient_phi_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                            m_from, m_to, ℓ_bs, m_bs_eff,
+                                                            r, theta_interp, params)
                     add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                               m_from, m_to, ℓ_bs, m_bs_eff,
                                               r, uphi_interp, cd.D1, params)
@@ -705,6 +708,9 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                     add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                                               m_from, m_to, ℓ_bs, m_bs_eff,
                                                               r, theta_interp, cd.D1, params)
+                    add_temperature_gradient_phi_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                            m_from, m_to, ℓ_bs, m_bs_eff,
+                                                            r, theta_interp, params)
                     add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                               m_from, m_to, ℓ_bs, m_bs_eff,
                                               r, uphi_interp, cd.D1, params)
@@ -1050,6 +1056,97 @@ function add_temperature_gradient_theta_coupling!(C::Matrix{ComplexF64},
         end
     end
 end
+
+
+"""
+    add_temperature_gradient_phi_coupling!(C, op_from, op_to, ..., m_bs, r, theta_coeffs, params)
+
+Add coupling from perturbation azimuthal velocity advecting basic state temperature: u'_φ × (1/(r sinθ)) × ∂θ̄_bs/∂φ
+
+For non-axisymmetric basic states with m_bs ≠ 0:
+    ∂θ̄_bs/∂φ = i × m_bs × θ̄_bs
+
+This term couples the toroidal velocity potential (which gives u'_φ) to the temperature
+equation through the azimuthal derivative of θ̄_bs.
+
+The coupling is: u'_φ × (1/(r sinθ)) × (i × m_bs) × θ̄_bs
+"""
+function add_temperature_gradient_phi_coupling!(C::Matrix{ComplexF64},
+                                                 op_from, op_to,
+                                                 idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                                 idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                                                 m_from::Int, m_to::Int,
+                                                 ℓ_bs::Int, m_bs::Int,
+                                                 r::Vector{T},
+                                                 theta_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
+                                                 params) where T
+    # This term only contributes when m_bs ≠ 0 (non-axisymmetric basic state)
+    if m_bs == 0
+        return
+    end
+
+    Nr = length(r)
+    m_pert_from = abs(m_from)
+    m_pert_to = abs(m_to)
+
+    key_bs = (ℓ_bs, abs(m_bs))
+    if !haskey(theta_coeffs, key_bs)
+        return
+    end
+    theta_bs = theta_coeffs[key_bs]
+    if maximum(abs.(theta_bs)) < 1e-14
+        return
+    end
+    bs_scale = _basic_state_mode_scale(m_bs, T)
+
+    # The φ-derivative of θ̄_bs gives: ∂θ̄_bs/∂φ = i × m_bs × θ̄_bs
+    # Combined with 1/r factor for the advection term
+    # Factor: (i × m_bs) × θ̄_bs / r
+    inv_r = one(T) ./ r
+    phi_deriv_coeff = (im * m_bs) .* (bs_scale .* theta_bs .* inv_r)
+
+    # Loop over toroidal field (source of u'_φ) coupling to temperature
+    for (ℓ_from, field_from) in keys(op_from.index_map)
+        if field_from != :T  # Toroidal potential gives azimuthal velocity
+            continue
+        end
+        if ℓ_from < m_pert_from
+            continue
+        end
+
+        for (ℓ_to, field_to) in keys(op_to.index_map)
+            if field_to != :Θ  # This goes into temperature equation
+                continue
+            end
+            if ℓ_to < m_pert_to
+                continue
+            end
+
+            # Compute spherical harmonic coupling coefficient
+            # The 1/sinθ factor is incorporated in the azimuthal coupling
+            coupling_coeff = compute_sh_coupling_coefficient(
+                ℓ_from, m_from, ℓ_bs, m_bs, ℓ_to, m_to
+            )
+
+            if abs(coupling_coeff) < 1e-14
+                continue
+            end
+
+            # Get index ranges
+            idx_from = idx_map_from[(ℓ_from, :T)]
+            idx_to = idx_map_to[(ℓ_to, :Θ)]
+
+            # Add coupling: coupling_coeff × (i × m_bs / r) × θ̄_bs
+            for i in 1:Nr
+                row = idx_to[i]
+                col = idx_from[i]
+                (row == 0 || col == 0) && continue
+                C[row, col] += coupling_coeff * phi_deriv_coeff[i]
+            end
+        end
+    end
+end
+
 
 function add_shear_theta_coupling!(C::Matrix{ComplexF64},
                                     op_from, op_to,

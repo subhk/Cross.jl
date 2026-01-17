@@ -11,10 +11,15 @@
 #
 #  Perturbations: θ'(r,θ,φ,t) = Σ_ℓ θ'_ℓm(r,t) Y_ℓm(θ,φ)
 #
-#  Linearized equations add three types of terms:
-#  1. Advection: (ū · ∇)θ' = (ū_φ/(r sin θ)) ∂θ'/∂φ
-#  2. Shear: (u' · ∇)ū = u'_r ∂ū_φ/∂r + u'_θ ∂ū_φ/∂θ
-#  3. Temperature gradient: (u' · ∇)θ̄ = u'_r ∂θ̄/∂r + u'_θ ∂θ̄/∂θ
+#  Linearized equations add four types of terms:
+#  1. Advection: (ū · ∇)θ' = (ū_φ/(r sin θ)) ∂θ'/∂φ  (scalar transport)
+#  2. Shear: (u' · ∇)ū_φ = u'_r ∂ū_φ/∂r + (u'_θ/r) ∂ū_φ/∂θ  (into toroidal eq)
+#  3. Temperature gradient: (u' · ∇)θ̄ = u'_r ∂θ̄/∂r + (u'_θ/r) ∂θ̄/∂θ  (into temp eq)
+#  4. Metric terms: (ū · ∇)u' has curvilinear metric terms that couple T → P:
+#       -ū_φ u'_φ / r  and  -ū_φ u'_φ cot(θ) / r  (into poloidal eq)
+#
+#  Note: u'_θ from poloidal potential P is:
+#        u'_θ = (1/r) dP/dr × ∂Y/∂θ
 #
 #  These couple different ℓ modes through spherical harmonic products.
 # =============================================================================
@@ -35,6 +40,12 @@ Fields:
 - `coupling_structure::Vector{Tuple{Int,Int}}` - List of (ℓ_pert, ℓ_bs) pairs that couple
 
 The blocks represent coupling between perturbation mode ℓ_pert and basic state mode ℓ_bs.
+
+Note: The metric_poloidal_blocks handle the curvilinear metric terms that arise when
+advecting vector fields by azimuthal flow:
+    (ū · ∇)u'_r contains: -ū_φ u'_φ / r
+    (ū · ∇)u'_θ contains: -ū_φ u'_φ cot(θ) / r
+These couple the toroidal velocity (T) to the poloidal equation (P).
 """
 struct BasicStateOperators{T<:Real}
     advection_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
@@ -44,6 +55,7 @@ struct BasicStateOperators{T<:Real}
     temp_grad_radial_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
     temp_grad_theta_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
     temp_grad_theta_toroidal_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
+    metric_poloidal_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}  # T → P coupling from metric terms
     coupling_structure::Vector{Tuple{Int,Int}}
 end
 
@@ -285,6 +297,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
     temp_grad_radial_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     temp_grad_theta_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
     temp_grad_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
+    metric_poloidal_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()  # T → P from metric terms
     coupling_structure = Tuple{Int,Int}[]
 
     # Get basic state modes
@@ -409,7 +422,53 @@ function build_basic_state_operators(basic_state::BasicState{T},
             end
 
             # =====================================================================
+            # 1b. Metric terms for vector advection: -ū_φ u'_φ / r (and cot(θ) terms)
+            #     These couple toroidal velocity T to poloidal equation P.
+            #     The full curvilinear advection (ū · ∇)u' has metric terms:
+            #       (ū · ∇)u'_r contains: -ū_φ u'_φ / r
+            #       (ū · ∇)u'_θ contains: -ū_φ u'_φ cot(θ) / r
+            #     These project onto the poloidal equation through angular integrals.
+            # =====================================================================
+            if uphi_max > coupling_tol && m != 0
+                # The metric coupling coefficient involves angular integrals similar
+                # to the azimuthal advection but with different weighting.
+                # Use the same azimuthal coupling structure.
+                if adv_coupling_matrix !== nothing
+                    idx_in = ℓ_input - m + 1
+                    for ℓ_output in ℓ_pert_modes
+                        if ℓ_output < m
+                            continue
+                        end
+                        idx_out = ℓ_output - m + 1
+                        metric_coupling = adv_coupling_matrix[idx_out, idx_in]
+                        abs(metric_coupling) < coupling_tol && continue
+
+                        if !((ℓ_output, ℓ_input) in coupling_structure)
+                            push!(coupling_structure, (ℓ_output, ℓ_input))
+                        end
+
+                        # Metric term: -ū_φ / r × u'_φ
+                        # This couples T (source of u'_φ) to P (poloidal equation)
+                        metric_operator = -metric_coupling * Diagonal(uphi_coeff ./ r)
+
+                        if !haskey(metric_poloidal_blocks, (ℓ_output, ℓ_input))
+                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] = Matrix(metric_operator)
+                        else
+                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] .+= Matrix(metric_operator)
+                        end
+                    end
+                end
+            end
+
+            # =====================================================================
             # 3/5. Meridional shear and temperature-gradient terms
+            #
+            # u'_θ from poloidal potential P' is:
+            #   u'_θ = (1/r) dP'/dr × ∂Y/∂θ
+            #
+            # The advection term (u'_θ/r) × ∂ū_φ/∂θ contributes to the toroidal eq.
+            # After multiplying by the r² weighting in the equation:
+            #   r² × (1/r²) dP'/dr × angular_part = dP'/dr × angular
             # =====================================================================
             if uphi_max > coupling_tol || theta_max > coupling_tol
                 for ℓ_output in ℓ_pert_modes
@@ -479,6 +538,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
         temp_grad_radial_blocks,
         temp_grad_theta_blocks,
         temp_grad_theta_toroidal_blocks,
+        metric_poloidal_blocks,
         coupling_structure
     )
 end
@@ -600,6 +660,20 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
             if T_in_idx !== nothing && haskey(basic_state_ops.shear_theta_toroidal_blocks, (ℓ_output, ℓ_input))
                 shear_theta_t_block = basic_state_ops.shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)]
                 A[T_out_idx, T_in_idx] .+= shear_theta_t_block
+            end
+        end
+
+        # =====================================================================
+        # 4. Add metric terms to poloidal equation (curvilinear vector advection)
+        #    The metric terms from (ū · ∇)u' couple T (toroidal) to P (poloidal):
+        #      (ū · ∇)u'_r contains: -ū_φ u'_φ / r
+        #      (ū · ∇)u'_θ contains: -ū_φ u'_φ cot(θ) / r
+        #    These are essential for correct momentum advection by mean flow.
+        # =====================================================================
+        if P_out_idx !== nothing && T_in_idx !== nothing
+            if haskey(basic_state_ops.metric_poloidal_blocks, (ℓ_output, ℓ_input))
+                metric_block = basic_state_ops.metric_poloidal_blocks[(ℓ_output, ℓ_input)]
+                A[P_out_idx, T_in_idx] .+= metric_block
             end
         end
     end

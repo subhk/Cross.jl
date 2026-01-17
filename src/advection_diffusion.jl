@@ -1188,7 +1188,8 @@ function nonaxisymmetric_basic_state_selfconsistent(
     outer_fluxes::Dict{Tuple{Int,Int}, <:Real} = Dict{Tuple{Int,Int}, T}(),
     max_iterations::Int = 20,
     tolerance::T = T(1e-8),
-    verbose::Bool = false
+    verbose::Bool = false,
+    coupled_thermal_wind::Bool = false
 ) where T<:Real
 
     # =========================================================================
@@ -1224,7 +1225,8 @@ function nonaxisymmetric_basic_state_selfconsistent(
         cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amplitudes_T;
         mechanical_bc=mechanical_bc,
         thermal_bc=thermal_bc,
-        outer_fluxes=outer_fluxes_T
+        outer_fluxes=outer_fluxes_T,
+        coupled_thermal_wind=coupled_thermal_wind
     )
 
     # Copy coefficients for iteration
@@ -1384,10 +1386,19 @@ function nonaxisymmetric_basic_state_selfconsistent(
             duphi_dr_m = Dict{Int, Vector{T}}(ℓ => zeros(T, Nr) for ℓ in 0:lmax_bs)
 
             # Solve thermal wind
-            solve_thermal_wind_balance_3d!(uphi_m, duphi_dr_m, theta_m, m_bs,
-                                           cd, r_i, r_o, Ra, Pr;
-                                           mechanical_bc=mechanical_bc,
-                                           E=E)
+            if coupled_thermal_wind
+                # Full coupled solver (no diagonal approximation)
+                solve_thermal_wind_coupled!(uphi_m, duphi_dr_m, theta_m, m_bs,
+                                            cd, r_i, r_o, Ra, Pr;
+                                            mechanical_bc=mechanical_bc,
+                                            E=E, lmax=lmax_bs + 1)
+            else
+                # Diagonal approximation
+                solve_thermal_wind_balance_3d!(uphi_m, duphi_dr_m, theta_m, m_bs,
+                                               cd, r_i, r_o, Ra, Pr;
+                                               mechanical_bc=mechanical_bc,
+                                               E=E)
+            end
 
             # Copy results to storage
             for ℓ in 0:lmax_bs
@@ -1531,7 +1542,8 @@ function basic_state_selfconsistent(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
                                     lmax_bs::Union{Nothing, Int}=nothing,
                                     max_iterations::Int=20,
                                     tolerance::Float64=1e-8,
-                                    verbose::Bool=false)
+                                    verbose::Bool=false,
+                                    coupled_thermal_wind::Bool=false)
 
     # Validate: can't have both temperature_bc and flux_bc
     if temperature_bc !== nothing && flux_bc !== nothing
@@ -1569,7 +1581,8 @@ function basic_state_selfconsistent(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
                           temperature_bc=temperature_bc,
                           flux_bc=flux_bc,
                           mechanical_bc=mechanical_bc,
-                          lmax_bs=_lmax), nothing
+                          lmax_bs=_lmax,
+                          coupled_thermal_wind=coupled_thermal_wind), nothing
     end
 
     # Non-axisymmetric: use self-consistent solver
@@ -1583,7 +1596,8 @@ function basic_state_selfconsistent(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
             thermal_bc=:fixed_temperature,
             max_iterations=max_iterations,
             tolerance=T(tolerance),
-            verbose=verbose
+            verbose=verbose,
+            coupled_thermal_wind=coupled_thermal_wind
         )
     else  # fixed_flux
         return nonaxisymmetric_basic_state_selfconsistent(
@@ -1595,7 +1609,8 @@ function basic_state_selfconsistent(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
             outer_fluxes=amplitudes,
             max_iterations=max_iterations,
             tolerance=T(tolerance),
-            verbose=verbose
+            verbose=verbose,
+            coupled_thermal_wind=coupled_thermal_wind
         )
     end
 end

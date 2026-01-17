@@ -24,8 +24,8 @@ The velocity is reconstructed using the poloidal-toroidal decomposition:
 
 which gives (see MagIC documentation, Chandrasekhar 1961):
     u_r = ℓ(ℓ+1) P / r² = -L²P / r²
-    u_θ = (1/r) ∂²P/∂r∂θ + (im/r sinθ) T
-    u_φ = (im/r sinθ) ∂P/∂r - (1/r) ∂T/∂θ
+    u_θ = (1/r) ∂²P/∂r∂θ + (im/(r sinθ)) T
+    u_φ = (im/(r sinθ)) ∂P/∂r - (1/r) ∂T/∂θ
 
 where L² = -ℓ(ℓ+1) is the angular Laplacian eigenvalue.
 
@@ -87,11 +87,11 @@ function potentials_to_velocity(P::AbstractMatrix,
     # u_r = ℓ(ℓ+1) P / r² = -L²P / r² (since Lθ gives -ℓ(ℓ+1))
     ur = -lap_ang_P .* inv_r2
 
-    # u_θ = (1/r) ∂²P/∂r∂θ + (im/r sinθ) T
+    # u_θ = (1/r) ∂²P/∂r∂θ + (im/(r sinθ)) T
     uθ = (dP_dr * Dθ') .* inv_r
     uθ .+= (im * m) .* T .* inv_r_sinθ
 
-    # u_φ = (im/r sinθ) ∂P/∂r - (1/r) ∂T/∂θ
+    # u_φ = (im/(r sinθ)) ∂P/∂r - (1/r) ∂T/∂θ
     uφ = (im * m) .* dP_dr .* inv_r_sinθ
     uφ .-= dθ_T .* inv_r
 

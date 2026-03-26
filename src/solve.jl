@@ -357,3 +357,11 @@ function find_critical_Ra(problem::TriglobalProblem{T};
         mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
         verbose=verbose, kwargs...)
 end
+
+function find_critical_Ra(::MHDProblem; kwargs...)
+    error("""find_critical_Ra is not supported for MHDProblem.
+
+MHD dynamo problems involve coupled velocity-magnetic field instabilities where
+the critical parameter depends on multiple numbers (Ra, Pm, Le) simultaneously.
+Use solve(MHDProblem(...); nev=...) directly and inspect the growth rate.""")
+end

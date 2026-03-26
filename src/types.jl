@@ -186,6 +186,14 @@ function _count_l_modes(m::Int, lmax::Int, symmetry::Symbol)
     end
 end
 
+"""
+    estimate_size(p)
+
+Print a human-readable estimate of the matrix size and memory requirement for problem `p`.
+
+Accepts `OnsetProblem`, `BiglobalProblem`, or `TriglobalProblem`. Warns when the
+estimated memory exceeds 8 GB.
+"""
 function estimate_size(p::OnsetProblem)
     params = p.params
     n_l = _count_l_modes(params.m, params.lmax, params.equatorial_symmetry)

@@ -7,6 +7,22 @@ abstract type AbstractStabilityResult{T} end
 
 # --- Problem types ---
 
+"""
+    OnsetProblem{T}
+
+Standard linear onset problem for rotating spherical shell convection.
+
+Wraps an `OnsetParams` and validates parameters on construction.
+Use `estimate_size` to preview memory requirements before solving.
+
+# Fields
+- `params::OnsetParams{T}` — problem parameters
+
+# Example
+```julia
+p = OnsetProblem(OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=30, Nr=64))
+```
+"""
 struct OnsetProblem{T}
     params::OnsetParams{T, <:Any}
     function OnsetProblem(params::OnsetParams{T, <:Any}) where {T}
@@ -15,6 +31,23 @@ struct OnsetProblem{T}
     end
 end
 
+"""
+    BiglobalProblem{T}
+
+Biglobal instability problem: onset on an axisymmetric basic state.
+
+Combines `OnsetParams` with a `BasicState` (axisymmetric) and validates
+consistency between them on construction.
+
+# Fields
+- `params::OnsetParams{T}` — problem parameters
+- `basic_state::BasicState{T}` — axisymmetric background state
+
+# Example
+```julia
+p = BiglobalProblem(params, basic_state)
+```
+"""
 struct BiglobalProblem{T}
     params::OnsetParams{T, <:Any}
     basic_state::BasicState{T}
@@ -25,6 +58,23 @@ struct BiglobalProblem{T}
     end
 end
 
+"""
+    TriglobalProblem{T}
+
+Triglobal instability problem: onset on a fully 3D (non-axisymmetric) basic state.
+
+Couples multiple azimuthal wavenumbers `m` simultaneously via a `BasicState3D`.
+
+# Fields
+- `params::OnsetParams{T}` — problem parameters
+- `basic_state::BasicState3D{T}` — 3D background state
+- `m_range::UnitRange{Int}` — range of coupled azimuthal wavenumbers
+
+# Example
+```julia
+p = TriglobalProblem(params, basic_state_3d, 0:4)
+```
+"""
 struct TriglobalProblem{T}
     params::OnsetParams{T, <:Any}
     basic_state::BasicState3D{T}
@@ -35,6 +85,18 @@ struct TriglobalProblem{T}
     end
 end
 
+"""
+    MHDProblem{T, BS}
+
+Magnetohydrodynamic instability problem.
+
+Loosely typed to avoid circular dependencies with the `CompleteMHD` module.
+`basic_state` may be `nothing` for problems without an explicit background field.
+
+# Fields
+- `params` — MHD parameters (e.g., `MHDParams`)
+- `basic_state::BS` — background state, or `nothing`
+"""
 struct MHDProblem{T, BS}
     params  # MHDParams — loosely typed to avoid circular dep with CompleteMHD
     basic_state::BS
@@ -44,6 +106,30 @@ MHDProblem(params) = MHDProblem{Any, Nothing}(params, nothing)
 
 # --- Result type ---
 
+"""
+    StabilityResult{T<:Real, P, E}
+
+Container for the output of a linear stability solve.
+
+Stores all eigenvalues and eigenvectors and pre-extracts the leading (most
+unstable) mode's growth rate and oscillation frequency.
+
+# Fields
+- `eigenvalues::Vector{Complex{T}}` — all computed eigenvalues
+- `eigenvectors::Matrix{Complex{T}}` — corresponding eigenvectors (columns)
+- `growth_rate::T` — real part of the leading eigenvalue
+- `frequency::T` — imaginary part of the leading eigenvalue
+- `problem::P` — the problem that was solved
+- `extra::E` — optional solver metadata (default `(;)`)
+
+# Example
+```julia
+result = solve(problem)
+println(growth_rate(result))   # most unstable growth rate
+println(frequency(result))     # oscillation frequency
+mode = leading_mode(result)    # eigenvector of the leading mode
+```
+"""
 struct StabilityResult{T<:Real, P, E} <: AbstractStabilityResult{T}
     eigenvalues::Vector{Complex{T}}
     eigenvectors::Matrix{Complex{T}}

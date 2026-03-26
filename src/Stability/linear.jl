@@ -39,6 +39,28 @@ end
 #  Parameter Structure
 # -----------------------------------------------------------------------------
 
+"""
+    OnsetParams{T}(; E, Pr, Ra, χ, m, lmax, Nr, kwargs...)
+
+Parameters for rotating spherical shell convection.
+
+# Fields
+- `E::T` — Ekman number (viscous / Coriolis)
+- `Pr::T` — Prandtl number, default 1.0
+- `Ra::T` — Rayleigh number
+- `χ::T` — radius ratio rᵢ/rₒ
+- `m::Int` — azimuthal wavenumber
+- `lmax::Int` — maximum spherical harmonic degree
+- `Nr::Int` — radial collocation points
+- `mechanical_bc::Symbol` — `:no_slip` (default) or `:stress_free`
+- `thermal_bc::Symbol` — `:fixed_temperature` (default) or `:fixed_flux`
+- `equatorial_symmetry::Symbol` — `:both` (default), `:symmetric`, or `:antisymmetric`
+
+# Example
+```julia
+params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=30, Nr=64)
+```
+"""
 @with_kw struct OnsetParams{T<:Real, BS}
     E::T
     Pr::T = one(E)

@@ -4,25 +4,38 @@ module Cross
     using SparseArrays
     using JLD2
     using Printf
+    using Random
 
     using Parameters
 
     using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
 
     using KrylovKit
+    using LinearMaps
+    using WignerSymbols
+    using SpecialFunctions
 
-    include("Chebyshev.jl")
+    # ---- Organized source files ----
+
+    # 1. Spectral methods (ChebyshevDiffn, ultraspherical operators)
+    include("Spectral/Spectral.jl")
+
+    # 2. Banner
     include("banner.jl")
-    include("get_velocity.jl")
-    include("basic_state.jl")
-    include("advection_diffusion.jl")  # Self-consistent basic state solver
-    include("basic_state_operators.jl")
-    include("linear_stability.jl")
 
-    # Three analysis modes (dedicated modules)
-    include("onset_convection.jl")       # Onset with no mean flow
-    include("biglobal_stability.jl")     # Biglobal with axisymmetric mean flow
-    include("triglobal_stability.jl")    # Triglobal with non-axisymmetric mean flow
+    # 3. Basic states (needs ChebyshevDiffn from Spectral)
+    include("BasicStates/BasicStates.jl")
+
+    # 4. Stability analysis (needs ChebyshevDiffn + BasicState types)
+    include("Stability/Stability.jl")
+
+    # 5. Sparse operators and boundary conditions
+    include("Operators/Operators.jl")
+
+    # 6. MHD extensions (needs ultraspherical + sparse operator functions)
+    include("MHD/MHD.jl")
+
+    # 7. v2.0 API layer
     include("validation.jl")
     include("types.jl")
     include("show.jl")
@@ -52,7 +65,7 @@ module Cross
         conduction_basic_state,
         meridional_basic_state,
         nonaxisymmetric_basic_state,
-        basic_state,  # High-level convenience function
+        basic_state,
 
         # Self-consistent basic state (with advection)
         nonaxisymmetric_basic_state_selfconsistent,
@@ -63,22 +76,22 @@ module Cross
         solve_poisson_mode,
 
         # Meridional circulation (toroidal-poloidal decomposition)
-        solve_meridional_coupled!,    # Full block-tridiagonal solver (exact)
-        solve_meridional_simple!,     # Diagonal approximation (fast)
-        solve_meridional_circulation_toroidal_poloidal!,  # Main wrapper
+        solve_meridional_coupled!,
+        solve_meridional_simple!,
+        solve_meridional_circulation_toroidal_poloidal!,
         sin_theta_coupling,
         cos_theta_coupling,
-        theta_derivative_coupling,    # sinθ × ∂Y/∂θ coupling coefficients
-        inv_sin_theta_gaunt,          # ⟨Y_Lm|1/sinθ|Y_ℓm⟩ integrals
-        inv_sin_theta_coupling,       # Approximate 1/sinθ coupling
+        theta_derivative_coupling,
+        inv_sin_theta_gaunt,
+        inv_sin_theta_coupling,
 
         # Symbolic spherical harmonic boundary conditions
         SphericalHarmonicBC,
-        Ylm,  # General constructor
-        Y00, Y10, Y11,  # Monopole and dipole
-        Y20, Y21, Y22,  # Quadrupole
-        Y30, Y31, Y32, Y33,  # Octupole
-        Y40, Y41, Y42, Y43, Y44,  # Hexadecapole
+        Ylm,
+        Y00, Y10, Y11,
+        Y20, Y21, Y22,
+        Y30, Y31, Y32, Y33,
+        Y40, Y41, Y42, Y43, Y44,
         to_dict,
         get_lmax, get_mmax, get_lmax_mmax,
         is_axisymmetric,
@@ -126,6 +139,22 @@ module Cross
         estimate_triglobal_problem_size,
         solve_triglobal_eigenvalue_problem,
         find_critical_rayleigh_triglobal,
+
+        # =================================================================
+        # Sparse operators (from Operators submodule)
+        # =================================================================
+        SparseOnsetParams,
+        SparseStabilityOperator,
+        assemble_sparse_matrices,
+
+        # =================================================================
+        # MHD extensions (from MHD submodule)
+        # =================================================================
+        MHDParams,
+        MHDStabilityOperator,
+        BackgroundField,
+        no_field, axial, dipole,
+        assemble_mhd_matrices,
 
         # =================================================================
         # v2.0 API types and functions

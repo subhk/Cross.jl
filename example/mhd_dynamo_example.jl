@@ -9,18 +9,14 @@
 # - Jones et al. (2011) - Anelastic convection-driven dynamo benchmarks
 # - Christensen et al. (2001) - A numerical dynamo benchmark
 
-push!(LOAD_PATH, joinpath(@__DIR__, "..", "src"))
+push!(LOAD_PATH, joinpath(@__DIR__, ".."))
 
 using LinearAlgebra
 using SparseArrays
 using Printf
 
-# Load the complete MHD module
-include("../src/CompleteMHD.jl")
-using .CompleteMHD
-
-include("../src/OnsetEigenvalueSolver.jl")
-using .OnsetEigenvalueSolver
+# Load Cross (includes MHD and eigenvalue solver functionality)
+using Cross
 
 println("="^80)
 println("MHD Dynamo Stability Analysis Example")

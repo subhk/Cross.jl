@@ -14,27 +14,9 @@
 #  - Jones (2011), "Planetary Magnetic Fields and Fluid Dynamos"
 # =============================================================================
 
-module MHDOperator
 
-using LinearAlgebra
-using SparseArrays
-using Printf
-using SpecialFunctions
 
-# Import from other modules
-push!(LOAD_PATH, @__DIR__)
-include("UltrasphericalSpectral.jl")
-using .UltrasphericalSpectral
 
-export MHDParams,
-       MHDStabilityOperator,
-       BackgroundField,
-       no_field, axial, dipole,
-       is_dipole_case,
-       radial_power_shift_poloidal,
-       radial_power_shift_toroidal,
-       radial_power_shift_magnetic_poloidal,
-       radial_power_shift_magnetic_toroidal
 
 # -----------------------------------------------------------------------------
 # Background magnetic field types
@@ -54,8 +36,6 @@ Options:
     dipole = 2
 end
 
-# Import dipole helper functions (must be after BackgroundField definition)
-include("DipoleOperators.jl")
 
 # -----------------------------------------------------------------------------
 # MHD Parameters
@@ -689,7 +669,7 @@ function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int
         return spzeros(Float64, N + 1, N + 1)
     end
 
-    scale = UltrasphericalSpectral._radial_scale(ri, ro)
+    scale = _radial_scale(ri, ro)
 
     D = sparse(1.0I, N + 1, N + 1)
     λ = 0
@@ -773,4 +753,3 @@ end
 
 # Continued in next part...
 
-end  # module MHDOperator

@@ -12,15 +12,10 @@
 #  m-blocks are coupled through the basic state.
 # =============================================================================
 
-using Parameters
-using LinearAlgebra
-using SparseArrays
-using Printf
-using KrylovKit
-using WignerSymbols
-
-# Import from parent module
-import ..Cross: LinearStabilityOperator, OnsetParams, BasicState, assemble_matrices
+# Dependencies provided by Cross module:
+# Parameters, LinearAlgebra, SparseArrays, Printf, KrylovKit, WignerSymbols
+# LinearStabilityOperator, OnsetParams, BasicState, assemble_matrices
+# are available in the Cross namespace
 
 """
     TriglobalParams{T<:Real}

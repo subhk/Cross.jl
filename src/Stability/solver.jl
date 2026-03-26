@@ -13,18 +13,8 @@
 #  - Dormy et al. (2004), Journal of Fluid Mechanics
 # =============================================================================
 
-module OnsetEigenvalueSolver
 
-using LinearAlgebra
-using SparseArrays
-using LinearMaps
-using KrylovKit
-using Printf
-using Random
 
-export solve_eigenvalue_problem,
-       find_critical_rayleigh,
-       find_onset_parameters
 
 struct ShiftInvertLinearMap{LUType,MatType,VecType}
     lu::LUType
@@ -579,4 +569,3 @@ function find_onset_parameters(operator_builder_factory::Function,
     return Ra_c_min, m_c, ω_c_best, results
 end
 
-end  # module OnsetEigenvalueSolver

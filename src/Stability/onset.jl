@@ -24,14 +24,11 @@
 #  where σ = σ_r + iω is the complex growth rate (σ_r > 0 → unstable).
 # =============================================================================
 
-using Parameters
-using LinearAlgebra
-using Printf
-
-# Import from parent module
-import ..Cross: LinearStabilityOperator, OnsetParams, assemble_matrices,
-                solve_eigenvalue_problem, find_growth_rate, ChebyshevDiffn,
-                compute_l_sets
+# Dependencies provided by Cross module:
+# Parameters, LinearAlgebra, Printf
+# LinearStabilityOperator, OnsetParams, assemble_matrices,
+# solve_eigenvalue_problem, find_growth_rate, ChebyshevDiffn,
+# compute_l_sets are available in the Cross namespace
 
 """
     OnsetConvectionParams{T<:Real}

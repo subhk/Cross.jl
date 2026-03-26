@@ -23,15 +23,12 @@
 #  - Triglobal: basic state has m_bs ≠ 0 → modes couple
 # =============================================================================
 
-using Parameters
-using LinearAlgebra
-using Printf
-
-# Import from parent module
-import ..Cross: LinearStabilityOperator, OnsetParams, BasicState,
-                assemble_matrices, solve_eigenvalue_problem, find_growth_rate,
-                ChebyshevDiffn, conduction_basic_state, meridional_basic_state,
-                find_critical_rayleigh
+# Dependencies provided by Cross module:
+# Parameters, LinearAlgebra, Printf
+# LinearStabilityOperator, OnsetParams, BasicState,
+# assemble_matrices, solve_eigenvalue_problem, find_growth_rate,
+# ChebyshevDiffn, conduction_basic_state, meridional_basic_state,
+# find_critical_rayleigh are available in the Cross namespace
 
 """
     BiglobalParams{T<:Real}

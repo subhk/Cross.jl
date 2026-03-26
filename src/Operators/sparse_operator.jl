@@ -11,18 +11,9 @@
 #  - Dormy et al. (2004), JFM
 # =============================================================================
 
-module SparseOperator
 
-using LinearAlgebra
-using SparseArrays
-using Parameters
 
-include("UltrasphericalSpectral.jl")
-using .UltrasphericalSpectral
 
-export SparseOnsetParams,
-       SparseStabilityOperator,
-       assemble_sparse_matrices
 
 # -----------------------------------------------------------------------------
 # Parameters for sparse onset calculations
@@ -889,13 +880,13 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
     # -------------------------------------------------------------------------
     # Toroidal velocity BCs
     # -------------------------------------------------------------------------
-    scale = UltrasphericalSpectral._radial_scale(params.ricb, one(T))
-    outer_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :outer)
-    inner_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :inner)
-    outer_deriv = UltrasphericalSpectral._chebyshev_boundary_derivative(N, :outer)
-    inner_deriv = UltrasphericalSpectral._chebyshev_boundary_derivative(N, :inner)
-    r_outer = UltrasphericalSpectral._boundary_radius(params.ricb, one(T), :outer)
-    r_inner = UltrasphericalSpectral._boundary_radius(params.ricb, one(T), :inner)
+    scale = _radial_scale(params.ricb, one(T))
+    outer_vals = _chebyshev_boundary_values(N, :outer)
+    inner_vals = _chebyshev_boundary_values(N, :inner)
+    outer_deriv = _chebyshev_boundary_derivative(N, :outer)
+    inner_deriv = _chebyshev_boundary_derivative(N, :inner)
+    r_outer = _boundary_radius(params.ricb, one(T), :outer)
+    r_inner = _boundary_radius(params.ricb, one(T), :inner)
     outer_row = @. -r_outer * scale * outer_deriv + outer_vals
     inner_row = @. -r_inner * scale * inner_deriv + inner_vals
 
@@ -963,4 +954,3 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
     return nothing
 end
 
-end  # module SparseOperator

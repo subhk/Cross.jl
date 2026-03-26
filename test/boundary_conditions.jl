@@ -1,7 +1,7 @@
 using Test
 using LinearAlgebra: I
 
-include("../src/boundary_conditions.jl")
+include("../src/Operators/boundary_conditions.jl")
 
 struct DummyOpNoInvR{T,S}
     Dr::Matrix{T}

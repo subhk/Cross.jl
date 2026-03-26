@@ -10,12 +10,12 @@
 # =============================================================================
 
 """
-Module containing MHD operator function implementations.
-Must be included after MHDOperator.jl
+MHD operator function implementations.
+Must be included after MHD/types.jl (formerly MHDOperator.jl).
 """
 
-# This file is included by CompleteMHD.jl after MHDOperator.jl
-# All functions are in the CompleteMHD module scope
+# This file is included via MHD/MHD.jl after types.jl
+# All functions are in the Cross module scope
 
 # -----------------------------------------------------------------------------
 # Bessel Function Utilities for Conducting Inner Core BCs

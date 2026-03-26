@@ -14,18 +14,13 @@
 # =============================================================================
 
 """
-Module for MHD matrix assembly.
-Must be included after MHDOperator.jl and MHDOperatorFunctions.jl
+MHD matrix assembly.
+Must be included after MHD/types.jl and MHD/operator_functions.jl.
 """
 
-# This file is meant to be included in CompleteMHD.jl
-
-# Import operator functions from SparseOperator so we can extend them
-import .SparseOperator: operator_u, operator_coriolis_diagonal, operator_coriolis_offdiag,
-                        operator_viscous_diffusion, operator_buoyancy, operator_coriolis_v_to_u,
-                        operator_u_toroidal, operator_coriolis_toroidal, operator_viscous_toroidal,
-                        operator_theta, operator_thermal_diffusion, operator_thermal_advection
-import .MHDOperator: is_dipole_case
+# This file is included in Cross via MHD/MHD.jl
+# All operator functions (operator_u, operator_coriolis_*, etc.) and is_dipole_case
+# are available in the Cross module namespace.
 
 # -----------------------------------------------------------------------------
 # Inline operator construction for MHDStabilityOperator

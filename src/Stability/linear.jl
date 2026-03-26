@@ -7,14 +7,9 @@
 #  boundary conditions (Dirichlet / stress-free).
 # =============================================================================
 
-using LinearAlgebra
-using KrylovKit
-using LinearMaps
-using Parameters
-using Random
-using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
-
-import ..Cross: ChebyshevDiffn
+# Dependencies provided by Cross module:
+# LinearAlgebra, KrylovKit, LinearMaps, Parameters, Random, ArnoldiMethod
+# ChebyshevDiffn is available in the Cross namespace
 
 const _fourπ = 4π
 

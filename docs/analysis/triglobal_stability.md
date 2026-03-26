@@ -173,6 +173,35 @@ This is automatically enforced when constructing `BasicState3D` from physical da
 
 ## Creating 3D Basic States
 
+### v2.0 Unified API
+
+In v2.0, `basic_state(params; mode=:nonaxisymmetric)` replaces the manual `ChebyshevDiffn` + `nonaxisymmetric_basic_state` workflow. Call `estimate_size` before large triglobal solves:
+
+```julia
+using Cross
+
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1.5e7, χ=0.35, lmax=40, Nr=48)
+
+# Non-axisymmetric basic state (Laplace approximation)
+bs3d = basic_state(params; mode=:nonaxisymmetric, mmax_bs=2)
+
+# Check problem size before committing memory
+problem = TriglobalProblem(params, bs3d, -2:2)
+estimate_size(problem)
+
+# Solve
+result = solve(problem; nev=8)
+println("Growth rate: ", result.growth_rate)
+println("Frequency:   ", result.frequency)
+```
+
+For the self-consistent solver with full geostrophic balance:
+
+```julia
+bs3d = basic_state(params; mode=:selfconsistent, max_iterations=50)
+result = solve(TriglobalProblem(params, bs3d, -5:5); nev=6)
+```
+
 ### The Full Geostrophic Basic State
 
 For non-axisymmetric basic states, Cross.jl computes the **complete velocity field** including:

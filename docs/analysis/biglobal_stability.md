@@ -109,6 +109,27 @@ end
 
 ## Creating Basic States
 
+### v2.0 Unified API
+
+In v2.0, use `basic_state(params; mode=...)` instead of constructing `ChebyshevDiffn` manually:
+
+```julia
+using Cross
+
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=12, lmax=60, Nr=64)
+
+# Conduction profile (no flow)
+bs = basic_state(params; mode=:conduction)
+
+# Meridional thermal wind
+bs = basic_state(params; mode=:meridional, amplitude=0.1)
+
+# Solve with v2.0 API
+result = solve(BiglobalProblem(params, bs); nev=6)
+println("Growth rate: ", result.growth_rate)
+println("Frequency:   ", result.frequency)
+```
+
 ### Method 1: Conduction Profile (No Flow)
 
 The simplest case—useful as a reference or when thermal wind is negligible:
@@ -256,6 +277,7 @@ op = LinearStabilityOperator(params)
 
 ### Compute Eigenvalues
 
+**Legacy API:**
 ```julia
 # Find leading modes (modified by mean flow)
 eigenvalues, eigenvectors, _, info = leading_modes(params; nev=8)
@@ -266,6 +288,19 @@ eigenvalues, eigenvectors, _, info = leading_modes(params; nev=8)
 println("With mean flow:")
 println("  Growth rate: σ = $σ₁")
 println("  Drift frequency: ω = $ω₁")
+```
+
+**v2.0 API:**
+```julia
+# Build basic state with unified constructor
+bs = basic_state(params; mode=:meridional, amplitude=0.1)
+
+# Solve biglobal problem
+result = solve(BiglobalProblem(params, bs); nev=8)
+
+println("With mean flow (v2.0):")
+println("  Growth rate: σ = ", result.growth_rate)
+println("  Drift frequency: ω = ", result.frequency)
 ```
 
 ### Compare to No-Flow Case

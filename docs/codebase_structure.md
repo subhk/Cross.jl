@@ -6,43 +6,60 @@ This page provides an overview of the Cross.jl source code organization, helping
 
 ```
 Cross.jl/
-├── src/                    # Source code
+├── src/                              # Source code
+│   ├── Cross.jl                      # Main module — includes submodules, exports public API
+│   ├── banner.jl                     # Welcome message
+│   ├── types.jl                      # v2.0: StabilityResult, problem types, estimate_size
+│   ├── validation.jl                 # v2.0: Input validation with errors and warnings
+│   ├── show.jl                       # v2.0: Pretty-printing for all public types
 │   │
-│   │   # === INCLUDED IN CROSS MODULE ===
-│   ├── Cross.jl            # Main module (entry point)
-│   ├── Chebyshev.jl        # Radial discretization
-│   ├── banner.jl           # ASCII banner and version info
-│   ├── get_velocity.jl     # Field reconstruction
-│   ├── basic_state.jl      # Basic state definitions
-│   ├── basic_state_operators.jl  # Basic state operators
-│   ├── thermal_wind.jl     # Thermal wind balance solver
-│   ├── linear_stability.jl # Core stability analysis
-│   ├── onset_convection.jl # Mode 1: No mean flow
-│   ├── biglobal_stability.jl # Mode 2: Axisymmetric mean flow
-│   ├── triglobal_stability.jl # Mode 3: Non-axisymmetric mean flow
+│   ├── Spectral/
+│   │   ├── Spectral.jl               # Entry point — includes chebyshev + ultraspherical
+│   │   ├── chebyshev.jl              # ChebyshevDiffn differentiation matrices
+│   │   └── ultraspherical.jl        # Olver-Townsend sparse spectral method
 │   │
-│   │   # === STANDALONE FILES (NOT included in module) ===
-│   ├── boundary_conditions.jl  # BC utilities (standalone)
-│   ├── SparseOperator.jl       # Sparse ultraspherical method
-│   ├── UltrasphericalSpectral.jl # Ultraspherical utilities
-│   ├── OnsetEigenvalueSolver.jl  # Alternative eigensolver
-│   ├── DipoleOperators.jl      # Dipole field operators
-│   ├── MHDOperator.jl          # MHD extension
-│   ├── MHDOperatorFunctions.jl # MHD operator terms
-│   ├── MHDAssembly.jl          # MHD matrix assembly
-│   └── CompleteMHD.jl          # MHD high-level interface
+│   ├── Operators/
+│   │   ├── Operators.jl              # Entry point
+│   │   ├── sparse_operator.jl       # Sparse hydrodynamic operators
+│   │   └── boundary_conditions.jl   # Mechanical, thermal, magnetic BCs
+│   │
+│   ├── BasicStates/
+│   │   ├── BasicStates.jl            # Entry point
+│   │   ├── basic_state.jl           # BasicState, BasicState3D, SphericalHarmonicBC types
+│   │   ├── advection_diffusion.jl   # Self-consistent solver
+│   │   └── basic_state_operators.jl # Coupling operators
+│   │
+│   ├── Stability/
+│   │   ├── Stability.jl              # Entry point
+│   │   ├── linear.jl                # OnsetParams, LinearStabilityOperator
+│   │   ├── solver.jl                # Eigenvalue solving (Arnoldi, Krylov)
+│   │   ├── velocity.jl              # Velocity reconstruction
+│   │   ├── onset.jl                 # Onset convection (no mean flow)
+│   │   ├── biglobal.jl              # Biglobal (axisymmetric mean flow)
+│   │   └── triglobal.jl             # Triglobal (3D mode coupling)
+│   │
+│   └── MHD/
+│       ├── MHD.jl                    # Entry point
+│       ├── types.jl                  # MHDParams, BackgroundField enum
+│       ├── dipole.jl                 # Dipole field operators
+│       ├── operator_functions.jl    # Lorentz, induction, diffusion operators
+│       └── assembly.jl              # MHD matrix assembly
 │
-├── test/                   # Test suite
-├── example/                # Example scripts
-├── docs/                   # Documentation (MkDocs)
-└── Project.toml            # Julia package manifest
+├── ext/
+│   ├── CrossRecipesBaseExt/          # Plots.jl recipes (weak dep)
+│   └── CrossMakieExt/                # Makie visualization (weak dep)
+│
+├── test/                             # Test suite
+├── example/                          # Example scripts
+├── docs/                             # Documentation (MkDocs)
+└── Project.toml                      # Julia package manifest
 ```
 
 ## Core Architecture
 
 ### Module Entry Point (`Cross.jl`)
 
-The main module file orchestrates all components:
+The main module file orchestrates all submodules and exports the public API:
 
 ```julia
 module Cross
@@ -52,19 +69,18 @@ module Cross
     using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
     using KrylovKit
 
-    # Core components (order matters!)
-    include("Chebyshev.jl")           # Radial discretization
-    include("banner.jl")               # ASCII banner
-    include("get_velocity.jl")         # Field reconstruction
-    include("basic_state.jl")          # Basic state types
-    include("basic_state_operators.jl") # Basic state operators
-    include("thermal_wind.jl")         # Thermal wind balance
-    include("linear_stability.jl")     # Core eigenvalue machinery
+    # v2.0 core (order matters!)
+    include("banner.jl")               # Welcome message
+    include("types.jl")                # StabilityResult, problem types, estimate_size
+    include("validation.jl")           # Input validation
+    include("show.jl")                 # Pretty-printing for public types
 
-    # Three analysis modes
-    include("onset_convection.jl")     # No mean flow
-    include("biglobal_stability.jl")   # Axisymmetric mean flow
-    include("triglobal_stability.jl")  # Non-axisymmetric mean flow
+    # Submodules
+    include("Spectral/Spectral.jl")        # Chebyshev + ultraspherical discretization
+    include("Operators/Operators.jl")      # Sparse operators + boundary conditions
+    include("BasicStates/BasicStates.jl")  # Basic state types and coupling operators
+    include("Stability/Stability.jl")      # Eigenvalue machinery and analysis modes
+    include("MHD/MHD.jl")                  # MHD extension
 
     export ...
 end
@@ -76,15 +92,33 @@ Cross.jl provides three distinct analysis modes for different physical scenarios
 
 | Mode | File | Basic State | Use Case |
 |------|------|-------------|----------|
-| **Onset** | `onset_convection.jl` | None (conduction only) | Classical convection onset |
-| **Biglobal** | `biglobal_stability.jl` | Axisymmetric ($m=0$) | Thermal wind effects |
-| **Triglobal** | `triglobal_stability.jl` | Non-axisymmetric | 3D boundary forcing |
+| **Onset** | `Stability/onset.jl` | None (conduction only) | Classical convection onset |
+| **Biglobal** | `Stability/biglobal.jl` | Axisymmetric ($m=0$) | Thermal wind effects |
+| **Triglobal** | `Stability/triglobal.jl` | Non-axisymmetric | 3D boundary forcing |
 
 ## Source File Descriptions
 
-### Core Infrastructure
+### v2.0 Core Files
 
-#### `Chebyshev.jl`
+#### `types.jl`
+Defines the `StabilityResult` return type, common problem parameter types, and `estimate_size` utilities introduced in v2.0.
+
+#### `validation.jl`
+Input validation layer introduced in v2.0. Emits structured errors and warnings before problem setup to catch misconfigurations early.
+
+#### `show.jl`
+Pretty-printing methods (`Base.show`) for all public types, introduced in v2.0.
+
+#### `banner.jl`
+Welcome message printed on package load.
+
+**Key Exports:**
+- `CROSS_BANNER` - ASCII art banner string
+- `print_cross_header()` - Print the banner
+
+### Spectral Submodule (`Spectral/`)
+
+#### `Spectral/chebyshev.jl`
 Chebyshev spectral differentiation for radial discretization.
 
 **Key Types:**
@@ -104,70 +138,21 @@ end
 **Key Functions:**
 - `ChebyshevDiffn(N, [r_i, r_o], nderiv)` - Construct differentiation matrices
 
-#### `banner.jl`
-ASCII banner and version information.
+#### `Spectral/ultraspherical.jl`
+Olver-Townsend sparse spectral method using ultraspherical (Gegenbauer) polynomials for large-scale problems.
 
-**Key Exports:**
-- `CROSS_BANNER` - ASCII art banner string
-- `print_cross_header()` - Print the banner
+### Operators Submodule (`Operators/`)
 
-#### `thermal_wind.jl`
-Thermal wind balance solver for computing zonal flow from temperature gradients.
+#### `Operators/sparse_operator.jl`
+Sparse hydrodynamic operators using the ultraspherical spectral basis.
 
-**Key Functions:**
-- `solve_thermal_wind_balance!(bs, E, Ra, Pr)` - Compute axisymmetric thermal wind
-- `solve_thermal_wind_balance_3d!(bs3d, E, Ra, Pr)` - Compute 3D thermal wind
-- `build_thermal_wind(cd, χ, E, Ra, Pr, lmax_bs, amplitude)` - Build thermal wind state
+#### `Operators/boundary_conditions.jl`
+Mechanical, thermal, and magnetic boundary condition application.
 
-#### `linear_stability.jl`
-Core linear stability analysis machinery shared by all modes.
+### BasicStates Submodule (`BasicStates/`)
 
-**Key Types:**
-```julia
-struct OnsetParams{T<:Real}
-    E::T              # Ekman number
-    Pr::T             # Prandtl number
-    Ra::T             # Rayleigh number
-    χ::T              # Radius ratio
-    m::Int            # Azimuthal wavenumber
-    lmax::Int         # Maximum spherical harmonic degree
-    Nr::Int           # Radial resolution
-    ri::T             # Inner radius
-    ro::T             # Outer radius
-    L::T              # Gap width (ro - ri)
-    mechanical_bc::Symbol
-    thermal_bc::Symbol
-    use_sparse_weighting::Bool
-    equatorial_symmetry::Symbol
-    basic_state
-end
-
-struct LinearStabilityOperator{T}
-    params::OnsetParams{T}
-    cd::ChebyshevDiffn{T}
-    r::Vector{T}
-    index_map::Dict{Tuple{Int,Symbol}, UnitRange{Int}}
-    l_sets::Dict{Symbol, Vector{Int}}
-    total_dof::Int
-    radial_cache::Dict{Tuple{Int,Int}, Matrix{T}}
-end
-```
-
-**Key Functions:**
-- `assemble_matrices(op)` - Build A and B matrices
-- `solve_eigenvalue_problem(op; nev, which)` - Compute eigenvalues
-- `find_critical_rayleigh(E, Pr, χ, m, lmax, Nr; tol)` - Find critical Ra
-
-#### `get_velocity.jl`
-Convert poloidal/toroidal potentials on a grid to velocity components.
-
-**Key Functions:**
-- `potentials_to_velocity(P, T; Dr, Dθ, Lθ, r, sintheta, m)` - Grid-based velocity
-
-### Basic States
-
-#### `basic_state.jl`
-Definitions for background temperature and flow states.
+#### `BasicStates/basic_state.jl`
+Definitions for background temperature and flow states, including the `SphericalHarmonicBC` type (v2.0).
 
 **Key Types:**
 ```julia
@@ -203,10 +188,16 @@ end
 - `conduction_basic_state(cd, χ, lmax_bs)` - Pure conduction profile
 - `meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, amplitude)` - With thermal wind
 - `nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amplitudes)` - 3D state
-- `solve_thermal_wind_balance!(...)` - Compute zonal flow from temperature
-- `solve_thermal_wind_balance_3d!(...)` - 3D thermal wind
 
-#### `basic_state_operators.jl`
+#### `BasicStates/advection_diffusion.jl`
+Self-consistent advection-diffusion solver for computing basic states.
+
+**Key Functions:**
+- `solve_thermal_wind_balance!(bs, E, Ra, Pr)` - Compute axisymmetric thermal wind
+- `solve_thermal_wind_balance_3d!(bs3d, E, Ra, Pr)` - Compute 3D thermal wind
+- `build_thermal_wind(cd, χ, E, Ra, Pr, lmax_bs, amplitude)` - Build thermal wind state
+
+#### `BasicStates/basic_state_operators.jl`
 Operators for incorporating basic state effects into stability analysis.
 
 **Key Types:**
@@ -223,9 +214,61 @@ end
 - `build_basic_state_operators(bs, params)` - Construct operators
 - `add_basic_state_operators!(A, B, ops)` - Add to stability matrices
 
+### Stability Submodule (`Stability/`)
+
+#### `Stability/linear.jl`
+Core linear stability analysis machinery shared by all modes.
+
+**Key Types:**
+```julia
+struct OnsetParams{T<:Real}
+    E::T              # Ekman number
+    Pr::T             # Prandtl number
+    Ra::T             # Rayleigh number
+    χ::T              # Radius ratio
+    m::Int            # Azimuthal wavenumber
+    lmax::Int         # Maximum spherical harmonic degree
+    Nr::Int           # Radial resolution
+    ri::T             # Inner radius
+    ro::T             # Outer radius
+    L::T              # Gap width (ro - ri)
+    mechanical_bc::Symbol
+    thermal_bc::Symbol
+    use_sparse_weighting::Bool
+    equatorial_symmetry::Symbol
+    basic_state
+end
+
+struct LinearStabilityOperator{T}
+    params::OnsetParams{T}
+    cd::ChebyshevDiffn{T}
+    r::Vector{T}
+    index_map::Dict{Tuple{Int,Symbol}, UnitRange{Int}}
+    l_sets::Dict{Symbol, Vector{Int}}
+    total_dof::Int
+    radial_cache::Dict{Tuple{Int,Int}, Matrix{T}}
+end
+```
+
+**Key Functions:**
+- `assemble_matrices(op)` - Build A and B matrices
+
+#### `Stability/solver.jl`
+Eigenvalue solving via Arnoldi (shift-invert) and Krylov iterative methods.
+
+**Key Functions:**
+- `solve_eigenvalue_problem(op; nev, which)` - Compute eigenvalues
+- `find_critical_rayleigh(E, Pr, χ, m, lmax, Nr; tol)` - Find critical Ra
+
+#### `Stability/velocity.jl`
+Reconstruct velocity components from poloidal/toroidal potentials.
+
+**Key Functions:**
+- `potentials_to_velocity(P, T; Dr, Dθ, Lθ, r, sintheta, m)` - Grid-based velocity
+
 ### Analysis Modes
 
-#### `onset_convection.jl`
+#### `Stability/onset.jl`
 Classical convection onset without mean flow.
 
 **Key Types:**
@@ -245,7 +288,7 @@ end
 - `estimate_onset_problem_size(params)` - Memory/size estimates
 - `onset_scaling_laws(E)` - Asymptotic predictions
 
-#### `biglobal_stability.jl`
+#### `Stability/biglobal.jl`
 Stability analysis with axisymmetric mean flow (thermal wind).
 
 **Key Types:**
@@ -267,7 +310,7 @@ end
 - `compare_onset_vs_biglobal(params)` - Compare to no-flow case
 - `sweep_thermal_wind_amplitude(params, amplitudes)` - Parameter study
 
-#### `triglobal_stability.jl`
+#### `Stability/triglobal.jl`
 Tri-global analysis with non-axisymmetric basic states.
 
 **Key Types:**
@@ -297,29 +340,26 @@ end
 - `solve_triglobal_eigenvalue_problem(params; nev, σ_target, verbose)` - Solve coupled system
 - `find_critical_rayleigh_triglobal(params)` - Critical Ra for 3D forcing
 
-### Standalone Files (Not Included in Cross Module)
+### MHD Submodule (`MHD/`)
 
-!!! warning "Not Part of Main Module"
-    The following files exist in `src/` but are **NOT included** in the Cross.jl module.
-    They are standalone implementations for future integration, alternative methods, or separate use.
+#### `MHD/types.jl`
+`MHDParams` parameter struct and `BackgroundField` enum for selecting the imposed magnetic field geometry.
 
-#### Sparse/Ultraspherical Methods
+#### `MHD/dipole.jl`
+Dipole magnetic field operators for the background field.
 
-- **`SparseOperator.jl`** - Sparse ultraspherical spectral method for large problems
-- **`UltrasphericalSpectral.jl`** - Utilities for ultraspherical (Gegenbauer) polynomial methods
+#### `MHD/operator_functions.jl`
+Lorentz force, induction, and magnetic diffusion operator terms.
 
-#### Alternative Solvers
+#### `MHD/assembly.jl`
+MHD matrix assembly — adds magnetic terms to the A/B matrices produced by the Stability submodule.
 
-- **`OnsetEigenvalueSolver.jl`** - Alternative eigenvalue solver implementation
-- **`boundary_conditions.jl`** - Standalone boundary condition utilities
+### Extension Packages (`ext/`)
 
-#### MHD Extension
+Visualization support is provided through Julia's extension mechanism (weak dependencies):
 
-- **`MHDOperator.jl`** - Main MHD operator definitions
-- **`MHDOperatorFunctions.jl`** - Individual operator terms for MHD equations
-- **`MHDAssembly.jl`** - Matrix assembly for MHD problems
-- **`CompleteMHD.jl`** - High-level MHD interface
-- **`DipoleOperators.jl`** - Dipole magnetic field operators
+- **`CrossRecipesBaseExt/`** - Plots.jl recipes, loaded automatically when `RecipesBase` is available
+- **`CrossMakieExt/`** - Interactive Makie visualization, loaded automatically when a Makie backend is available
 
 ## Data Flow
 
@@ -348,10 +388,10 @@ end
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Matrix Assembly                              │
-│  • Chebyshev radial discretization                              │
+│  • Chebyshev / ultraspherical radial discretization             │
 │  • Spherical harmonic angular expansion                         │
 │  • Boundary condition application                               │
-│  • Basic state operators (if applicable)                        │
+│  • Basic state coupling operators (if applicable)               │
 └─────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -381,7 +421,7 @@ $$
 \cos\theta \frac{\partial \bar{u}_\phi}{\partial r} - \frac{\sin\theta}{r} \bar{u}_\phi = -\frac{Ra \cdot E^2}{2 Pr \cdot r_o} \frac{\partial \bar{\Theta}}{\partial \theta}
 $$
 
-**Implementation:** `solve_thermal_wind_balance!()` in `basic_state.jl`
+**Implementation:** `solve_thermal_wind_balance!()` in `BasicStates/advection_diffusion.jl`
 
 1. Project temperature gradient onto spherical harmonics
 2. Apply coupling coefficients ($\ell \to \ell \pm 1$)
@@ -396,7 +436,7 @@ $$
 Y_{\ell_1, m_1} \times Y_{\ell_2, m_2} = \sum_{\ell'} G_{\ell_1 \ell_2 \ell'}^{m_1 m_2 m'} Y_{\ell', m_1+m_2}
 $$
 
-**Implementation:** `setup_coupled_mode_problem()` in `triglobal_stability.jl`
+**Implementation:** `setup_coupled_mode_problem()` in `Stability/triglobal.jl`
 
 1. Identify non-zero $m_{bs}$ modes in basic state
 2. Build coupling graph: $m \leftrightarrow m \pm m_{bs}$
@@ -423,37 +463,39 @@ Pkg.test("Cross")
 
 ## Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `LinearAlgebra` | Standard linear algebra |
-| `SparseArrays` | Sparse matrix support |
-| `ArnoldiMethod` | Shift-invert eigensolvers |
-| `KrylovKit` | Iterative eigensolvers |
-| `Parameters` | `@with_kw` struct macros |
-| `JLD2` | Data serialization |
-| `WignerSymbols` | Gaunt coefficients for spherical harmonic coupling |
-| `SpecialFunctions` | Special mathematical functions |
-| `LinearMaps` | Linear operator abstractions |
-| `BenchmarkTools` | Performance benchmarking |
+| Package | Type | Purpose |
+|---------|------|---------|
+| `LinearAlgebra` | stdlib | Standard linear algebra |
+| `SparseArrays` | stdlib | Sparse matrix support |
+| `ArnoldiMethod` | direct | Shift-invert eigensolvers |
+| `KrylovKit` | direct | Iterative eigensolvers |
+| `Parameters` | direct | `@with_kw` struct macros |
+| `JLD2` | direct | Data serialization |
+| `WignerSymbols` | direct | Gaunt coefficients for spherical harmonic coupling |
+| `SpecialFunctions` | direct | Special mathematical functions |
+| `LinearMaps` | direct | Linear operator abstractions |
+| `BenchmarkTools` | direct | Performance benchmarking |
+| `RecipesBase` | weak | Plots.jl plot recipes (`CrossRecipesBaseExt`) |
+| `Makie` | weak | Interactive visualization (`CrossMakieExt`) |
 
 ## Extension Points
 
 ### Adding New Basic States
 
-1. Define new function in `basic_state.jl` returning `BasicState` or `BasicState3D`
+1. Define new function in `BasicStates/basic_state.jl` returning `BasicState` or `BasicState3D`
 2. Populate coefficient dictionaries for temperature and velocity
 3. Ensure derivatives are computed consistently
 
 ### Adding New Physics
 
-1. Create new operator file (e.g., `MyPhysicsOperator.jl`)
+1. Create a new submodule directory under `src/` (e.g., `src/MyPhysics/`)
 2. Define parameter struct with required fields
 3. Implement matrix assembly functions
 4. Add operators to the A/B matrices in assembly
-5. Export from `Cross.jl`
+5. Include the submodule entry point in `Cross.jl` and export as needed
 
 ### Custom Boundary Conditions
 
-1. Extend `boundary_conditions.jl` with new BC type
+1. Extend `Operators/boundary_conditions.jl` with new BC type
 2. Implement row replacement in `apply_boundary_conditions!()`
 3. Add option to parameter structs

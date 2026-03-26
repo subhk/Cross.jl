@@ -13,32 +13,57 @@ By the end of this guide you will:
 
 ## Step 1: Define Physical and Numerical Parameters
 
-The `ShellParams` helper converts your inputs into a consistent `OnsetParams` struct used internally.
+=== "v2.0 API"
 
-```julia
-using Cross
+    In v2.0, use `OnsetParams` directly. `estimate_size` lets you check the
+    problem size before committing to a solve:
 
-params = ShellParams(
-    # Physical parameters
-    E = 3e-6,              # Ekman number
-    Pr = 1.0,              # Prandtl number
-    Ra = 5e6,              # Initial Rayleigh guess
+    ```julia
+    using Cross
 
-    # Geometry
-    χ = 0.35,              # Radius ratio r_i / r_o
-    ri = 0.35,             # Inner radius (optional, derived from χ)
-    ro = 1.0,              # Outer radius
+    params = OnsetParams(
+        E = 3e-6,              # Ekman number
+        Pr = 1.0,              # Prandtl number
+        Ra = 5e6,              # Initial Rayleigh guess
+        χ = 0.35,              # Radius ratio r_i / r_o
+        m = 8,                 # Azimuthal wavenumber
+        lmax = 80,             # Maximum spherical harmonic degree
+        Nr = 96,               # Radial grid resolution
+    )
 
-    # Spectral resolution
-    m = 8,                 # Azimuthal wavenumber
-    lmax = 80,             # Maximum spherical harmonic degree
-    Nr = 96,               # Radial grid resolution
+    problem = OnsetProblem(params)
+    estimate_size(problem)     # prints DOF and estimated memory before solving
+    ```
 
-    # Boundary conditions
-    mechanical_bc = :no_slip,
-    thermal_bc = :fixed_temperature,
-)
-```
+=== "v1.x API"
+
+    The `ShellParams` helper converts your inputs into a consistent `OnsetParams`
+    struct used internally.
+
+    ```julia
+    using Cross
+
+    params = ShellParams(
+        # Physical parameters
+        E = 3e-6,              # Ekman number
+        Pr = 1.0,              # Prandtl number
+        Ra = 5e6,              # Initial Rayleigh guess
+
+        # Geometry
+        χ = 0.35,              # Radius ratio r_i / r_o
+        ri = 0.35,             # Inner radius (optional, derived from χ)
+        ro = 1.0,              # Outer radius
+
+        # Spectral resolution
+        m = 8,                 # Azimuthal wavenumber
+        lmax = 80,             # Maximum spherical harmonic degree
+        Nr = 96,               # Radial grid resolution
+
+        # Boundary conditions
+        mechanical_bc = :no_slip,
+        thermal_bc = :fixed_temperature,
+    )
+    ```
 
 ### Parameter Reference
 
@@ -155,31 +180,50 @@ The critical Rayleigh number search:
 
 ## Step 4: Compute Growth Rates at Fixed Rayleigh
 
-For parameter studies, use `find_growth_rate` to evaluate stability at fixed $Ra$:
+=== "v2.0 API"
 
-```julia
-# Single calculation
-eigenvalues, eigenvectors, _, info = find_growth_rate(op; nev=8)
+    Use `solve` on an `OnsetProblem`. Results are returned as a structured object
+    with named fields:
 
-σ₁ = real(eigenvalues[1])
-ω₁ = imag(eigenvalues[1])
+    ```julia
+    result = solve(OnsetProblem(params); nev=6)
 
-if σ₁ > 0
-    println("System is UNSTABLE (σ = $σ₁)")
-else
-    println("System is STABLE (σ = $σ₁)")
-end
-```
+    # Access results by name
+    println("Growth rate: ", result.growth_rate)
+    println("Frequency:   ", result.frequency)
+    println("Eigenvalues: ", result.eigenvalues)
 
-Or use `leading_modes` directly:
+    # The result pretty-prints in the REPL:
+    result
+    ```
 
-```julia
-eigenvalues, eigenvectors, _, info = leading_modes(params;
-    nev = 4,
-    which = :LR,
-    tol = 1e-6,
-)
-```
+=== "v1.x API"
+
+    For parameter studies, use `find_growth_rate` to evaluate stability at fixed $Ra$:
+
+    ```julia
+    # Single calculation
+    eigenvalues, eigenvectors, _, info = find_growth_rate(op; nev=8)
+
+    σ₁ = real(eigenvalues[1])
+    ω₁ = imag(eigenvalues[1])
+
+    if σ₁ > 0
+        println("System is UNSTABLE (σ = $σ₁)")
+    else
+        println("System is STABLE (σ = $σ₁)")
+    end
+    ```
+
+    Or use `leading_modes` directly:
+
+    ```julia
+    eigenvalues, eigenvectors, _, info = leading_modes(params;
+        nev = 4,
+        which = :LR,
+        tol = 1e-6,
+    )
+    ```
 
 ## Step 5: Reconstruct Physical Fields
 
@@ -269,69 +313,137 @@ println("Critical mode: m = $m_crit, Ra_c = $(results[m_crit].Ra_c)")
 
 ## Complete Example Script
 
-Here's a complete workflow combining all steps:
+=== "v2.0 API"
 
-```julia
-#!/usr/bin/env julia
-# complete_onset_analysis.jl
+    ```julia
+    #!/usr/bin/env julia
+    # complete_onset_analysis_v2.jl
 
-using Cross
-using JLD2
-using Printf
+    using Cross
+    using JLD2
+    using Printf
 
-# === Configuration ===
-E = 1e-5
-Pr = 1.0
-χ = 0.35
-m_range = 5:15
-lmax = 60
-Nr = 64
+    # === Configuration ===
+    E = 1e-5
+    Pr = 1.0
+    χ = 0.35
+    m_range = 5:15
+    lmax = 60
+    Nr = 64
 
-# === Sweep over m ===
-results = []
+    # === Sweep over m ===
+    results = []
 
-for m in m_range
-    @printf("Processing m = %2d... ", m)
+    for m in m_range
+        @printf("Processing m = %2d... ", m)
 
-    params = ShellParams(
-        E = E, Pr = Pr, Ra = 1e7, χ = χ,
-        m = m, lmax = max(lmax, m + 10), Nr = Nr,
-        mechanical_bc = :no_slip,
-        thermal_bc = :fixed_temperature,
-    )
+        params = OnsetParams(E=E, Pr=Pr, Ra=1e7, χ=χ,
+                             m=m, lmax=max(lmax, m + 10), Nr=Nr)
+        problem = OnsetProblem(params)
+        estimate_size(problem)
 
-    try
-        Ra_c, ω_c, eigvec = find_critical_rayleigh(
-            E = E, Pr = Pr, χ = χ, m = m,
-            lmax = params.lmax, Nr = Nr,
-            Ra_guess = 1e6,
-        )
-        push!(results, (m=m, Ra_c=Ra_c, ω_c=ω_c))
-        @printf("Ra_c = %.4e, ω_c = %.4f\n", Ra_c, ω_c)
-    catch err
-        push!(results, (m=m, Ra_c=NaN, ω_c=NaN))
-        @printf("FAILED\n")
+        try
+            result = solve(problem; nev=6)
+            push!(results, (m=m, growth_rate=result.growth_rate,
+                            frequency=result.frequency,
+                            eigenvalues=result.eigenvalues))
+            @printf("σ = %.4e, ω = %.4f\n",
+                    result.growth_rate, result.frequency)
+        catch err
+            push!(results, (m=m, growth_rate=NaN, frequency=NaN,
+                            eigenvalues=nothing))
+            @printf("FAILED\n")
+        end
     end
-end
 
-# === Find global minimum ===
-valid = filter(r -> !isnan(r.Ra_c), results)
-if !isempty(valid)
-    critical = argmin(r -> r.Ra_c, valid)
-    println("\n" * "="^50)
-    @printf("Global critical point:\n")
-    @printf("  m_c  = %d\n", critical.m)
-    @printf("  Ra_c = %.6e\n", critical.Ra_c)
-    @printf("  ω_c  = %.6f\n", critical.ω_c)
-end
+    # === Find most unstable mode ===
+    valid = filter(r -> !isnan(r.growth_rate), results)
+    if !isempty(valid)
+        most_unstable = argmax(r -> r.growth_rate, valid)
+        println("\n" * "="^50)
+        @printf("Most unstable mode:\n")
+        @printf("  m   = %d\n", most_unstable.m)
+        @printf("  σ   = %.6e\n", most_unstable.growth_rate)
+        @printf("  ω   = %.6f\n", most_unstable.frequency)
+    end
 
-# === Save results ===
-@save "outputs/onset_sweep.jld2" results E Pr χ
-```
+    # === Save results ===
+    @save "outputs/onset_sweep_v2.jld2" results E Pr χ
+    ```
+
+=== "v1.x API"
+
+    ```julia
+    #!/usr/bin/env julia
+    # complete_onset_analysis.jl
+
+    using Cross
+    using JLD2
+    using Printf
+
+    # === Configuration ===
+    E = 1e-5
+    Pr = 1.0
+    χ = 0.35
+    m_range = 5:15
+    lmax = 60
+    Nr = 64
+
+    # === Sweep over m ===
+    results = []
+
+    for m in m_range
+        @printf("Processing m = %2d... ", m)
+
+        params = ShellParams(
+            E = E, Pr = Pr, Ra = 1e7, χ = χ,
+            m = m, lmax = max(lmax, m + 10), Nr = Nr,
+            mechanical_bc = :no_slip,
+            thermal_bc = :fixed_temperature,
+        )
+
+        try
+            Ra_c, ω_c, eigvec = find_critical_rayleigh(
+                E = E, Pr = Pr, χ = χ, m = m,
+                lmax = params.lmax, Nr = Nr,
+                Ra_guess = 1e6,
+            )
+            push!(results, (m=m, Ra_c=Ra_c, ω_c=ω_c))
+            @printf("Ra_c = %.4e, ω_c = %.4f\n", Ra_c, ω_c)
+        catch err
+            push!(results, (m=m, Ra_c=NaN, ω_c=NaN))
+            @printf("FAILED\n")
+        end
+    end
+
+    # === Find global minimum ===
+    valid = filter(r -> !isnan(r.Ra_c), results)
+    if !isempty(valid)
+        critical = argmin(r -> r.Ra_c, valid)
+        println("\n" * "="^50)
+        @printf("Global critical point:\n")
+        @printf("  m_c  = %d\n", critical.m)
+        @printf("  Ra_c = %.6e\n", critical.Ra_c)
+        @printf("  ω_c  = %.6f\n", critical.ω_c)
+    end
+
+    # === Save results ===
+    @save "outputs/onset_sweep.jld2" results E Pr χ
+    ```
 
 ## Checklist
 
 Before proceeding, verify:
+
+**v2.0 API**
+
+- [ ] `OnsetParams` constructed without assertion failures
+- [ ] `estimate_size(OnsetProblem(params))` shows expected DOF
+- [ ] `solve(problem; nev=6)` returns a result with `result.eigenvalues`
+- [ ] `result.growth_rate` and `result.frequency` are finite
+- [ ] Results saved for later reuse
+
+**v1.x API**
 
 - [ ] `ShellParams` constructed without assertion failures
 - [ ] Operator degrees of freedom align with expectations

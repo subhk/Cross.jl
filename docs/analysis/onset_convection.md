@@ -141,6 +141,27 @@ else
 end
 ```
 
+**v2.0 equivalent** — use `OnsetProblem` and `solve` for a cleaner interface. Call `estimate_size` first to check memory requirements:
+
+```julia
+# v2.0 API
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64)
+
+problem = OnsetProblem(params)
+estimate_size(problem)   # print DOFs and estimated memory before solving
+
+result = solve(problem; nev=6)
+
+println("Growth rate: ", result.growth_rate)
+println("Frequency:   ", result.frequency)
+
+if result.growth_rate > 0
+    println("System is UNSTABLE at Ra = $(params.Ra)")
+else
+    println("System is STABLE at Ra = $(params.Ra)")
+end
+```
+
 ### Step 4: Find Critical Rayleigh Number
 
 The critical Rayleigh number $Ra_c$ is the minimum $Ra$ at which convection onsets:
@@ -398,6 +419,61 @@ end
 @save "outputs/onset_convection_E$(E)_chi$(χ).jld2" results E Pr χ
 println("\nResults saved to outputs/")
 ```
+
+## v2.0 Complete Example
+
+The v2.0 API replaces `solve_onset_problem(...)` and `find_growth_rate(eigenvalues)` with a unified `solve` call and structured result accessors:
+
+```julia
+#!/usr/bin/env julia
+# onset_convection_v2.jl
+# v2.0-style onset analysis using OnsetProblem + solve
+
+using Cross
+using Printf
+
+E  = 1e-5
+Pr = 1.0
+χ  = 0.35
+
+println("="^60)
+println("Onset Convection Analysis — v2.0 API")
+println("="^60)
+
+results = []
+
+for m in 5:25
+    @printf("m = %2d: ", m)
+
+    params = OnsetParams(E=E, Pr=Pr, Ra=1e7, χ=χ,
+                         m=m, lmax=max(60, m+10), Nr=64)
+
+    problem = OnsetProblem(params)
+    estimate_size(problem)   # prints DOF count; remove if too verbose
+
+    result = solve(problem; nev=6)
+
+    push!(results, (m=m, growth_rate=result.growth_rate,
+                    frequency=result.frequency))
+    @printf("σ = %+.6e, ω = %+.6f\n",
+            result.growth_rate, result.frequency)
+end
+
+# Find most-unstable mode
+valid = filter(r -> isfinite(r.growth_rate), results)
+if !isempty(valid)
+    critical = argmax(r -> r.growth_rate, valid)
+    println("\n" * "="^60)
+    println("MOST UNSTABLE MODE (v2.0)")
+    @printf("  m = %d, σ = %.6e, ω = %+.6f\n",
+            critical.m, critical.growth_rate, critical.frequency)
+end
+```
+
+!!! note "Migrating from v1.x"
+    Replace `solve_onset_problem(...)` with `solve(OnsetProblem(params); nev=...)`.
+    Replace `find_growth_rate(eigenvalues)` with `result.growth_rate`.
+    Add `estimate_size(problem)` before large solves to check memory.
 
 ## Key References
 

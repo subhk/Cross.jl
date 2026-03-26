@@ -89,13 +89,13 @@ Cross.jl/
 │   ├── Cross.jl              # Main module entry point
 │   ├── Chebyshev.jl          # Chebyshev differentiation
 │   ├── UltrasphericalSpectral.jl  # Ultraspherical spectral method
-│   ├── linear_stability.jl   # Onset operator assembly
+│   ├── linear_stability.jl   # Onset operator assembly (OnsetParams, OnsetProblem)  [v2.0]
 │   ├── basic_state.jl        # Basic state construction
 │   ├── basic_state_operators.jl   # Basic state coupling operators
 │   ├── triglobal_stability.jl    # Tri-global mode coupling
 │   ├── get_velocity.jl       # Field reconstruction
 │   ├── boundary_conditions.jl    # BC enforcement
-│   ├── OnsetEigenvalueSolver.jl  # Eigenvalue solver interface
+│   ├── OnsetEigenvalueSolver.jl  # Eigenvalue solver interface (solve, estimate_size)  [v2.0]
 │   ├── MHDOperator.jl        # MHD operator structure
 │   ├── MHDOperatorFunctions.jl   # MHD operator implementations
 │   ├── MHDAssembly.jl        # MHD matrix assembly
@@ -112,6 +112,9 @@ Cross.jl/
 ├── Project.toml              # Package dependencies
 └── Manifest.toml             # Locked dependency versions
 ```
+
+!!! note "v2.0 API"
+    Cross.jl v2.0 introduces `OnsetParams`, `OnsetProblem`, `solve`, and `estimate_size` as the primary public interface. The v1.x `ShellParams` / `leading_modes` style still works but is considered legacy.
 
 ## Julia Configuration
 
@@ -170,37 +173,57 @@ Open `http://127.0.0.1:8000` in your browser to see the rendered site with live 
 
 Let's compute the growth rate for a rotating convection problem:
 
-```julia
-using Cross
+=== "v2.0 API"
 
-# Define physical parameters
-E = 1e-5       # Ekman number
-Pr = 1.0       # Prandtl number
-Ra = 2.1e7     # Rayleigh number
-m = 10         # Azimuthal wavenumber
+    ```julia
+    using Cross
 
-# Create parameter structure
-params = ShellParams(
-    E = E,
-    Pr = Pr,
-    Ra = Ra,
-    m = m,
-    lmax = 60,            # Max spherical harmonic degree
-    Nr = 64,              # Radial resolution
-    ri = 0.35,            # Inner radius
-    ro = 1.0,             # Outer radius
-    mechanical_bc = :no_slip,
-    thermal_bc = :fixed_temperature,
-)
+    # 1. Define parameters
+    params = OnsetParams(E=1e-3, Pr=1.0, Ra=1e5, χ=0.35,
+                         m=4, lmax=20, Nr=32)
 
-# Compute leading eigenvalues
-eigenvalues, eigenvectors, _, info = leading_modes(params; nev=4)
+    # 2. Create and solve
+    problem = OnsetProblem(params)
+    result = solve(problem; nev=6)
 
-# Display results
-for (i, λ) in enumerate(eigenvalues)
-    println("λ[$i] = $(real(λ)) + $(imag(λ))im")
-end
-```
+    # 3. View results
+    println("Growth rate: ", result.growth_rate)
+    println("Frequency: ", result.frequency)
+    ```
+
+=== "v1.x API"
+
+    ```julia
+    using Cross
+
+    # Define physical parameters
+    E = 1e-5       # Ekman number
+    Pr = 1.0       # Prandtl number
+    Ra = 2.1e7     # Rayleigh number
+    m = 10         # Azimuthal wavenumber
+
+    # Create parameter structure
+    params = ShellParams(
+        E = E,
+        Pr = Pr,
+        Ra = Ra,
+        m = m,
+        lmax = 60,            # Max spherical harmonic degree
+        Nr = 64,              # Radial resolution
+        ri = 0.35,            # Inner radius
+        ro = 1.0,             # Outer radius
+        mechanical_bc = :no_slip,
+        thermal_bc = :fixed_temperature,
+    )
+
+    # Compute leading eigenvalues
+    eigenvalues, eigenvectors, _, info = leading_modes(params; nev=4)
+
+    # Display results
+    for (i, λ) in enumerate(eigenvalues)
+        println("λ[$i] = $(real(λ)) + $(imag(λ))im")
+    end
+    ```
 
 ### Understanding the Output
 

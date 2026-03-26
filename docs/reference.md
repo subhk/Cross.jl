@@ -2,7 +2,138 @@
 
 Complete reference for Cross.jl functions, types, and modules.
 
-## Core Types
+> **Note:** The v1.x API (documented below under "Core Types", "Solver Functions", etc.) remains
+> fully functional for backward compatibility. New code should prefer the v2.0 Unified API.
+
+---
+
+## v2.0 Unified API
+
+Cross.jl v2.0 introduces a unified problem/solve/result interface that covers all analysis
+modes with a consistent workflow: construct a problem, call `solve`, inspect the result.
+
+### Problem Types
+
+```julia
+# OnsetProblem -- onset convection (no mean flow)
+problem = OnsetProblem(params)
+
+# BiglobalProblem -- axisymmetric mean flow
+problem = BiglobalProblem(params, basic_state)
+
+# TriglobalProblem -- non-axisymmetric, coupled modes
+problem = TriglobalProblem(params, basic_state_3d, m_range)
+
+# MHDProblem -- magnetohydrodynamic
+problem = MHDProblem(mhd_params)
+problem = MHDProblem(mhd_params, basic_state)
+```
+
+---
+
+### Unified Solve
+
+```julia
+result = solve(problem; nev=6, sigma=nothing)
+# Returns StabilityResult with:
+# result.eigenvalues      -- Vector{Complex{T}}
+# result.eigenvectors     -- Matrix{Complex{T}}
+# result.growth_rate      -- max real part
+# result.frequency        -- imag part of fastest-growing
+# result.problem          -- the problem that produced this
+# result.extra            -- NamedTuple of analysis-specific data
+```
+
+---
+
+### Convenience Accessors
+
+```julia
+growth_rate(result)    # same as result.growth_rate
+frequency(result)      # same as result.frequency
+leading_mode(result)   # eigenvector of fastest-growing mode
+```
+
+---
+
+### Unified Basic State
+
+```julia
+bs = basic_state(params; mode=:conduction)
+bs = basic_state(params; mode=:meridional, amplitude=0.05)
+bs = basic_state(params; mode=:selfconsistent, max_iterations=50, tol=1e-10)
+bs3d = basic_state(params; mode=:nonaxisymmetric, mmax_bs=2)
+```
+
+---
+
+### Input Validation
+
+`OnsetProblem`, `BiglobalProblem`, and `TriglobalProblem` constructors validate parameters
+automatically.
+
+**Hard errors** (constructor throws `ArgumentError`):
+
+| Parameter | Constraint |
+|-----------|------------|
+| `chi` | Must be in (0, 1) |
+| `E` | Must be > 0 |
+| `Pr` | Must be > 0 |
+| `Ra` | Must be >= 0 |
+| `Nr` | Must be >= 8 |
+| `lmax` | Must be >= 1 |
+| `m` | Must be >= 0 |
+| `mechanical_bc` | Must be a valid BC symbol (`:no_slip` or `:stress_free`) |
+| `thermal_bc` | Must be a valid BC symbol (`:fixed_temperature` or `:fixed_flux`) |
+
+**Warnings** (constructor prints to `@warn`):
+
+- Low `Nr` (potential under-resolution)
+- Extreme `E` values
+- `lmax >> Nr` (spectral/radial mismatch)
+- `m > lmax` (mode outside resolved range)
+
+---
+
+### Problem Size Estimation
+
+```julia
+estimate_size(problem)
+# Prints matrix dimensions and estimated memory
+# Auto-warns in solve() if > 8 GB
+```
+
+---
+
+### Pretty-Printing
+
+All v2.0 types (`OnsetProblem`, `BiglobalProblem`, `TriglobalProblem`, `MHDProblem`,
+`StabilityResult`) have custom `show` methods for readable REPL output.
+
+---
+
+### Plot Extensions
+
+**Plots.jl** (lightweight, static):
+
+```julia
+using Cross, Plots
+plot(result)                          # eigenvalue spectrum
+plot(results; sweep_param=:Ra)        # parameter sweep
+```
+
+**Makie** (interactive, publication-quality):
+
+```julia
+using Cross, CairoMakie
+eigenspectrum(result)                 # interactive spectrum
+plot_meridional(result, 1)            # meridional slice
+plot_radial(result, 1)                # radial profiles
+```
+
+---
+
+## Core Types (v1.x)
 
 ### Parameter Structures
 
@@ -34,7 +165,10 @@ end
 
 ---
 
-#### `ShellParams`
+#### `ShellParams` (deprecated)
+
+> **Deprecated in v2.0.** Use `OnsetProblem`, `BiglobalProblem`, or `TriglobalProblem` instead.
+> `ShellParams` continues to work for backward compatibility.
 
 User-friendly constructor for `OnsetParams`.
 
@@ -673,33 +807,74 @@ The `which` parameter controls eigenvalue selection:
 
 ```
 Cross (main module)
-├── Core Types
-│   ├── ChebyshevDiffn         # Radial discretization
-│   ├── OnsetParams, ShellParams
-│   ├── LinearStabilityOperator
-│   ├── BasicState, BasicState3D
-│   ├── SphericalHarmonicBC    # Symbolic boundary conditions
-│   ├── TriglobalParams
-│   └── CoupledModeProblem
 │
-├── Symbolic BC Constructors
-│   ├── Ylm(ℓ, m, amp)         # General constructor
-│   ├── Y00, Y10, Y11          # Monopole, dipole
-│   ├── Y20, Y21, Y22          # Quadrupole
-│   └── Y30-Y44                # Higher orders
+├── src/
+│   ├── Cross.jl                    # Top-level module & exports
+│   ├── Chebyshev.jl                # ChebyshevDiffn radial discretization
+│   ├── banner.jl                   # ASCII banner
+│   ├── basic_state.jl              # BasicState, BasicState3D, SphericalHarmonicBC
+│   ├── get_velocity.jl             # Velocity reconstruction
+│   ├── linear_stability.jl         # OnsetParams, ShellParams (deprecated), solver
+│   ├── triglobal_stability.jl      # TriglobalParams, CoupledModeProblem, solver
+│   │
+│   ├── problems/                   # v2.0 unified problem types
+│   │   ├── onset.jl                # OnsetProblem
+│   │   ├── biglobal.jl             # BiglobalProblem
+│   │   ├── triglobal.jl            # TriglobalProblem
+│   │   └── mhd.jl                  # MHDProblem
+│   │
+│   ├── solve/                      # v2.0 unified solve dispatch
+│   │   └── solve.jl                # solve(problem; ...) -> StabilityResult
+│   │
+│   ├── result/                     # v2.0 result types & accessors
+│   │   └── stability_result.jl     # StabilityResult, growth_rate, frequency, leading_mode
+│   │
+│   └── validation/                 # v2.0 input validation & size estimation
+│       └── validate.jl             # Parameter checks, estimate_size
+│
+├── v2.0 Unified API
+│   ├── OnsetProblem               # Onset convection (no mean flow)
+│   ├── BiglobalProblem            # Axisymmetric mean flow
+│   ├── TriglobalProblem           # Non-axisymmetric, coupled modes
+│   ├── MHDProblem                 # Magnetohydrodynamic stability
+│   ├── solve(problem; ...)        # Unified solver -> StabilityResult
+│   ├── growth_rate, frequency     # Convenience accessors
+│   ├── leading_mode               # Fastest-growing eigenvector
+│   └── estimate_size              # Memory / size estimation
+│
+├── v1.x API (backward compatible)
+│   ├── Core Types
+│   │   ├── ChebyshevDiffn
+│   │   ├── OnsetParams, ShellParams (deprecated)
+│   │   ├── LinearStabilityOperator
+│   │   ├── BasicState, BasicState3D
+│   │   ├── SphericalHarmonicBC
+│   │   ├── TriglobalParams
+│   │   └── CoupledModeProblem
+│   │
+│   ├── Symbolic BC Constructors
+│   │   ├── Ylm(l, m, amp)
+│   │   ├── Y00, Y10, Y11
+│   │   ├── Y20, Y21, Y22
+│   │   └── Y30-Y44
+│   │
+│   └── Exported Functions
+│       ├── solve_eigenvalue_problem
+│       ├── leading_modes, find_growth_rate
+│       ├── find_critical_rayleigh
+│       ├── basic_state
+│       ├── solve_triglobal_eigenvalue_problem
+│       └── ... (see exports in Cross.jl)
 │
 ├── Analysis Modes
-│   ├── Onset Convection       # No mean flow
-│   ├── Biglobal Stability     # Axisymmetric mean flow
-│   └── Triglobal Stability    # Non-axisymmetric mean flow
+│   ├── Onset Convection           # No mean flow
+│   ├── Biglobal Stability         # Axisymmetric mean flow
+│   ├── Triglobal Stability        # Non-axisymmetric mean flow
+│   └── MHD Stability              # Magnetohydrodynamic (v2.0)
 │
-└── Exported Functions
-    ├── solve_eigenvalue_problem
-    ├── leading_modes, find_growth_rate
-    ├── find_critical_rayleigh
-    ├── basic_state             # High-level BC interface
-    ├── solve_triglobal_eigenvalue_problem
-    └── ... (see exports in Cross.jl)
+└── Plot Extensions
+    ├── Plots.jl recipes            # plot(result), sweep plots
+    └── Makie extensions            # eigenspectrum, plot_meridional, plot_radial
 ```
 
 ---

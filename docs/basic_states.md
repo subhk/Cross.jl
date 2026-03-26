@@ -158,6 +158,37 @@ bc = Y20(0.1) + Y22(0.05) + Y21(0.03)
 bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=bc)
 ```
 
+## v2.0 Unified API
+
+In v2.0, all basic state types are accessible through a single `basic_state(params; mode=...)` function. This eliminates the need to manage `ChebyshevDiffn` objects and dispatch manually:
+
+```julia
+using Cross
+
+# Define parameters once
+params = OnsetParams(E=1e-4, Pr=1.0, Ra=1e6, χ=0.35, m=4, lmax=30, Nr=64)
+
+# All modes via a single function:
+bs = basic_state(params; mode=:conduction)
+bs = basic_state(params; mode=:meridional, amplitude=0.05)
+bs = basic_state(params; mode=:selfconsistent, max_iterations=50)
+bs3d = basic_state(params; mode=:nonaxisymmetric, mmax_bs=2)
+```
+
+The `mode` keyword selects the construction strategy:
+
+| `mode` | Returns | Description |
+|--------|---------|-------------|
+| `:conduction` | `BasicState` | Pure conductive profile, no flow |
+| `:meridional` | `BasicState` | Y₂₀ thermal wind (axisymmetric) |
+| `:selfconsistent` | `BasicState3D` | Iterative solver for full geostrophic balance |
+| `:nonaxisymmetric` | `BasicState3D` | Laplace-approximation 3D state |
+
+!!! note "Legacy API"
+    The low-level functions `conduction_basic_state`, `meridional_basic_state`, `nonaxisymmetric_basic_state`, and `basic_state_selfconsistent` remain fully supported. The unified API is a convenience wrapper.
+
+---
+
 ## Axisymmetric States (`BasicState`)
 
 Axisymmetric cases keep only spherical harmonic modes with azimuthal index $m = 0$.

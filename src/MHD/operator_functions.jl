@@ -895,7 +895,14 @@ function compute_background_field_coefficients(B0_type::BackgroundField,
     elseif B0_type == dipole
         # Dipole field: h(r) = 1/r²
         # Need special handling for negative powers
-        error("Dipole field not yet implemented - requires r^(-2) operators")
+        error("""Dipole background field (B0_type=dipole) is not yet implemented.
+
+The scaffolding exists in MHD/dipole.jl (radial power shifts, shifted operators)
+but the operator assembly in MHD/operator_functions.jl has not been updated to
+use them. Contributions welcome!
+
+For now, use B0_type=axial for an axial background field, or B0_type=no_field
+for pure hydrodynamic problems.""")
     else
         # No background field
         return nothing

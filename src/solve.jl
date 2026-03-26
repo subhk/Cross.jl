@@ -293,3 +293,67 @@ function _eigvecs_to_matrix(eigenvalues, eigenvectors, ::Type{T}) where T
         return Matrix{Complex{T}}(undef, 0, length(eigenvalues))
     end
 end
+
+# ============================================================================
+# Unified find_critical_Ra API
+# ============================================================================
+
+"""
+    find_critical_Ra(problem; Ra_guess=1e6, tol=1e-6, kwargs...)
+
+Find the critical Rayleigh number for the given stability problem.
+Dispatches to the appropriate solver based on problem type.
+
+# Example
+```julia
+params = OnsetParams(E=1e-3, Pr=1.0, Ra=1e6, χ=0.35, m=4, lmax=20, Nr=32)
+Ra_c = find_critical_Ra(OnsetProblem(params); Ra_guess=1e5)
+```
+"""
+function find_critical_Ra end
+
+function find_critical_Ra(problem::OnsetProblem{T};
+                          Ra_guess::T=T(1e6),
+                          tol::T=T(1e-6),
+                          nev::Int=6,
+                          verbose::Bool=false,
+                          kwargs...) where T
+    p = problem.params
+    return find_critical_Ra_onset(;
+        E=p.E, Pr=p.Pr, χ=p.χ, m=p.m, lmax=p.lmax, Nr=p.Nr,
+        Ra_guess=Ra_guess, tol=tol,
+        mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
+        equatorial_symmetry=p.equatorial_symmetry,
+        nev=nev, verbose=verbose, kwargs...)
+end
+
+function find_critical_Ra(problem::BiglobalProblem{T};
+                          Ra_guess::T=T(1e6),
+                          tol::T=T(1e-6),
+                          nev::Int=6,
+                          verbose::Bool=false,
+                          kwargs...) where T
+    p = problem.params
+    return find_critical_Ra_biglobal(;
+        E=p.E, Pr=p.Pr, χ=p.χ, m=p.m, lmax=p.lmax, Nr=p.Nr,
+        basic_state=problem.basic_state,
+        Ra_guess=Ra_guess, tol=tol,
+        mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
+        nev=nev, verbose=verbose, kwargs...)
+end
+
+function find_critical_Ra(problem::TriglobalProblem{T};
+                          Ra_min::Real=1e5,
+                          Ra_max::Real=1e8,
+                          tol::Real=1e-4,
+                          max_iter::Int=20,
+                          verbose::Bool=true,
+                          kwargs...) where T
+    p = problem.params
+    return find_critical_rayleigh_triglobal(
+        p.E, p.Pr, p.χ, problem.m_range, p.lmax, p.Nr,
+        problem.basic_state;
+        Ra_min=Ra_min, Ra_max=Ra_max, tol=tol, max_iter=max_iter,
+        mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
+        verbose=verbose, kwargs...)
+end

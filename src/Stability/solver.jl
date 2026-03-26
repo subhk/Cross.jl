@@ -13,7 +13,7 @@
 #  - Dormy et al. (2004), Journal of Fluid Mechanics
 # =============================================================================
 
-
+using Logging
 
 
 struct ShiftInvertLinearMap{LUType,MatType,VecType}
@@ -89,11 +89,7 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
     @assert size(A) == size(B) "A and B must have same dimensions"
     @assert size(A, 1) == size(A, 2) "Matrices must be square"
 
-    println("Solving eigenvalue problem (KrylovKit shift-invert solver)...")
-    println("  Matrix size: $n × $n")
-    println("  A nnz: $(nnz(A)), B nnz: $(nnz(B))")
-    println("  Computing $nev eigenvalues with shift selection based on which=$which")
-    println("  Post-solve sorting: $selection")
+    @info "Solving eigenvalue problem" solver="KrylovKit shift-invert" size="$n × $n" A_nnz=nnz(A) B_nnz=nnz(B) nev=nev which=which selection=selection
 
     eigenvalues, eigenvectors, info = _krylov_eigensolve(A, B;
                                                          nev = nev,
@@ -105,15 +101,8 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                                                          krylovdim = krylovdim,
                                                          verbosity = verbosity)
 
-    _print_selection_summary(eigenvalues, selection, :krylov)
+    @info "Eigensolve converged" selected=eigenvalues[1] growth_rate=real(eigenvalues[1]) frequency=imag(eigenvalues[1]) selection=selection
     return eigenvalues, eigenvectors, info
-end
-
-function _print_selection_summary(eigenvalues, selection, solver_sym)
-    println("  ✓ Converged using KrylovKit solver")
-    println("  Selected mode: σ = $(eigenvalues[1]) using $selection selection")
-    println("    Growth rate: σ_r = $(real(eigenvalues[1]))")
-    println("    Drift frequency: ω = $(imag(eigenvalues[1]))")
 end
 
 function _sort_indices(eigenvalues::AbstractVector{<:Complex}, selection::Symbol)
@@ -145,17 +134,16 @@ function _krylov_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
     # Smart shift selection for onset problems (matching linear_stability.jl)
     if sigma === nothing
         if which == :LR
-            # For onset: target eigenvalues with largest real part
-            σ_eff = ComplexF64(10.0, 0.0)  # Much better than 0.0!
+            σ_eff = ComplexF64(10.0, 0.0)
         elseif which == :LI
             σ_eff = ComplexF64(0.0, 10.0)
         else
             σ_eff = ComplexF64(1.0, 0.0)
         end
-        println("  Using shift-invert around σ = $(σ_eff) (auto-selected for which=$(which))")
+        @debug "Auto-selected shift" σ=σ_eff which=which
     else
         σ_eff = ComplexF64(sigma)
-        println("  Using shift-invert around σ = $(σ_eff) (user-specified)")
+        @debug "User-specified shift" σ=σ_eff
     end
 
     A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
@@ -171,7 +159,6 @@ function _krylov_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
         # IMPORTANT: For shift-invert with LinearMap, we must use :LM (Largest Magnitude)
         # to find eigenvalues closest to the shift σ_eff. The 'which' parameter only
         # determines the shift selection, NOT the eigsolve target.
-        # Sorting by the desired criterion happens after transformation (line 190).
         values, vectors, history = eigsolve(
             linmap, x0, nev, :LM;  # Always use :LM for shift-invert!
             tol = tol,
@@ -259,35 +246,25 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
                                tol::Float64=1e-6, growth_tol::Float64=1e-6,
                                max_iter::Int=50, nev::Int=1)
 
-    println("\n" * "="^80)
-    println("Finding Critical Rayleigh Number")
-    println("="^80)
-    println("Parameters: E = $E, χ = $χ, m = $m")
-    println("Bracket: [$Ra_min, $Ra_max]")
-    println("Tolerance: $tol (relative), growth_tol: $growth_tol (|σ_r|)")
-    println()
+    @info "Finding critical Rayleigh number" E=E χ=χ m=m bracket="[$Ra_min, $Ra_max]" tol=tol growth_tol=growth_tol
 
-    """Get growth rate for a given Ra"""
-    function growth_rate(Ra)
-        println("  Testing Ra = $(Ra)...")
+    function _eval_growth_rate(Ra)
+        @debug "Testing Ra" Ra=Ra
         A, B = operator_builder(Ra)
 
-        # Find mode closest to neutral stability using shift-invert with σ=0
-        # IMPORTANT: Use nev > 1 to ensure we find the mode closest to zero
-        # With sigma=0.0 explicitly set, 'which' doesn't affect shift selection
         solver_nev = max(nev, 10)
         eigenvalues, _, info = solve_eigenvalue_problem(
             A, B;
             nev = solver_nev,
-            sigma = 0.0,              # Shift at neutral stability
-            which = :LR,              # (shift overridden by sigma parameter)
-            selection = :closest_real # Select mode with |Re(σ)| closest to 0
+            sigma = 0.0,
+            which = :LR,
+            selection = :closest_real
         )
 
         σ = eigenvalues[1]
         σ_r = real(σ)
 
-        println("    → Growth rate: σ_r = $(σ_r)")
+        @debug "Growth rate evaluated" Ra=Ra σ_r=σ_r
         return σ_r, σ
     end
 
@@ -299,22 +276,22 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         if haskey(known_values, Ra_key)
             return known_values[Ra_key]
         end
-        σ_r, σ = growth_rate(Ra)
+        σ_r, σ = _eval_growth_rate(Ra)
         known_values[Ra_key] = (σ_r, σ)
         return σ_r, σ
     end
 
     # Initial bracket check
-    println("Checking initial bracket...")
+    @debug "Checking initial bracket..."
     σ_r_min, σ_min = growth_rate_cached(Ra_min)
     if abs(σ_r_min) < growth_tol
-        println("Lower bracket already satisfies growth tolerance.")
+        @info "Lower bracket already satisfies growth tolerance" Ra=Ra_min
         return Ra_min, imag(σ_min), σ_min, 0
     end
 
     σ_r_max, σ_max = growth_rate_cached(Ra_max)
     if abs(σ_r_max) < growth_tol
-        println("Upper bracket already satisfies growth tolerance.")
+        @info "Upper bracket already satisfies growth tolerance" Ra=Ra_max
         return Ra_max, imag(σ_max), σ_max, 0
     end
 
@@ -326,21 +303,21 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             expansion_iter += 1
             if σ_r_min > 0 && σ_r_max > 0
                 Ra_min /= 2.0
-                println("  Expansion $expansion_iter: lowering Ra_min → $Ra_min")
+                @debug "Bracket expansion: lowering Ra_min" iter=expansion_iter Ra_min=Ra_min
                 if Ra_min <= 0
                     error("Lower Rayleigh bound reached non-positive value while trying to bracket root.")
                 end
                 σ_r_min, σ_min = growth_rate_cached(Ra_min)
             elseif σ_r_min < 0 && σ_r_max < 0
                 Ra_max *= 2.0
-                println("  Expansion $expansion_iter: raising Ra_max → $Ra_max")
+                @debug "Bracket expansion: raising Ra_max" iter=expansion_iter Ra_max=Ra_max
                 σ_r_max, σ_max = growth_rate_cached(Ra_max)
             else
                 break
             end
         end
         if σ_r_min * σ_r_max > 0
-            println("  Expansion attempts exhausted. Performing logarithmic scan for sign change...")
+            @debug "Expansion exhausted, performing logarithmic scan..."
             min_scan = max(Ra_min, 10.0) / 10.0
             max_scan = Ra_max * 10.0
             if min_scan <= 0
@@ -358,7 +335,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             for Ra in scan_values
                 σ_r, σ = growth_rate_cached(Ra)
                 if last_ra !== nothing && σ_r * lastσ_r <= 0
-                    println("  Found sign change between $(last_ra) and $(Ra) during scan.")
+                    @debug "Found sign change during scan" Ra_low=last_ra Ra_high=Ra
                     Ra_min, Ra_max = last_ra, Ra
                     σ_r_min, σ_min = lastσ_r, lastσ
                     σ_r_max, σ_max = σ_r, σ
@@ -377,7 +354,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
     end
 
     # Safeguarded Brent search (closely follows implementations in literature)
-    println("\nStarting Brent search...")
+    @debug "Starting Brent search..."
     Ra_a, Ra_b, Ra_c = Ra_min, Ra_max, Ra_min
     σ_r_a, σ_r_b, σ_r_c = σ_r_min, σ_r_max, σ_r_min
     σ_a, σ_b, σ_c = σ_min, σ_max, σ_min
@@ -408,30 +385,21 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         tol_act = 2 * eps(abs(Ra_b)) + abs_tol
         m = 0.5 * (Ra_c - Ra_b)
 
-        println("\nIteration $iter:")
-        println("  Bracket: [$(Ra_a), $(Ra_c)] with current Ra = $(Ra_b)")
-        println("  Growth rates: f(a)=$(σ_r_a), f(b)=$(σ_r_b), f(c)=$(σ_r_c)")
+        @debug "Brent iteration" iter=iter bracket="[$(Ra_a), $(Ra_c)]" Ra=Ra_b σ_r_a=σ_r_a σ_r_b=σ_r_b σ_r_c=σ_r_c
 
         if abs(σ_r_b) < growth_tol
-            println("\n" * "="^80)
-            println("✓ CONVERGED")
-            println("="^80)
             Ra_c_final = Ra_b
             ω_c = imag(σ_b)
-            println("Critical Rayleigh number: Ra_c = $(Ra_c_final)")
-            println("Drift frequency: ω_c = $(ω_c)")
-            println("Residual growth rate: σ_r = $(σ_r_b)")
-            println("Iterations: $iter")
-            println("="^80)
+            @info "Critical Ra converged" Ra_c=Ra_c_final ω_c=ω_c σ_r=σ_r_b iterations=iter
             return Ra_c_final, ω_c, σ_b, iter
         elseif abs(m) <= tol_act
-            println("  Bracket tolerance met but growth rate |σ_r| = $(abs(σ_r_b)) exceeds growth_tol=$(growth_tol). Continuing...")
+            @debug "Bracket tolerance met but growth rate exceeds growth_tol" abs_σ_r=abs(σ_r_b) growth_tol=growth_tol
         end
 
         if abs(e) < tol_act || abs(σ_r_a) <= abs(σ_r_b)
             d = m
             e = m
-            println("  Using bisection step.")
+            @debug "Using bisection step"
         else
             s = σ_r_b / σ_r_a
             if Ra_a == Ra_c
@@ -454,11 +422,11 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             if (2p < 3m * q - abs(tol_act * q)) && (p < abs(0.5 * e * q))
                 e = d
                 d = p / q
-                println("  Using inverse interpolation step.")
+                @debug "Using inverse interpolation step"
             else
                 d = m
                 e = m
-                println("  Interpolation rejected, falling back to bisection.")
+                @debug "Interpolation rejected, falling back to bisection"
             end
         end
 
@@ -475,21 +443,13 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         σ_r_b, σ_b = growth_rate_cached(Ra_b)
 
         if abs(σ_r_b) < growth_tol
-            println("\n" * "="^80)
-            println("✓ CONVERGED")
-            println("="^80)
             ω_c = imag(σ_b)
-            println("Critical Rayleigh number: Ra_c = $(Ra_b)")
-            println("Drift frequency: ω_c = $(ω_c)")
-            println("Residual growth rate: σ_r = $(σ_r_b)")
-            println("Iterations: $iter")
-            println("="^80)
+            @info "Critical Ra converged" Ra_c=Ra_b ω_c=ω_c σ_r=σ_r_b iterations=iter
             return Ra_b, ω_c, σ_b, iter
         end
     end
 
     @warn "Maximum iterations reached without convergence (Brent)"
-    println("Returning best current estimate.")
     ω_c = imag(σ_b)
     return Ra_b, ω_c, σ_b, max_iter
 end
@@ -515,12 +475,7 @@ function find_onset_parameters(operator_builder_factory::Function,
                                m_range::AbstractVector{Int};
                                kwargs...)
 
-    println("\n" * "="^80)
-    println("SCANNING FOR ONSET PARAMETERS")
-    println("="^80)
-    println("E = $E, χ = $χ, Pr = $Pr")
-    println("Testing m ∈ $m_range")
-    println("="^80)
+    @info "Scanning for onset parameters" E=E χ=χ Pr=Pr m_range=m_range
 
     results = Dict()
     Ra_c_min = Inf
@@ -528,44 +483,32 @@ function find_onset_parameters(operator_builder_factory::Function,
     ω_c_best = 0.0
 
     for m in m_range
-        println("\n" * "~"^80)
-        println("Testing m = $m")
-        println("~"^80)
+        @info "Testing mode" m=m
 
         try
-            # Create operator builder for this m
             operator_builder = operator_builder_factory(E, χ, Pr, m)
 
-            # Find critical Ra for this m
             Ra_c, ω_c, σ_c, iters = find_critical_rayleigh(
                 operator_builder, E, χ, m; kwargs...
             )
 
             results[m] = (Ra_c=Ra_c, ω_c=ω_c, σ_c=σ_c, iters=iters)
 
-            # Track minimum
             if Ra_c < Ra_c_min
                 Ra_c_min = Ra_c
                 m_c = m
                 ω_c_best = ω_c
             end
 
-            println("Result for m=$m: Ra_c = $(Ra_c), ω_c = $(ω_c)")
+            @info "Mode result" m=m Ra_c=Ra_c ω_c=ω_c
 
         catch err
-            @warn "Failed for m=$m" exception=err
+            @warn "Failed for mode" m=m exception=err
             results[m] = (error=err,)
         end
     end
 
-    println("\n" * "="^80)
-    println("ONSET PARAMETERS FOUND")
-    println("="^80)
-    println("Azimuthal wavenumber: m_c = $(m_c)")
-    println("Critical Rayleigh number: Ra_c = $(Ra_c_min)")
-    println("Critical drift frequency: ω_c = $(ω_c_best)")
-    println("="^80)
+    @info "Onset parameters found" m_c=m_c Ra_c=Ra_c_min ω_c=ω_c_best
 
     return Ra_c_min, m_c, ω_c_best, results
 end
-

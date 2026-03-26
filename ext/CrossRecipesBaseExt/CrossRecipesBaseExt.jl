@@ -22,7 +22,13 @@ end
     markershape --> :circle
     markersize --> 4
     label --> "Growth rate vs $(sweep_param)"
-    xs = [getfield(r.problem.params, sweep_param) for r in results]
+    xs = map(results) do r
+        params = r.problem.params
+        hasproperty(params, sweep_param) || error(
+            "Parameter :$sweep_param not found on $(typeof(params)). " *
+            "Available fields: $(fieldnames(typeof(params)))")
+        getfield(params, sweep_param)
+    end
     ys = [r.growth_rate for r in results]
     xs, ys
 end

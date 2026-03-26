@@ -86,35 +86,53 @@ See also: [`solve_biglobal_problem`](@ref), [`create_thermal_wind_basic_state`](
     function BiglobalParams{T}(E, Pr, Ra, χ, m, lmax, Nr, basic_state,
                                mechanical_bc, thermal_bc,
                                equatorial_symmetry) where T
-        @assert 0 < χ < 1 "Radius ratio must satisfy 0 < χ < 1"
-        @assert E > 0 "Ekman number must be positive"
-        @assert Pr > 0 "Prandtl number must be positive"
-        @assert m >= 0 "Azimuthal wavenumber must be non-negative"
-        @assert lmax >= m "lmax must be >= m"
-        @assert Nr >= 4 "Need at least 4 radial points"
-        @assert mechanical_bc in (:no_slip, :stress_free) "Invalid mechanical BC"
-        @assert thermal_bc in (:fixed_temperature, :fixed_flux) "Invalid thermal BC"
-        @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
-        @assert basic_state.Nr == Nr "basic_state.Nr must match Nr"
-        @assert length(basic_state.r) == Nr "basic_state.r must have length Nr"
+        0 < χ < 1 || throw(ArgumentError(
+            "Radius ratio χ must be in (0,1), got $χ"))
+        E > 0 || throw(ArgumentError(
+            "Ekman number E must be positive, got $E"))
+        Pr > 0 || throw(ArgumentError(
+            "Prandtl number Pr must be positive, got $Pr"))
+        m >= 0 || throw(ArgumentError(
+            "Azimuthal wavenumber m must be non-negative, got $m"))
+        lmax >= m || throw(ArgumentError(
+            "lmax must be >= m, got lmax=$lmax, m=$m"))
+        Nr >= 8 || throw(ArgumentError(
+            "Nr must be >= 8 for meaningful resolution, got $Nr"))
+        mechanical_bc in (:no_slip, :stress_free) || throw(ArgumentError(
+            "mechanical_bc must be :no_slip or :stress_free, got :$mechanical_bc"))
+        thermal_bc in (:fixed_temperature, :fixed_flux) || throw(ArgumentError(
+            "thermal_bc must be :fixed_temperature or :fixed_flux, got :$thermal_bc"))
+        equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
+            "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$equatorial_symmetry"))
+        basic_state.Nr == Nr || throw(ArgumentError(
+            "basic_state.Nr=$(basic_state.Nr) doesn't match Nr=$Nr"))
+        length(basic_state.r) == Nr || throw(ArgumentError(
+            "basic_state.r must have length Nr=$Nr, got $(length(basic_state.r))"))
         tol = sqrt(eps(float(T)))
-        @assert isapprox(first(basic_state.r), χ; rtol=tol, atol=tol) "basic_state.r must start at χ"
-        @assert isapprox(last(basic_state.r), one(T); rtol=tol, atol=tol) "basic_state.r must end at 1"
+        isapprox(first(basic_state.r), χ; rtol=tol, atol=tol) || throw(ArgumentError(
+            "basic_state.r must start at χ=$χ, got $(first(basic_state.r))"))
+        isapprox(last(basic_state.r), one(T); rtol=tol, atol=tol) || throw(ArgumentError(
+            "basic_state.r must end at 1, got $(last(basic_state.r))"))
         expected_grid = ChebyshevDiffn(Nr, [χ, one(T)], 1).x
         grid_error = maximum(abs.(basic_state.r .- expected_grid))
         grid_tol = T(10) * tol
-        @assert grid_error <= grid_tol "basic_state.r must match Chebyshev nodes for the solver grid (max mismatch = $(grid_error))"
+        grid_error <= grid_tol || throw(ArgumentError(
+            "basic_state.r must match Chebyshev nodes (max mismatch = $grid_error)"))
         for coeffs in values(basic_state.theta_coeffs)
-            @assert length(coeffs) == Nr "basic_state.theta_coeffs entries must have length Nr"
+            length(coeffs) == Nr || throw(ArgumentError(
+                "basic_state.theta_coeffs entries must have length Nr=$Nr"))
         end
         for coeffs in values(basic_state.uphi_coeffs)
-            @assert length(coeffs) == Nr "basic_state.uphi_coeffs entries must have length Nr"
+            length(coeffs) == Nr || throw(ArgumentError(
+                "basic_state.uphi_coeffs entries must have length Nr=$Nr"))
         end
         for coeffs in values(basic_state.dtheta_dr_coeffs)
-            @assert length(coeffs) == Nr "basic_state.dtheta_dr_coeffs entries must have length Nr"
+            length(coeffs) == Nr || throw(ArgumentError(
+                "basic_state.dtheta_dr_coeffs entries must have length Nr=$Nr"))
         end
         for coeffs in values(basic_state.duphi_dr_coeffs)
-            @assert length(coeffs) == Nr "basic_state.duphi_dr_coeffs entries must have length Nr"
+            length(coeffs) == Nr || throw(ArgumentError(
+                "basic_state.duphi_dr_coeffs entries must have length Nr=$Nr"))
         end
 
         new{T}(E, Pr, Ra, χ, m, lmax, Nr, basic_state,
@@ -650,16 +668,4 @@ function analyze_basic_state(bs::BasicState{T}; verbose::Bool=true) where T
 end
 
 
-# =============================================================================
-#  Exports
-# =============================================================================
-
-export BiglobalParams
-export create_conduction_basic_state
-export create_thermal_wind_basic_state
-export create_custom_basic_state
-export solve_biglobal_problem
-export find_critical_Ra_biglobal
-export compare_onset_vs_biglobal
-export sweep_thermal_wind_amplitude
-export analyze_basic_state
+# Exports are centralized in Cross.jl

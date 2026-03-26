@@ -59,18 +59,33 @@ than `OnsetParams` (no `basic_state`, `ri`, `ro`, `L` fields).
     function OnsetConvectionParams{T}(E, Pr, Ra, χ, m, lmax, Nr,
                                        mechanical_bc, thermal_bc,
                                        equatorial_symmetry) where T
-        @assert 0 < χ < 1 "Radius ratio must satisfy 0 < χ < 1"
-        @assert E > 0 "Ekman number must be positive"
-        @assert Pr > 0 "Prandtl number must be positive"
-        @assert m >= 0 "Azimuthal wavenumber must be non-negative"
-        @assert lmax >= m "lmax must be >= m"
-        @assert Nr >= 4 "Need at least 4 radial points"
-        @assert mechanical_bc in (:no_slip, :stress_free) "Invalid mechanical BC"
-        @assert thermal_bc in (:fixed_temperature, :fixed_flux) "Invalid thermal BC"
-        @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric)
+        0 < χ < 1 || throw(ArgumentError(
+            "Radius ratio χ must be in (0,1), got $χ"))
+        E > 0 || throw(ArgumentError(
+            "Ekman number E must be positive, got $E"))
+        Pr > 0 || throw(ArgumentError(
+            "Prandtl number Pr must be positive, got $Pr"))
+        m >= 0 || throw(ArgumentError(
+            "Azimuthal wavenumber m must be non-negative, got $m"))
+        lmax >= m || throw(ArgumentError(
+            "lmax must be >= m, got lmax=$lmax, m=$m"))
+        Nr >= 8 || throw(ArgumentError(
+            "Nr must be >= 8 for meaningful resolution, got $Nr"))
+        mechanical_bc in (:no_slip, :stress_free) || throw(ArgumentError(
+            "mechanical_bc must be :no_slip or :stress_free, got :$mechanical_bc"))
+        thermal_bc in (:fixed_temperature, :fixed_flux) || throw(ArgumentError(
+            "thermal_bc must be :fixed_temperature or :fixed_flux, got :$thermal_bc"))
+        equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
+            "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$equatorial_symmetry"))
 
         new{T}(E, Pr, Ra, χ, m, lmax, Nr, mechanical_bc, thermal_bc, equatorial_symmetry)
     end
+end
+
+# Conversion constructor: extract onset fields from OnsetParams
+function OnsetConvectionParams(p::OnsetParams{T}) where {T}
+    OnsetConvectionParams{T}(p.E, p.Pr, p.Ra, p.χ, p.m, p.lmax, p.Nr,
+                              p.mechanical_bc, p.thermal_bc, p.equatorial_symmetry)
 end
 
 
@@ -442,13 +457,4 @@ function onset_scaling_laws(E::T, χ::T; bc::Symbol=:no_slip) where {T<:Real}
 end
 
 
-# =============================================================================
-#  Exports
-# =============================================================================
-
-export OnsetConvectionParams
-export solve_onset_problem
-export find_critical_Ra_onset
-export find_global_critical_onset
-export estimate_onset_problem_size
-export onset_scaling_laws
+# Exports are centralized in Cross.jl

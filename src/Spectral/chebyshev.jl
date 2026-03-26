@@ -66,16 +66,16 @@ end
 # Derivative of Chebyshev coefficients (ported from Kore's utils.Dcheb).
 # Implements the standard recurrence: a'_{n-2} = 2(n-1)a_{n-1},
 #   a'_k = a'_{k+2} + 2(k+1)a_{k+1} for k = n-3,...,0, then a'_0 /= 2.
-function chebyshev_coeff_derivative!(out::Vector{Float64}, coeff::Vector{Float64})
+function chebyshev_coeff_derivative!(out::Vector{T}, coeff::Vector{T}) where {T<:AbstractFloat}
     s = length(coeff)
-    fill!(out, 0.0)
+    fill!(out, zero(T))
     s <= 1 && return out
 
-    out[s - 1] = 2.0 * (s - 1) * coeff[s]
+    out[s - 1] = T(2) * (s - 1) * coeff[s]
     for k in (s - 2):-1:1
-        out[k] = out[k + 2] + 2.0 * k * coeff[k + 1]
+        out[k] = out[k + 2] + T(2) * k * coeff[k + 1]
     end
-    out[1] /= 2.0
+    out[1] /= T(2)
     return out
 end
 

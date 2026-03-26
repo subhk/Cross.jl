@@ -20,46 +20,9 @@ end
 #  Helpers for eigenvector decomposition
 # ---------------------------------------------------------------------------
 
-# Compute l-mode sets from params, replicating the logic in linear.jl
-function _ext_compute_l_sets(params)
-    m = params.m
-    lmax = params.lmax
-    symmetry = params.equatorial_symmetry
-
-    if symmetry === :both
-        if m == 0
-            ls = collect(1:(lmax + 1))
-        else
-            ls = collect(m:lmax)
-        end
-        return Dict(:P => ls, :T => ls, :Θ => ls)
-    end
-
-    # Symmetric / antisymmetric parity selection
-    vsymm = symmetry === :symmetric ? 1 : -1
-    signm = m == 0 ? 0 : 1
-    lm1 = lmax - m + 1
-    ll_start = m + 1 - signm
-    ll = collect(ll_start:(ll_start + lm1 - 1))
-
-    s = Int((vsymm + 1) ÷ 2)
-    pol_start = (signm + s) % 2
-    tor_start = (signm + s + 1) % 2
-
-    pol_idxs = pol_start:2:(lm1 - 1)
-    tor_idxs = tor_start:2:(lm1 - 1)
-
-    pol_ls = [ll[k + 1] for k in pol_idxs]
-    tor_ls = [ll[k + 1] for k in tor_idxs]
-
-    return Dict(:P => pol_ls, :T => tor_ls, :Θ => pol_ls)
-end
-
 # Build the ascending Chebyshev-Gauss-Lobatto grid on [ri, ro].
 function _ext_radial_grid(Nr, ri, ro)
-    # Chebyshev nodes on [-1,1] in ascending order: cospi(reverse(0:n-1)/(n-1))
     x_hat = cospi.(reverse(0:Nr-1) ./ (Nr - 1))
-    # Map to [ri, ro]
     return @. (ro - ri) / 2 * (x_hat + 1) + ri
 end
 
@@ -78,7 +41,8 @@ function _ext_get_layout(result)
         l_sets = op.l_sets
         r_grid = op.r
     else
-        l_sets = _ext_compute_l_sets(params)
+        # Use the exported compute_l_sets from Cross — no duplication
+        l_sets = Cross.compute_l_sets(params)
         r_grid = _ext_radial_grid(Nr, ri, ro)
     end
 

@@ -41,7 +41,10 @@ module Cross
     include("solve.jl")
     include("show.jl")
 
-    println(CROSS_BANNER)
+    # Print banner only if user opts in via environment variable
+    if get(ENV, "CROSS_BANNER", "0") == "1"
+        println(CROSS_BANNER)
+    end
 
     export
         # Core utilities
@@ -49,6 +52,7 @@ module Cross
         potentials_to_velocity,
         print_cross_header,
         CROSS_BANNER,
+        compute_l_sets,
 
         # Base types and functions (shared)
         OnsetParams,
@@ -181,6 +185,7 @@ module Cross
         validate_basic_state_consistency,
         validate_basic_state_3d_consistency,
         validate_biglobal_params,
-        validate_triglobal_params
+        validate_triglobal_params,
+        validate_mhd_params
 
 end

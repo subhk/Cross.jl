@@ -236,7 +236,6 @@ For ricb>0, the Chebyshev domain [-1,1] is mapped to [ricb, rcmb].
 """
 function chebyshev_coefficients(power::Int, N::Int, ri::Real, ro::Real;
                                 tol::Real=1e-9)
-    isempty_cache = false
     x = [cos(π * (i + 0.5) / N) for i in 0:N-1]
 
     if ri == 0

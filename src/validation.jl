@@ -77,6 +77,23 @@ function validate_biglobal_params(params, basic_state)
 end
 
 """
+    validate_mhd_params(params::MHDParams)
+
+Validate MHD parameters. Emits `@warn` for unusual-but-valid combinations.
+Hard validation is handled by the `MHDParams` constructor.
+"""
+function validate_mhd_params(params)
+    params.N < 16 && @warn "N=$(params.N) is very low — results may be under-resolved"
+    params.E > 0.1 && @warn "E=$(params.E) is unusually large — Coriolis effects may be negligible"
+    params.E < 1e-8 && @warn "E=$(params.E) is very small — may require high N and lmax for convergence"
+    params.lmax > 3 * params.N && @warn "Angular resolution far exceeds radial: lmax=$(params.lmax) >> N=$(params.N)"
+    params.m > params.lmax && @warn "No modes will be included: m=$(params.m) > lmax=$(params.lmax)"
+    params.Pm < 1e-3 && @warn "Pm=$(params.Pm) is very small — magnetic diffusion dominates"
+    params.Le > 1.0 && @warn "Le=$(params.Le) is unusually large — strong field regime"
+    return nothing
+end
+
+"""
     validate_triglobal_params(params, basic_state, m_range)
 
 Validate triglobal parameters. Applies all onset checks to the base physics

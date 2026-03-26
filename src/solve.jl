@@ -23,82 +23,34 @@ function solve end
 
 function _warn_if_large(problem, label::String)
     try
-        # Redirect estimate_size output and check memory
-        buf = IOBuffer()
-        # Compute memory inline rather than capturing printed output
         _check_memory(problem, label)
-    catch
-        # Don't let size estimation failures block solving
+    catch err
+        @debug "Size estimation failed" label=label exception=(err, catch_backtrace())
     end
 end
 
 function _check_memory(p::OnsetProblem, label)
-    params = p.params
-    n_l = _count_l_modes(params.m, params.lmax, params.equatorial_symmetry)
-    n_per_mode = params.Nr + 1
-    n_fields = 3
-    total_dof = n_l * n_per_mode * n_fields
-    mem_bytes = 2 * total_dof^2 * sizeof(ComplexF64)
-    mem_gb = mem_bytes / 1024^3
-    if mem_gb > 8.0
-        @warn "$label: estimated memory ~$(round(mem_gb; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
-    end
+    total_dof = _hd_total_dof(p.params.m, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
+    mem = _mem_gb(total_dof)
+    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
 end
 
 function _check_memory(p::BiglobalProblem, label)
-    params = p.params
-    n_l = _count_l_modes(params.m, params.lmax, params.equatorial_symmetry)
-    n_per_mode = params.Nr + 1
-    n_fields = 3
-    total_dof = n_l * n_per_mode * n_fields
-    mem_bytes = 2 * total_dof^2 * sizeof(ComplexF64)
-    mem_gb = mem_bytes / 1024^3
-    if mem_gb > 8.0
-        @warn "$label: estimated memory ~$(round(mem_gb; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
-    end
+    total_dof = _hd_total_dof(p.params.m, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
+    mem = _mem_gb(total_dof)
+    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
 end
 
 function _check_memory(p::TriglobalProblem, label)
-    params = p.params
-    m_count = length(p.m_range)
-    n_l_avg = _count_l_modes(0, params.lmax, :both)
-    n_per_mode = params.Nr + 1
-    n_fields = 3
-    dof_per_m = n_l_avg * n_per_mode * n_fields
-    total_dof = dof_per_m * m_count
-    mem_bytes = 2 * total_dof^2 * sizeof(ComplexF64)
-    mem_gb = mem_bytes / 1024^3
-    if mem_gb > 8.0
-        @warn "$label: estimated memory ~$(round(mem_gb; digits=1)) GB exceeds 8 GB — consider reducing lmax or m_range"
-    end
+    total_dof, _ = _triglobal_total_dof(p.m_range, p.params.lmax, p.params.Nr)
+    mem = _mem_gb(total_dof)
+    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or m_range"
 end
 
 function _check_memory(p::MHDProblem, label)
-    params = p.params
-    m = params.m
-    lmax = params.lmax
-    symm = params.symm
-    N = params.N
-
-    # Count l-modes (5 fields for MHD)
-    if symm == 1
-        n_pol = length(m:2:lmax)
-        n_tor = length((m+1):2:lmax)
-    elseif symm == -1
-        n_pol = length((m+1):2:lmax)
-        n_tor = length(m:2:lmax)
-    else
-        n_pol = length(m:lmax)
-        n_tor = length(m:lmax)
-    end
-    n_per_mode = N + 1
-    # 5 fields: u (poloidal vel), v (toroidal vel), f (poloidal mag), g (toroidal mag), h (temperature)
-    total_dof = (n_pol + n_tor + n_pol + n_tor + n_pol) * n_per_mode
-    mem_bytes = 2 * total_dof^2 * sizeof(ComplexF64)
-    mem_gb = mem_bytes / 1024^3
-    if mem_gb > 8.0
-        @warn "$label: estimated memory ~$(round(mem_gb; digits=1)) GB exceeds 8 GB — consider reducing lmax or N"
-    end
+    total_dof, _, _, _, _, _ = _mhd_total_dof(p.params)
+    mem = _mem_gb(total_dof)
+    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or N"
 end
 
 # ============================================================================
@@ -125,13 +77,7 @@ function solve(problem::OnsetProblem{T};
 
     _warn_if_large(problem, "OnsetProblem")
 
-    params = problem.params
-    onset_params = OnsetConvectionParams{T}(
-        params.E, params.Pr, params.Ra, params.χ,
-        params.m, params.lmax, params.Nr,
-        params.mechanical_bc, params.thermal_bc,
-        params.equatorial_symmetry
-    )
+    onset_params = OnsetConvectionParams(problem.params)
 
     eigenvalues, eigenvectors, op, info = solve_onset_problem(onset_params;
         nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma)
@@ -169,13 +115,13 @@ function solve(problem::BiglobalProblem{T};
 
     _warn_if_large(problem, "BiglobalProblem")
 
-    params = problem.params
-    biglobal_params = BiglobalParams{T}(
-        params.E, params.Pr, params.Ra, params.χ,
-        params.m, params.lmax, params.Nr,
-        problem.basic_state,
-        params.mechanical_bc, params.thermal_bc,
-        params.equatorial_symmetry
+    p = problem.params
+    biglobal_params = BiglobalParams(
+        E=p.E, Pr=p.Pr, Ra=p.Ra, χ=p.χ,
+        m=p.m, lmax=p.lmax, Nr=p.Nr,
+        basic_state=problem.basic_state,
+        mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
+        equatorial_symmetry=p.equatorial_symmetry
     )
 
     eigenvalues, eigenvectors, op, info = solve_biglobal_problem(biglobal_params;
@@ -211,12 +157,12 @@ function solve(problem::TriglobalProblem{T};
 
     _warn_if_large(problem, "TriglobalProblem")
 
-    params = problem.params
-    triglobal_params = TriglobalParams{T}(
-        params.E, params.Pr, params.Ra, params.χ,
-        problem.m_range, params.lmax, params.Nr,
-        problem.basic_state,
-        params.mechanical_bc, params.thermal_bc
+    p = problem.params
+    triglobal_params = TriglobalParams(
+        E=p.E, Pr=p.Pr, Ra=p.Ra, χ=p.χ,
+        m_range=problem.m_range, lmax=p.lmax, Nr=p.Nr,
+        basic_state_3d=problem.basic_state,
+        mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc
     )
 
     σ_target = sigma === nothing ? 0.0 : sigma

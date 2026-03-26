@@ -241,15 +241,24 @@ struct MHDParams{T<:Real}
                          bci_magnetic, bco_magnetic,
                          forcing_frequency,
                          heating, L, Etherm, Em) where {T<:Real}
-        @assert 0 < ricb < 1 "ricb must be in (0,1)"
-        @assert E > 0 "Ekman number must be positive"
-        @assert Pr > 0 "Prandtl number must be positive"
-        @assert Pm > 0 "Magnetic Prandtl number must be positive"
-        @assert Ra > 0 "Rayleigh number must be positive"
-        @assert lmax >= m "lmax must be >= m"
-        @assert N >= 4 && iseven(N) "N must be even and >= 4"
-        @assert symm in (-1, 0, 1) "symm must be -1, 0, or 1"
-        @assert heating in (:internal, :differential) "heating must be :internal or :differential"
+        0 < ricb < 1 || throw(ArgumentError(
+            "ricb must be in (0,1), got $ricb"))
+        E > 0 || throw(ArgumentError(
+            "Ekman number E must be positive, got $E"))
+        Pr > 0 || throw(ArgumentError(
+            "Prandtl number Pr must be positive, got $Pr"))
+        Pm > 0 || throw(ArgumentError(
+            "Magnetic Prandtl number Pm must be positive, got $Pm"))
+        Ra > 0 || throw(ArgumentError(
+            "Rayleigh number Ra must be positive, got $Ra"))
+        lmax >= m || throw(ArgumentError(
+            "lmax must be >= m, got lmax=$lmax, m=$m"))
+        N >= 8 && iseven(N) || throw(ArgumentError(
+            "N must be even and >= 8, got $N"))
+        symm in (-1, 0, 1) || throw(ArgumentError(
+            "symm must be -1, 0, or 1, got $symm"))
+        heating in (:internal, :differential) || throw(ArgumentError(
+            "heating must be :internal or :differential, got :$heating"))
 
         # Dipole field requires non-zero inner core radius
         if B0_type == dipole && ricb <= 0

@@ -23,6 +23,7 @@ module Cross
     include("onset_convection.jl")       # Onset with no mean flow
     include("biglobal_stability.jl")     # Biglobal with axisymmetric mean flow
     include("triglobal_stability.jl")    # Triglobal with non-axisymmetric mean flow
+    include("types.jl")
 
     println(CROSS_BANNER)
 
@@ -122,6 +123,23 @@ module Cross
         setup_coupled_mode_problem,
         estimate_triglobal_problem_size,
         solve_triglobal_eigenvalue_problem,
-        find_critical_rayleigh_triglobal
+        find_critical_rayleigh_triglobal,
+
+        # =================================================================
+        # v2.0 API types and functions
+        # =================================================================
+        OnsetProblem,
+        BiglobalProblem,
+        TriglobalProblem,
+        MHDProblem,
+        StabilityResult,
+        AbstractStabilityResult,
+        growth_rate,
+        frequency,
+        leading_mode,
+        estimate_size,
+        eigenspectrum,
+        plot_meridional,
+        plot_radial
 
 end

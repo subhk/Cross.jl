@@ -52,3 +52,43 @@ function validate_basic_state_consistency(bs, params)
         "BasicState Nr=$(bs.Nr) doesn't match params Nr=$(params.Nr)"))
     return nothing
 end
+
+"""
+    validate_basic_state_3d_consistency(bs::BasicState3D, params)
+
+Cross-validate that a BasicState3D is compatible with the given parameters.
+"""
+function validate_basic_state_3d_consistency(bs, params)
+    bs.Nr == params.Nr || throw(ArgumentError(
+        "BasicState3D Nr=$(bs.Nr) doesn't match params Nr=$(params.Nr)"))
+    return nothing
+end
+
+"""
+    validate_biglobal_params(params, basic_state)
+
+Validate biglobal parameters. Applies all onset checks to the base physics
+parameters and cross-validates the basic state consistency.
+"""
+function validate_biglobal_params(params, basic_state)
+    validate_onset_params(params)
+    validate_basic_state_consistency(basic_state, params)
+    return nothing
+end
+
+"""
+    validate_triglobal_params(params, basic_state, m_range)
+
+Validate triglobal parameters. Applies all onset checks to the base physics
+parameters, validates the m_range, and cross-validates the 3D basic state.
+"""
+function validate_triglobal_params(params, basic_state, m_range)
+    validate_onset_params(params)
+    validate_basic_state_3d_consistency(basic_state, params)
+
+    isempty(m_range) && throw(ArgumentError(
+        "m_range must be non-empty"))
+    first(m_range) >= 0 || @warn "m_range starts at $(first(m_range)) — negative m modes included"
+
+    return nothing
+end

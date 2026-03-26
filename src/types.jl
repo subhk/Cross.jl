@@ -80,7 +80,7 @@ struct TriglobalProblem{T}
     basic_state::BasicState3D{T}
     m_range::UnitRange{Int}
     function TriglobalProblem(params::OnsetParams{T, <:Any}, basic_state::BasicState3D{T}, m_range::UnitRange{Int}) where {T}
-        validate_onset_params(params)
+        validate_triglobal_params(params, basic_state, m_range)
         new{T}(params, basic_state, m_range)
     end
 end
@@ -250,6 +250,61 @@ function estimate_size(p::TriglobalProblem)
     @printf("  Memory (A+B):  ~%.1f GB\n", mem_gb)
     if mem_gb > 8.0
         @printf("  ⚠ Large problem — consider reducing lmax or m_range\n")
+    end
+end
+
+function estimate_size(p::MHDProblem)
+    params = p.params
+    m = params.m
+    lmax = params.lmax
+    symm = params.symm
+    N = params.N
+
+    # MHD has 5 fields: poloidal vel (u), toroidal vel (v),
+    # poloidal mag (f), toroidal mag (g), temperature (h)
+    if symm == 1
+        n_pol = length(m:2:lmax)
+        n_tor = length((m+1):2:lmax)
+    elseif symm == -1
+        n_pol = length((m+1):2:lmax)
+        n_tor = length(m:2:lmax)
+    else  # symm == 0
+        n_pol = length(m:lmax)
+        n_tor = length(m:lmax)
+    end
+
+    n_per_mode = N + 1
+
+    # Magnetic field modes depend on B0_type and parity
+    if params.B0_type == no_field
+        n_f = 0
+        n_g = 0
+    else
+        # For non-zero background field, magnetic modes mirror velocity modes
+        # with possible parity swap (depends on B0 symmetry)
+        n_f = n_pol
+        n_g = n_tor
+    end
+
+    n_u = n_pol * n_per_mode
+    n_v = n_tor * n_per_mode
+    n_mag_f = n_f * n_per_mode
+    n_mag_g = n_g * n_per_mode
+    n_h = n_pol * n_per_mode  # temperature has same parity as poloidal velocity
+    total_dof = n_u + n_v + n_mag_f + n_mag_g + n_h
+
+    mem_bytes = 2 * total_dof^2 * sizeof(ComplexF64)
+    mem_gb = mem_bytes / 1024^3
+
+    n_fields = params.B0_type == no_field ? 3 : 5
+
+    @printf("MHDProblem size estimate\n")
+    @printf("  l-modes:      %d poloidal + %d toroidal (%d fields)\n", n_pol, n_tor, n_fields)
+    @printf("  DOF per mode: %d (N=%d)\n", n_per_mode, N)
+    @printf("  Total matrix: %d × %d\n", total_dof, total_dof)
+    @printf("  Memory (A+B): ~%.1f GB\n", mem_gb)
+    if mem_gb > 8.0
+        @printf("  ⚠ Large problem — consider reducing lmax or N\n")
     end
 end
 

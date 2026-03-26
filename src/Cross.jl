@@ -38,6 +38,7 @@ module Cross
     # 7. v2.0 API layer
     include("validation.jl")
     include("types.jl")
+    include("solve.jl")
     include("show.jl")
 
     println(CROSS_BANNER)
@@ -169,12 +170,16 @@ module Cross
         frequency,
         leading_mode,
         estimate_size,
+        solve,
         eigenspectrum,
         plot_meridional,
         plot_radial,
 
         # Validation
         validate_onset_params,
-        validate_basic_state_consistency
+        validate_basic_state_consistency,
+        validate_basic_state_3d_consistency,
+        validate_biglobal_params,
+        validate_triglobal_params
 
 end

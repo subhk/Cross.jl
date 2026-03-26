@@ -31,40 +31,18 @@
 # compute_l_sets are available in the Cross namespace
 
 """
-    OnsetConvectionParams{T<:Real}
+    OnsetConvectionParams{T}(; E, Pr, Ra, χ, m, lmax, Nr, kwargs...)
 
-Parameters for classical onset of convection analysis (no mean flow).
+Internal parameter type for onset convection problems (no mean flow).
 
-This is a simplified interface for the most common use case: finding the
-critical Rayleigh number for the onset of thermal convection in a rotating
-spherical shell with conductive base state.
-
-# Fields
-- `E::T` - Ekman number (viscous/Coriolis ratio)
-- `Pr::T` - Prandtl number (momentum/thermal diffusivity ratio)
-- `Ra::T` - Rayleigh number (buoyancy forcing strength)
-- `χ::T` - Radius ratio r_i/r_o
-- `m::Int` - Azimuthal wavenumber of perturbation
-- `lmax::Int` - Maximum spherical harmonic degree
-- `Nr::Int` - Number of radial collocation points
-- `mechanical_bc::Symbol` - :no_slip or :stress_free
-- `thermal_bc::Symbol` - :fixed_temperature or :fixed_flux
-- `equatorial_symmetry::Symbol` - :both, :symmetric, or :antisymmetric
-
-# Example
+For the public API, use `OnsetParams` with `OnsetProblem` instead:
 ```julia
-params = OnsetConvectionParams(
-    E = 1e-5,
-    Pr = 1.0,
-    Ra = 1e7,
-    χ = 0.35,
-    m = 10,
-    lmax = 60,
-    Nr = 64
-)
+params = OnsetParams(E=1e-3, Pr=1.0, Ra=1e5, χ=0.35, m=4, lmax=20, Nr=32)
+result = solve(OnsetProblem(params); nev=6)
 ```
 
-See also: [`solve_onset_problem`](@ref), [`find_critical_Ra_onset`](@ref)
+This type is used internally by `solve_onset_problem` and has fewer fields
+than `OnsetParams` (no `basic_state`, `ri`, `ro`, `L` fields).
 """
 @with_kw struct OnsetConvectionParams{T<:Real}
     E::T

@@ -414,6 +414,7 @@ println("  DOFs per mode:       ", size_report.dofs_per_mode)
 
 ### Step 4: Build and Solve
 
+**Legacy API:**
 ```julia
 # Build coupled problem
 println("Building coupled-mode problem...")
@@ -442,6 +443,29 @@ println("\nLeading triglobal mode:")
 println("  Growth rate: σ = $σ₁")
 println("  Drift frequency: ω = $ω₁")
 println("  Status: ", σ₁ > 0 ? "UNSTABLE" : "STABLE")
+```
+
+**v2.0 API** — use `TriglobalProblem` + `solve`. Always call `estimate_size` before large triglobal solves:
+
+```julia
+# Create 3D basic state via unified API
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1.5e7, χ=0.35, lmax=40, Nr=48)
+bs3d = basic_state(params; mode=:nonaxisymmetric, mmax_bs=2)
+
+# Wrap in a TriglobalProblem
+m_range = -2:2
+problem = TriglobalProblem(params, bs3d, m_range)
+
+# Estimate size before allocating
+estimate_size(problem)
+
+# Solve
+result = solve(problem; nev=12)
+
+println("\nLeading triglobal mode (v2.0):")
+println("  Growth rate: σ = ", result.growth_rate)
+println("  Drift frequency: ω = ", result.frequency)
+println("  Status: ", result.growth_rate > 0 ? "UNSTABLE" : "STABLE")
 ```
 
 ## Post-Processing

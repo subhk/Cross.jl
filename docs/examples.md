@@ -36,6 +36,13 @@ include("example/<script_name>.jl")
 - `leading_modes` function
 - Eigenvalue interpretation
 
+**v2.0 equivalent:**
+```julia
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64)
+result = solve(OnsetProblem(params); nev=8)
+result.growth_rate  # replaces real(eigenvalues[1])
+```
+
 ```julia
 # Sample output
 m    Re(λ₁)          Im(λ₁)          iterations
@@ -66,6 +73,13 @@ m    Re(λ₁)          Im(λ₁)          iterations
 - Critical mode identification
 
 **Physical insight:** The critical Rayleigh number $Ra_c$ varies with $m$, and the minimum determines the first mode to become unstable.
+
+**v2.0 equivalent:**
+```julia
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64)
+result = solve(OnsetProblem(params); nev=6)
+result.growth_rate  # positive = unstable, negative = stable
+```
 
 ---
 
@@ -175,6 +189,15 @@ bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 - Size estimation before solving
 
 **Note:** Tri-global problems can be very large. Start with small `m_range` and `lmax`.
+
+**v2.0 equivalent:**
+```julia
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1.5e7, χ=0.35, lmax=40, Nr=48)
+bs3d = basic_state(params; mode=:nonaxisymmetric, mmax_bs=2)
+problem = TriglobalProblem(params, bs3d, -2:2)
+estimate_size(problem)   # check memory before committing
+result = solve(problem; nev=8)
+```
 
 ---
 
@@ -412,6 +435,33 @@ params = ShellParams(
     m = m, lmax = lmax, Nr = Nr,
     basic_state = bs,
 )
+```
+
+### v2.0 Template
+
+The v2.0 API uses `OnsetParams`, `basic_state(params; mode=...)`, typed problem types, and `solve`:
+
+```julia
+using Cross
+
+# Define parameters
+params = OnsetParams(E=1e-4, Pr=1.0, Ra=1e6, χ=0.35,
+                     m=4, lmax=30, Nr=64)
+
+# Create basic state (if needed)
+bs = basic_state(params; mode=:meridional, amplitude=0.05)
+
+# Create and solve problem
+problem = BiglobalProblem(params, bs)
+estimate_size(problem)
+result = solve(problem; nev=10)
+
+# Analyze results
+println("Growth rate: ", result.growth_rate)
+println("Frequency:   ", result.frequency)
+
+# Plot (optional)
+# using Plots; plot(result)
 ```
 
 ---

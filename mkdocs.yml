@@ -133,4 +133,5 @@ nav:
   - Reference:
     - API Reference: reference.md
     - Codebase Structure: codebase_structure.md
+    - Migration Guide (v2.0): migration-v2.md
     - FAQ: faq.md

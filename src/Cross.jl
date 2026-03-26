@@ -171,6 +171,7 @@ module Cross
         leading_mode,
         estimate_size,
         solve,
+        find_critical_Ra,
         eigenspectrum,
         plot_meridional,
         plot_radial,

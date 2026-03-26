@@ -60,6 +60,8 @@ Parameters for rotating spherical shell convection.
 ```julia
 params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=30, Nr=64)
 ```
+
+See also [`OnsetProblem`](@ref) for the v2.0 problem wrapper that accepts this type.
 """
 @with_kw struct OnsetParams{T<:Real, BS}
     E::T

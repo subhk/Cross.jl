@@ -9,17 +9,30 @@ abstract type AbstractStabilityResult{T} end
 
 struct OnsetProblem{T}
     params::OnsetParams{T, <:Any}
+    function OnsetProblem(params::OnsetParams{T, <:Any}) where {T}
+        validate_onset_params(params)
+        new{T}(params)
+    end
 end
 
 struct BiglobalProblem{T}
     params::OnsetParams{T, <:Any}
     basic_state::BasicState{T}
+    function BiglobalProblem(params::OnsetParams{T, <:Any}, basic_state::BasicState{T}) where {T}
+        validate_onset_params(params)
+        validate_basic_state_consistency(basic_state, params)
+        new{T}(params, basic_state)
+    end
 end
 
 struct TriglobalProblem{T}
     params::OnsetParams{T, <:Any}
     basic_state::BasicState3D{T}
     m_range::UnitRange{Int}
+    function TriglobalProblem(params::OnsetParams{T, <:Any}, basic_state::BasicState3D{T}, m_range::UnitRange{Int}) where {T}
+        validate_onset_params(params)
+        new{T}(params, basic_state, m_range)
+    end
 end
 
 struct MHDProblem{T, BS}

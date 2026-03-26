@@ -23,7 +23,9 @@ module Cross
     include("onset_convection.jl")       # Onset with no mean flow
     include("biglobal_stability.jl")     # Biglobal with axisymmetric mean flow
     include("triglobal_stability.jl")    # Triglobal with non-axisymmetric mean flow
+    include("validation.jl")
     include("types.jl")
+    include("show.jl")
 
     println(CROSS_BANNER)
 
@@ -140,6 +142,10 @@ module Cross
         estimate_size,
         eigenspectrum,
         plot_meridional,
-        plot_radial
+        plot_radial,
+
+        # Validation
+        validate_onset_params,
+        validate_basic_state_consistency
 
 end

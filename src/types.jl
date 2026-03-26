@@ -153,8 +153,25 @@ end
 
 # --- Convenience accessors ---
 
+"""
+    growth_rate(r::StabilityResult) -> Real
+
+Return the growth rate (real part of the leading eigenvalue) from a stability result.
+"""
 growth_rate(r::StabilityResult) = r.growth_rate
+
+"""
+    frequency(r::StabilityResult) -> Real
+
+Return the oscillation frequency (imaginary part of the leading eigenvalue) from a stability result.
+"""
 frequency(r::StabilityResult) = r.frequency
+
+"""
+    leading_mode(r::StabilityResult) -> Vector
+
+Return the eigenvector corresponding to the most unstable (largest real part) eigenvalue.
+"""
 leading_mode(r::StabilityResult) = r.eigenvectors[:, argmax(real.(r.eigenvalues))]
 
 # --- Problem size estimation ---

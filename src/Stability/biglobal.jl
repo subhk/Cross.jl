@@ -259,7 +259,8 @@ function create_custom_basic_state(θ_profile::Function,
     # Build Chebyshev for derivatives
     cd = ChebyshevDiffn(Nr, [χ, one(T)], 4)
     tol = sqrt(eps(float(T)))
-    @assert maximum(abs.(r_grid .- cd.x)) <= tol "r_grid must match Chebyshev nodes for [χ, 1]"
+    maximum(abs.(r_grid .- cd.x)) <= tol || throw(ArgumentError(
+        "r_grid must match Chebyshev nodes for [χ, 1] (max mismatch = $(maximum(abs.(r_grid .- cd.x))))"))
 
     # Initialize coefficient dictionaries
     theta_coeffs = Dict{Int, Vector{T}}()

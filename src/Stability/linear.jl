@@ -391,7 +391,7 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
 
     # Add basic state operators if present (axisymmetric zonal flow stability)
     if p.basic_state !== nothing
-        println("Adding basic state operators for axisymmetric zonal flow...")
+        @debug "Adding basic state operators for axisymmetric zonal flow..."
         bs_ops = build_basic_state_operators(p.basic_state, op, p.m)
         add_basic_state_operators!(A, B, bs_ops, op, p.m)
     end

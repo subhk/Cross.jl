@@ -68,11 +68,16 @@ function potentials_to_velocity(P::AbstractMatrix,
                                 m::Int)
     Nr, Nθ = size(P)
     size(T) == size(P) || throw(DimensionMismatch("P and T must have same size"))
-    @assert size(Dr, 1) == Nr && size(Dr, 2) == Nr
-    @assert size(Dθ, 1) == Nθ && size(Dθ, 2) == Nθ
-    @assert size(Lθ, 1) == Nθ && size(Lθ, 2) == Nθ
-    @assert length(r) == Nr
-    @assert length(sintheta) == Nθ
+    size(Dr) == (Nr, Nr) || throw(DimensionMismatch(
+        "Dr must be $Nr × $Nr, got $(size(Dr))"))
+    size(Dθ) == (Nθ, Nθ) || throw(DimensionMismatch(
+        "Dθ must be $Nθ × $Nθ, got $(size(Dθ))"))
+    size(Lθ) == (Nθ, Nθ) || throw(DimensionMismatch(
+        "Lθ must be $Nθ × $Nθ, got $(size(Lθ))"))
+    length(r) == Nr || throw(DimensionMismatch(
+        "r must have length $Nr, got $(length(r))"))
+    length(sintheta) == Nθ || throw(DimensionMismatch(
+        "sintheta must have length $Nθ, got $(length(sintheta))"))
 
     inv_r = 1.0 ./ r
     inv_r2 = inv_r .^ 2

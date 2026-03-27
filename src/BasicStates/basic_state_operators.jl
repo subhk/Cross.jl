@@ -313,10 +313,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
 
     azimuthal_cache = m == 0 ? nothing : _build_azimuthal_coupling_cache(m, lmax_pert, lmax_bs)
 
-    println("Building basic state operators...")
-    println("  Basic state modes (ℓ_bs): ", ℓ_bs_modes)
-    println("  Perturbation modes (ℓ_pert): ", ℓ_pert_modes)
-    println("  Azimuthal wavenumber m = ", m)
+    @info "Building basic state operators" ℓ_bs_modes=ℓ_bs_modes ℓ_pert_modes=ℓ_pert_modes m=m
 
     # Loop over all basic state modes
     for ℓ_bs in ℓ_bs_modes
@@ -524,11 +521,9 @@ function build_basic_state_operators(basic_state::BasicState{T},
         end
     end
 
-    println("  Built ", length(coupling_structure), " operator blocks")
-
     # Count non-zero blocks
     n_nonzero_adv = count(block -> maximum(abs.(block)) > 1e-14, values(advection_blocks))
-    println("  Non-zero advection blocks: ", n_nonzero_adv)
+    @info "Basic state operators built" blocks=length(coupling_structure) nonzero_advection=n_nonzero_adv
 
     return BasicStateOperators{T}(
         advection_blocks,
@@ -572,7 +567,7 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
                                      op,
                                      m::Int)
 
-    println("Adding basic state operators to A matrix...")
+    @debug "Adding basic state operators to A matrix..."
 
     # Loop over all coupling pairs (ℓ_output, ℓ_input)
     for (ℓ_output, ℓ_input) in basic_state_ops.coupling_structure
@@ -678,7 +673,7 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
         end
     end
 
-    println("  Basic state operators added successfully")
+    @debug "Basic state operators added successfully"
 
     return nothing
 end

@@ -223,16 +223,13 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     nb_g = length(op.ll_g)
     nb_h = length(op.ll_h)
 
-    println("\nAssembling MHD sparse matrices...")
-    println("  Matrix size: $n × $n")
     section_info = String[]
-    nb_u > 0 && push!(section_info, "u($nb_u modes)")
-    nb_v > 0 && push!(section_info, "v($nb_v modes)")
-    nb_f > 0 && push!(section_info, "f($nb_f modes)")
-    nb_g > 0 && push!(section_info, "g($nb_g modes)")
-    nb_h > 0 && push!(section_info, "h($nb_h modes)")
-    sections_text = join(section_info, ", ")
-    println("  Sections: $sections_text")
+    nb_u > 0 && push!(section_info, "u($nb_u)")
+    nb_v > 0 && push!(section_info, "v($nb_v)")
+    nb_f > 0 && push!(section_info, "f($nb_f)")
+    nb_g > 0 && push!(section_info, "g($nb_g)")
+    nb_h > 0 && push!(section_info, "h($nb_h)")
+    @info "Assembling MHD sparse matrices" size="$n × $n" sections=join(section_info, ", ")
 
     # Use COO format for efficient assembly
     # Use ComplexF64 because Coriolis operator has imaginary terms
@@ -254,7 +251,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # =========================================================================
     # SECTION U: Poloidal Velocity (2curl Navier-Stokes + Lorentz)
     # =========================================================================
-    println("  Assembling section u (poloidal velocity)...")
+    @debug "Assembling section u (poloidal velocity)..."
 
     for (k, l) in enumerate(op.ll_u)
         row_base = (k - 1) * n_per_mode
@@ -334,7 +331,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # =========================================================================
     # SECTION V: Toroidal Velocity (1curl Navier-Stokes + Lorentz)
     # =========================================================================
-    println("  Assembling section v (toroidal velocity)...")
+    @debug "Assembling section v (toroidal velocity)..."
 
     for (k, l) in enumerate(op.ll_v)
         row_base = (nb_u + k - 1) * n_per_mode
@@ -398,7 +395,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # SECTION F: Poloidal Magnetic Field (no-curl induction)
     # =========================================================================
     if nb_f > 0
-        println("  Assembling section f (poloidal magnetic field)...")
+        @debug "Assembling section f (poloidal magnetic field)..."
 
         for (k, l) in enumerate(op.ll_f)
             row_base = (nb_u + nb_v + k - 1) * n_per_mode
@@ -449,7 +446,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # SECTION G: Toroidal Magnetic Field (1curl induction)
     # =========================================================================
     if nb_g > 0
-        println("  Assembling section g (toroidal magnetic field)...")
+        @debug "Assembling section g (toroidal magnetic field)..."
 
         for (k, l) in enumerate(op.ll_g)
             row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
@@ -499,7 +496,7 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # =========================================================================
     # SECTION H: Temperature (same as hydrodynamic case)
     # =========================================================================
-    println("  Assembling section h (temperature)...")
+    @debug "Assembling section h (temperature)..."
 
     for (k, l) in enumerate(op.ll_h)
         row_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
@@ -528,17 +525,16 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # =========================================================================
     # Convert to sparse CSC format
     # =========================================================================
-    println("  Converting to CSC format...")
+    @debug "Converting to CSC format..."
     A = sparse(A_rows, A_cols, A_vals, n, n)
     B = sparse(B_rows, B_cols, B_vals, n, n)
 
-    println("  A sparsity: $(nnz(A)) / $(n^2) = $(100*nnz(A)/n^2)%")
-    println("  B sparsity: $(nnz(B)) / $(n^2) = $(100*nnz(B)/n^2)%")
+    @debug "Matrix sparsity" A_nnz=nnz(A) B_nnz=nnz(B) A_pct="$(round(100*nnz(A)/n^2; digits=1))%" B_pct="$(round(100*nnz(B)/n^2; digits=1))%"
 
     # =========================================================================
     # Apply boundary conditions
     # =========================================================================
-    println("  Applying boundary conditions...")
+    @debug "Applying boundary conditions..."
 
     # Velocity BCs (same as hydrodynamic)
     apply_velocity_boundary_conditions!(A, B, op)
@@ -554,13 +550,12 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     # Temperature BCs (same as hydrodynamic)
     apply_temperature_boundary_conditions!(A, B, op)
 
-    println("  Final A sparsity: $(nnz(A)) / $(n^2)")
-    println("  Final B sparsity: $(nnz(B)) / $(n^2)")
+    @debug "Post-BC sparsity" A_nnz=nnz(A) B_nnz=nnz(B)
 
     # Identify interior DOFs
     B_diag = diag(B)
     interior_dofs = findall(i -> abs(B_diag[i]) > 1e-14, 1:n)
-    println("  Interior DOFs: $(length(interior_dofs)) / $n")
+    @info "MHD assembly complete" interior_dofs=length(interior_dofs) total_dofs=n
 
     section_labels = String[]
     nb_u > 0 && push!(section_labels, "u")

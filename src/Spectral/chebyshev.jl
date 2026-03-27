@@ -101,12 +101,16 @@ promote_matrix(::Type{T}, M::Matrix{Float64}) where {T<:Real} = Matrix{T}(M)
 # -----------------------------------------------------------------------------
 
 function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) where {T<:AbstractFloat}
-    @assert length(domain) == 2 "Domain must be specified as [a, b]"
-    @assert n ≥ 2 "Need at least two Chebyshev points"
-    @assert 1 ≤ max_order ≤ 4 "Supported derivative orders: 1 ≤ max_order ≤ 4"
+    length(domain) == 2 || throw(ArgumentError(
+        "Domain must be specified as [a, b], got length $(length(domain))"))
+    n ≥ 2 || throw(ArgumentError(
+        "Need at least two Chebyshev points, got $n"))
+    1 ≤ max_order ≤ 4 || throw(ArgumentError(
+        "Supported derivative orders: 1 ≤ max_order ≤ 4, got $max_order"))
 
     a, b = domain[1], domain[2]
-    @assert a < b "Domain must satisfy a < b"
+    a < b || throw(ArgumentError(
+        "Domain must satisfy a < b, got a=$a, b=$b"))
 
     # Nodes on [-1,1] and corresponding Vandermonde matrix
     x̂ = chebyshev_nodes(n)

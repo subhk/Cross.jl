@@ -86,8 +86,10 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                                  verbosity::Int=0)
 
     n = size(A, 1)
-    @assert size(A) == size(B) "A and B must have same dimensions"
-    @assert size(A, 1) == size(A, 2) "Matrices must be square"
+    size(A) == size(B) || throw(DimensionMismatch(
+        "A and B must have same dimensions, got $(size(A)) and $(size(B))"))
+    size(A, 1) == size(A, 2) || throw(DimensionMismatch(
+        "Matrices must be square, got $(size(A))"))
 
     @info "Solving eigenvalue problem" solver="KrylovKit shift-invert" size="$n × $n" A_nnz=nnz(A) B_nnz=nnz(B) nev=nev which=which selection=selection
 

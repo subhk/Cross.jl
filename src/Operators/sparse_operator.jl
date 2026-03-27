@@ -70,18 +70,30 @@ struct SparseOnsetParams{T<:Real}
     function SparseOnsetParams{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
                                 bci, bco, bci_thermal, bco_thermal, heating,
                                 L, Etherm) where {T<:Real}
-        @assert 0 < ricb < 1 "ricb must be in (0,1)"
-        @assert E > 0 "Ekman number must be positive"
-        @assert Pr > 0 "Prandtl number must be positive"
-        @assert m >= 0 "Azimuthal wavenumber must be non-negative"
-        @assert lmax >= m "lmax must be >= m"
-        @assert N >= 4 && iseven(N) "N must be even and >= 4"
-        @assert symm in (-1, 1) "symm must be ±1"
-        @assert heating in (:internal, :differential) "heating must be :internal or :differential"
-        @assert bci in (0, 1) "bci must be 0 (stress-free) or 1 (no-slip)"
-        @assert bco in (0, 1) "bco must be 0 (stress-free) or 1 (no-slip)"
-        @assert bci_thermal in (0, 1) "bci_thermal must be 0 (fixed temperature) or 1 (fixed flux)"
-        @assert bco_thermal in (0, 1) "bco_thermal must be 0 (fixed temperature) or 1 (fixed flux)"
+        0 < ricb < 1 || throw(ArgumentError(
+            "ricb must be in (0,1), got $ricb"))
+        E > 0 || throw(ArgumentError(
+            "Ekman number E must be positive, got $E"))
+        Pr > 0 || throw(ArgumentError(
+            "Prandtl number Pr must be positive, got $Pr"))
+        m >= 0 || throw(ArgumentError(
+            "Azimuthal wavenumber m must be non-negative, got $m"))
+        lmax >= m || throw(ArgumentError(
+            "lmax must be >= m, got lmax=$lmax, m=$m"))
+        N >= 8 && iseven(N) || throw(ArgumentError(
+            "N must be even and >= 8, got $N"))
+        symm in (-1, 1) || throw(ArgumentError(
+            "symm must be +1 or -1, got $symm"))
+        heating in (:internal, :differential) || throw(ArgumentError(
+            "heating must be :internal or :differential, got :$heating"))
+        bci in (0, 1) || throw(ArgumentError(
+            "bci must be 0 (stress-free) or 1 (no-slip), got $bci"))
+        bco in (0, 1) || throw(ArgumentError(
+            "bco must be 0 (stress-free) or 1 (no-slip), got $bco"))
+        bci_thermal in (0, 1) || throw(ArgumentError(
+            "bci_thermal must be 0 (fixed temperature) or 1 (fixed flux), got $bci_thermal"))
+        bco_thermal in (0, 1) || throw(ArgumentError(
+            "bco_thermal must be 0 (fixed temperature) or 1 (fixed flux), got $bco_thermal"))
 
         new{T}(E, Pr, Ra, ricb, m, lmax, symm, N,
                bci, bco, bci_thermal, bco_thermal, heating, L, Etherm)
@@ -164,10 +176,10 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     N = params.N
     ri, ro = params.ricb, one(T)
 
-    println("Building sparse operators (N=$N, ricb=$ri)...")
+    @info "Building sparse operators" N=N ricb=ri
 
     # Pre-compute radial operators for poloidal velocity
-    println("  Computing poloidal operators...")
+    @debug "Computing poloidal operators..."
     r0_D0_u = sparse_radial_operator(0, 0, N, ri, ro)
     r2_D0_u = sparse_radial_operator(2, 0, N, ri, ro)
     r2_D2_u = sparse_radial_operator(2, 2, N, ri, ro)  # For viscous diffusion
@@ -180,7 +192,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     r4_D4_u = sparse_radial_operator(4, 4, N, ri, ro)
 
     # Pre-compute radial operators for toroidal velocity
-    println("  Computing toroidal operators...")
+    @debug "Computing toroidal operators..."
     r0_D0_v = sparse_radial_operator(0, 0, N, ri, ro)
     r1_D0_v = sparse_radial_operator(1, 0, N, ri, ro)  # For toroidal-poloidal coupling
     r1_D1_v = sparse_radial_operator(1, 1, N, ri, ro)
@@ -191,7 +203,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     r4_D1_v = sparse_radial_operator(4, 1, N, ri, ro)
 
     # Pre-compute radial operators for temperature
-    println("  Computing temperature operators...")
+    @debug "Computing temperature operators..."
     r0_D0_h = sparse_radial_operator(0, 0, N, ri, ro)
     r1_D0_h = sparse_radial_operator(1, 0, N, ri, ro)  # For differential heating
     r1_D1_h = sparse_radial_operator(1, 1, N, ri, ro)
@@ -214,9 +226,7 @@ function SparseStabilityOperator(params::SparseOnsetParams{T}) where {T}
     n_per_mode = N + 1
     matrix_size = (n_poloidal + n_toroidal + n_temperature) * n_per_mode
 
-    println("  l-modes: $(length(ll_top)) poloidal + $(length(ll_bot)) toroidal")
-    println("  Matrix size: $(matrix_size) × $(matrix_size)")
-    println("  Estimated sparsity: ~$(estimate_sparsity(N, n_poloidal, n_toroidal))%")
+    @info "Sparse operator built" poloidal_modes=length(ll_top) toroidal_modes=length(ll_bot) matrix_size="$(matrix_size) × $(matrix_size)" sparsity="~$(estimate_sparsity(N, n_poloidal, n_toroidal))%"
 
     return SparseStabilityOperator{T}(
         params,
@@ -241,9 +251,9 @@ Returns (ll_top, ll_bot) where:
 - ll_bot: l-modes for toroidal velocity (equatorially antisymmetric if symm=-1)
 """
 function compute_l_modes(m::Int, lmax::Int, symm::Int)
-    @assert m >= 0 "m must be non-negative"
-    @assert lmax >= m "lmax must be >= m"
-    @assert symm in (-1, 0, 1) "symm must be -1, 0, or 1"
+    m >= 0 || throw(ArgumentError("m must be non-negative, got $m"))
+    lmax >= m || throw(ArgumentError("lmax must be >= m, got lmax=$lmax, m=$m"))
+    symm in (-1, 0, 1) || throw(ArgumentError("symm must be -1, 0, or 1, got $symm"))
 
     # Following Kore's algorithm (bin/utils.py:174-183, function ell())
     # Key insight: For m=0, l-range is 1:(lmax+1) for spectral completeness
@@ -627,10 +637,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # Matrix size
     n = op.matrix_size
 
-    println("\nAssembling sparse matrices...")
-    println("  Matrix size: $n × $n")
-    println("  Poloidal modes: $(op.ll_top)")
-    println("  Toroidal modes: $(op.ll_bot)")
+    @info "Assembling sparse matrices" size="$n × $n" poloidal_modes=op.ll_top toroidal_modes=op.ll_bot
 
     # Initialize sparse matrices using DOK (Dictionary of Keys) format
     # We'll convert to CSR at the end
@@ -654,7 +661,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # =========================================================================
     # Section u (poloidal velocity, 2curl equation)
     # =========================================================================
-    println("  Assembling section u (poloidal)...")
+    @debug "Assembling section u (poloidal)..."
 
     for (k, l) in enumerate(op.ll_top)
         row_base = (k - 1) * n_per_mode
@@ -702,7 +709,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # =========================================================================
     # Section v (toroidal velocity, 1curl equation)
     # =========================================================================
-    println("  Assembling section v (toroidal)...")
+    @debug "Assembling section v (toroidal)..."
 
     for (k, l) in enumerate(op.ll_bot)
         row_base = (nb_top + k - 1) * n_per_mode
@@ -749,7 +756,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # =========================================================================
     # Temperature equation (section h)
     # =========================================================================
-    println("  Assembling temperature equation...")
+    @debug "Assembling temperature equation..."
 
     for (k, l) in enumerate(op.ll_top)
         row_base = (nb_top + nb_bot + k - 1) * n_per_mode
@@ -780,28 +787,26 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     # =========================================================================
     # Convert to sparse CSC format
     # =========================================================================
-    println("  Converting to CSC format...")
+    @debug "Converting to CSC format..."
     A = sparse(A_rows, A_cols, A_vals, n, n)
     B = sparse(B_rows, B_cols, B_vals, n, n)
 
-    println("  A sparsity: $(nnz(A)) / $(n^2) = $(100*nnz(A)/n^2)%")
-    println("  B sparsity: $(nnz(B)) / $(n^2) = $(100*nnz(B)/n^2)%")
+    @debug "Matrix sparsity" A_nnz=nnz(A) B_nnz=nnz(B) A_pct="$(round(100*nnz(A)/n^2; digits=1))%" B_pct="$(round(100*nnz(B)/n^2; digits=1))%"
 
     # =========================================================================
     # Apply boundary conditions
     # =========================================================================
-    println("  Applying boundary conditions...")
+    @debug "Applying boundary conditions..."
     apply_sparse_boundary_conditions!(A, B, op)
 
-    println("  Final A sparsity: $(nnz(A)) / $(n^2)")
-    println("  Final B sparsity: $(nnz(B)) / $(n^2)")
+    @debug "Post-BC sparsity" A_nnz=nnz(A) B_nnz=nnz(B)
 
     # Identify interior DOFs (those with nonzero B diagonal after BCs)
     # Boundary conditions zero out rows in B, making it singular
     # For eigenvalue solving, we need only the interior DOFs
     B_diag = diag(B)
     interior_dofs = findall(i -> abs(B_diag[i]) > 1e-14, 1:n)
-    println("  Interior DOFs: $(length(interior_dofs)) / $n")
+    @info "Sparse assembly complete" interior_dofs=length(interior_dofs) total_dofs=n
 
     info = Dict(
         "method" => "Sparse ultraspherical",

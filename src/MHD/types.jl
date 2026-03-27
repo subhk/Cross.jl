@@ -434,14 +434,14 @@ end
 
 # Constructor
 function MHDStabilityOperator(params::MHDParams{T}) where {T}
-    println("Building MHD sparse operators (N=$(params.N), ricb=$(params.ricb))...")
+    @info "Building MHD sparse operators" N=params.N ricb=params.ricb
 
     N = params.N
     ri = params.ricb
     ro = one(T)
 
     # Compute all radial operators
-    println("  Computing velocity operators...")
+    @debug "Computing velocity operators..."
     r0_D0_u = sparse_radial_operator(0, 0, N, ri, ro)
     r2_D0_u = sparse_radial_operator(2, 0, N, ri, ro)
     r2_D2_u = sparse_radial_operator(2, 2, N, ri, ro)
@@ -460,7 +460,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
     r2_D1_v = sparse_radial_operator(2, 1, N, ri, ro)
     r2_D2_v = sparse_radial_operator(2, 2, N, ri, ro)
 
-    println("  Computing magnetic field operators...")
+    @debug "Computing magnetic field operators..."
     r0_D0_f = sparse_radial_operator(0, 0, N, ri, ro)
     r1_D0_f = sparse_radial_operator(1, 0, N, ri, ro)
     r1_D1_f = sparse_radial_operator(1, 1, N, ri, ro)
@@ -476,7 +476,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
     r2_D1_g = sparse_radial_operator(2, 1, N, ri, ro)
     r2_D2_g = sparse_radial_operator(2, 2, N, ri, ro)
 
-    println("  Computing temperature operators...")
+    @debug "Computing temperature operators..."
     r0_D0_h = sparse_radial_operator(0, 0, N, ri, ro)
     r1_D0_h = sparse_radial_operator(1, 0, N, ri, ro)
     r1_D1_h = sparse_radial_operator(1, 1, N, ri, ro)
@@ -491,10 +491,10 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
     is_dipole = is_dipole_case(params.B0_type, params.ricb)
 
     if is_dipole
-        println("  Computing dipole-shifted operators (dipole field detected)...")
+        @debug "Computing dipole-shifted operators..."
 
         # Poloidal velocity (u) - shift +2
-        println("    Poloidal velocity (shift +2)...")
+        @debug "  Poloidal velocity (shift +2)..."
         r5_D0_u = sparse_radial_operator(5, 0, N, ri, ro)
         r5_D1_u = sparse_radial_operator(5, 1, N, ri, ro)
         r6_D0_u = sparse_radial_operator(6, 0, N, ri, ro)
@@ -504,7 +504,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
         r6_D4_u = sparse_radial_operator(6, 4, N, ri, ro)
 
         # Toroidal velocity (v) - shift +3
-        println("    Toroidal velocity (shift +3)...")
+        @debug "  Toroidal velocity (shift +3)..."
         r3_D0_v = sparse_radial_operator(3, 0, N, ri, ro)
         r4_D0_v = sparse_radial_operator(4, 0, N, ri, ro)
         r4_D1_v = sparse_radial_operator(4, 1, N, ri, ro)
@@ -513,14 +513,14 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
         r5_D2_v = sparse_radial_operator(5, 2, N, ri, ro)
 
         # Magnetic poloidal (f) - shift +2
-        println("    Magnetic poloidal (shift +2)...")
+        @debug "  Magnetic poloidal (shift +2)..."
         r4_D0_f = sparse_radial_operator(4, 0, N, ri, ro)
         r4_D2_f = sparse_radial_operator(4, 2, N, ri, ro)
         r5_D3_f = sparse_radial_operator(5, 3, N, ri, ro)
         r6_D4_f = sparse_radial_operator(6, 4, N, ri, ro)
 
         # Magnetic toroidal (g) - shift +3
-        println("    Magnetic toroidal (shift +3)...")
+        @debug "  Magnetic toroidal (shift +3)..."
         r3_D0_g = sparse_radial_operator(3, 0, N, ri, ro)
         r4_D0_g = sparse_radial_operator(4, 0, N, ri, ro)
         r4_D1_g = sparse_radial_operator(4, 1, N, ri, ro)
@@ -529,7 +529,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
     else
         # For non-dipole case, use dummy operators (sparse identity matrices)
         # These won't be used in practice, but Julia structs need all fields initialized
-        println("  Skipping dipole operators (axial or no field case)...")
+        @debug "Skipping dipole operators (axial or no field case)"
         dummy = sparse_radial_operator(0, 0, N, ri, ro)  # Create once, reuse
 
         r5_D0_u = dummy; r5_D1_u = dummy; r6_D0_u = dummy; r6_D1_u = dummy
@@ -578,9 +578,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
 
     matrix_size = n_u + n_v + n_f + n_g + n_h
 
-    println("  l-modes: $(length(ll_u)) poloidal + $(length(ll_v)) toroidal")
-    println("  Matrix size: $(matrix_size) × $(matrix_size)")
-    println("  Estimated sparsity: ~$(estimate_mhd_sparsity(N, ll_u, ll_v, ll_f, ll_g, ll_h))%")
+    @info "MHD operator built" poloidal_modes=length(ll_u) toroidal_modes=length(ll_v) matrix_size="$(matrix_size) × $(matrix_size)" sparsity="~$(estimate_mhd_sparsity(N, ll_u, ll_v, ll_f, ll_g, ll_h))%"
 
     return MHDStabilityOperator{T}(
         params,

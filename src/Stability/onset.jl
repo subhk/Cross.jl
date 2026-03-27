@@ -264,8 +264,10 @@ function find_global_critical_onset(; E::T, Pr::T, χ::T, lmax::Int, Nr::Int,
                                      thermal_bc::Symbol=:fixed_temperature,
                                      equatorial_symmetry::Symbol=:both,
                                      verbose::Bool=true) where {T<:Real}
-    @assert all(m -> m >= 0, m_range) "m_range must be non-negative for onset analysis"
-    @assert equatorial_symmetry in (:both, :symmetric, :antisymmetric) "equatorial_symmetry must be :both, :symmetric, or :antisymmetric"
+    all(m -> m >= 0, m_range) || throw(ArgumentError(
+        "m_range must be non-negative for onset analysis"))
+    equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
+        "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$equatorial_symmetry"))
 
     if verbose
         println("="^60)

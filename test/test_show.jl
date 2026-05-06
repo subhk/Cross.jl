@@ -35,11 +35,13 @@ end
     params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=10, Nr=16)
     problem = OnsetProblem(params)
 
-    output = let buf = IOBuffer()
-        redirect_stdout(buf) do
+    output = mktemp() do _, io
+        redirect_stdout(io) do
             estimate_size(problem)
         end
-        String(take!(buf))
+        flush(io)
+        seekstart(io)
+        read(io, String)
     end
     @test occursin("OnsetProblem", output)
     @test occursin("Total matrix", output)

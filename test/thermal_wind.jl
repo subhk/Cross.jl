@@ -686,6 +686,20 @@ end  # @testset "Triglobal"
         @test has_uphi
     end
 
+    @testset "nonaxisymmetric_basic_state defaults to coupled thermal wind" begin
+        amplitudes = Dict((2, 2) => 0.05)
+
+        bs_default = Cross.nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr,
+                                                       lmax_bs, mmax_bs, amplitudes)
+        bs_coupled = Cross.nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr,
+                                                       lmax_bs, mmax_bs, amplitudes;
+                                                       coupled_thermal_wind=true)
+
+        for key in keys(bs_coupled.uphi_coeffs)
+            @test get(bs_default.uphi_coeffs, key, zeros(Nr)) ≈ bs_coupled.uphi_coeffs[key]
+        end
+    end
+
     @testset "Pure axisymmetric 3D basic state" begin
         # Only Y₂₀ mode
         amplitudes = Dict((2, 0) => 0.1)

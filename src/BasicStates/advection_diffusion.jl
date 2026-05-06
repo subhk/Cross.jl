@@ -1154,7 +1154,8 @@ end
         outer_fluxes::Dict{Tuple{Int,Int}, T} = Dict{Tuple{Int,Int}, T}(),
         max_iterations::Int = 20,
         tolerance::T = T(1e-8),
-        verbose::Bool = false
+        verbose::Bool = false,
+        coupled_thermal_wind::Bool = true
     ) where T<:Real
 
 Create a self-consistent non-axisymmetric basic state that accounts for
@@ -1184,6 +1185,7 @@ Same as `nonaxisymmetric_basic_state`, plus:
 - `max_iterations` : Maximum Picard iterations (default: 20)
 - `tolerance` : Convergence tolerance on temperature change (default: 1e-8)
 - `verbose` : Print convergence information (default: false)
+- `coupled_thermal_wind` : Use full coupled thermal-wind solve (default: true)
 
 # Returns
 - `BasicState3D` : The self-consistent basic state
@@ -1215,7 +1217,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
     max_iterations::Int = 20,
     tolerance::T = T(1e-8),
     verbose::Bool = false,
-    coupled_thermal_wind::Bool = false
+    coupled_thermal_wind::Bool = true
 ) where T<:Real
 
     # =========================================================================
@@ -1535,6 +1537,7 @@ Same as `basic_state()`, plus:
 - `max_iterations` : Maximum Picard iterations (default: 20)
 - `tolerance` : Convergence tolerance (default: 1e-8)
 - `verbose` : Print convergence information (default: false)
+- `coupled_thermal_wind` : Use full coupled thermal-wind solve (default: true)
 
 # Returns
 For non-axisymmetric BCs:
@@ -1569,7 +1572,7 @@ function basic_state_selfconsistent(cd, χ::Real, E::Real, Ra::Real, Pr::Real;
                                     max_iterations::Int=20,
                                     tolerance::Float64=1e-8,
                                     verbose::Bool=false,
-                                    coupled_thermal_wind::Bool=false)
+                                    coupled_thermal_wind::Bool=true)
 
     # Validate: can't have both temperature_bc and flux_bc
     if temperature_bc !== nothing && flux_bc !== nothing

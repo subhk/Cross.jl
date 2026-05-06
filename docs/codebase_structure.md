@@ -185,7 +185,6 @@ Self-consistent advection-diffusion solver for computing basic states.
 **Key Functions:**
 - `solve_thermal_wind_balance!(bs, E, Ra, Pr)` - Compute axisymmetric thermal wind
 - `solve_thermal_wind_balance_3d!(bs3d, E, Ra, Pr)` - Compute 3D thermal wind
-- `build_thermal_wind(cd, χ, E, Ra, Pr, lmax_bs, amplitude)` - Build thermal wind state
 
 #### `BasicStates/basic_state_operators.jl`
 Operators for incorporating basic state effects into stability analysis.
@@ -410,7 +409,7 @@ $$
 \cos\theta \frac{\partial \bar{u}_\phi}{\partial r} - \frac{\sin\theta}{r} \bar{u}_\phi = -\frac{Ra \cdot E^2}{2 Pr \cdot r_o} \frac{\partial \bar{\Theta}}{\partial \theta}
 $$
 
-**Implementation:** `solve_thermal_wind_balance!()` in `BasicStates/advection_diffusion.jl`
+**Implementation:** `solve_thermal_wind_balance!()` in `BasicStates/basic_state.jl`
 
 1. Project temperature gradient onto spherical harmonics
 2. Apply coupling coefficients ($\ell \to \ell \pm 1$)

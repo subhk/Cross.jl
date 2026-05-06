@@ -1361,34 +1361,36 @@ function add_radial_advection_coupling!(C::Matrix{Complex{T}},
     bs_scale = _basic_state_mode_scale(m_bs, T)
     ur_scaled = bs_scale .* ur_coeffs_bs
 
-    for (ℓ_from, field_from) in keys(op_from.index_map)
-        if field_from != :Θ || ℓ_from < m_pert_from
-            continue
-        end
-
-        for (ℓ_to, field_to) in keys(op_to.index_map)
-            if field_to != :Θ || ℓ_to < m_pert_to
+    for field in (:P, :T, :Θ)
+        for (ℓ_from, field_from) in keys(op_from.index_map)
+            if field_from != field || ℓ_from < m_pert_from
                 continue
             end
 
-            coupling_coeff = compute_sh_coupling_coefficient(
-                ℓ_from, m_from, ℓ_bs, m_bs, ℓ_to, m_to
-            )
+            for (ℓ_to, field_to) in keys(op_to.index_map)
+                if field_to != field || ℓ_to < m_pert_to
+                    continue
+                end
 
-            if abs(coupling_coeff) < 1e-14
-                continue
-            end
+                coupling_coeff = compute_sh_coupling_coefficient(
+                    ℓ_from, m_from, ℓ_bs, m_bs, ℓ_to, m_to
+                )
 
-            idx_from = idx_map_from[(ℓ_from, :Θ)]
-            idx_to = idx_map_to[(ℓ_to, :Θ)]
+                if abs(coupling_coeff) < 1e-14
+                    continue
+                end
 
-            for i in 1:Nr
-                row = idx_to[i]
-                row == 0 && continue
-                for j in 1:Nr
-                    col = idx_from[j]
-                    col == 0 && continue
-                    C[row, col] += coupling_coeff * ur_scaled[i] * Dr[i, j]
+                idx_from = idx_map_from[(ℓ_from, field)]
+                idx_to = idx_map_to[(ℓ_to, field)]
+
+                for i in 1:Nr
+                    row = idx_to[i]
+                    row == 0 && continue
+                    for j in 1:Nr
+                        col = idx_from[j]
+                        col == 0 && continue
+                        C[row, col] += coupling_coeff * ur_scaled[i] * Dr[i, j]
+                    end
                 end
             end
         end
@@ -1419,32 +1421,34 @@ function add_meridional_advection_coupling!(C::Matrix{Complex{T}},
     bs_scale = _basic_state_mode_scale(m_bs, T)
     adv_profile = (bs_scale .* utheta_bs) ./ r
 
-    for (ℓ_from, field_from) in keys(op_from.index_map)
-        if field_from != :Θ || ℓ_from < m_pert_from
-            continue
-        end
-
-        for (ℓ_to, field_to) in keys(op_to.index_map)
-            if field_to != :Θ || ℓ_to < m_pert_to
+    for field in (:P, :T, :Θ)
+        for (ℓ_from, field_from) in keys(op_from.index_map)
+            if field_from != field || ℓ_from < m_pert_from
                 continue
             end
 
-            coupling_coeff = _perturbation_meridional_coupling(
-                ℓ_from, ℓ_bs, ℓ_to, m_from, m_bs, m_to
-            )
+            for (ℓ_to, field_to) in keys(op_to.index_map)
+                if field_to != field || ℓ_to < m_pert_to
+                    continue
+                end
 
-            if abs(coupling_coeff) < 1e-14
-                continue
-            end
+                coupling_coeff = _perturbation_meridional_coupling(
+                    ℓ_from, ℓ_bs, ℓ_to, m_from, m_bs, m_to
+                )
 
-            idx_from = idx_map_from[(ℓ_from, :Θ)]
-            idx_to = idx_map_to[(ℓ_to, :Θ)]
+                if abs(coupling_coeff) < 1e-14
+                    continue
+                end
 
-            for i in 1:Nr
-                row = idx_to[i]
-                col = idx_from[i]
-                (row == 0 || col == 0) && continue
-                C[row, col] += coupling_coeff * adv_profile[i]
+                idx_from = idx_map_from[(ℓ_from, field)]
+                idx_to = idx_map_to[(ℓ_to, field)]
+
+                for i in 1:Nr
+                    row = idx_to[i]
+                    col = idx_from[i]
+                    (row == 0 || col == 0) && continue
+                    C[row, col] += coupling_coeff * adv_profile[i]
+                end
             end
         end
     end

@@ -448,12 +448,22 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     return A, B, interior_dofs, boundary_dofs
 end
 
-function _insert_constraint_basis!(Z::Matrix{Complex{T}},
-                                   col::Int,
-                                   A::Matrix{Complex{T}},
-                                   idx::UnitRange{Int},
-                                   constraint_rows::Vector{Int},
-                                   label::String) where {T<:Real}
+struct ConstraintBasisBlock{T<:Real}
+    full_indices::UnitRange{Int}
+    reduced_indices::UnitRange{Int}
+    basis::Matrix{Complex{T}}
+end
+
+struct ConstraintReduction{T<:Real}
+    blocks::Vector{ConstraintBasisBlock{T}}
+    n_full::Int
+    n_reduced::Int
+end
+
+function _constraint_basis_block(A::Matrix{Complex{T}},
+                                 idx::UnitRange{Int},
+                                 constraint_rows::Vector{Int},
+                                 label::String) where {T<:Real}
     constraints = Matrix(A[constraint_rows, idx])
     basis = nullspace(constraints)
     expected_cols = length(idx) - length(constraint_rows)
@@ -463,43 +473,46 @@ function _insert_constraint_basis!(Z::Matrix{Complex{T}},
             "expected rank $(length(constraint_rows))"))
     end
 
-    cols = col:(col + expected_cols - 1)
-    Z[collect(idx), cols] .= basis
-    return col + expected_cols
+    return basis
 end
 
-function _constraint_basis(A::Matrix{Complex{T}},
-                           op::LinearStabilityOperator{T},
-                           boundary_dofs::Vector{Int}) where {T<:Real}
+function _constraint_reduction(A::Matrix{Complex{T}},
+                               op::LinearStabilityOperator{T},
+                               boundary_dofs::Vector{Int}) where {T<:Real}
     n_full = op.total_dof
     n_reduced = n_full - length(boundary_dofs)
-    Z = zeros(Complex{T}, n_full, n_reduced)
+    blocks = ConstraintBasisBlock{T}[]
     col = 1
 
     for ℓ in op.l_sets[:P]
         P_idx = op.index_map[(ℓ, :P)]
         ri, inner_tau, outer_tau, ro = poloidal_tau_indices(P_idx)
-        col = _insert_constraint_basis!(Z, col, A, P_idx,
+        basis = _constraint_basis_block(A, P_idx,
                                         [ri, inner_tau, outer_tau, ro],
                                         "poloidal ℓ=$ℓ")
+        cols = col:(col + size(basis, 2) - 1)
+        push!(blocks, ConstraintBasisBlock{T}(P_idx, cols, basis))
+        col += size(basis, 2)
     end
     for ℓ in op.l_sets[:T]
         T_idx = op.index_map[(ℓ, :T)]
         riT, roT = toroidal_boundary_indices(T_idx)
-        col = _insert_constraint_basis!(Z, col, A, T_idx,
-                                        [riT, roT],
-                                        "toroidal ℓ=$ℓ")
+        basis = _constraint_basis_block(A, T_idx, [riT, roT], "toroidal ℓ=$ℓ")
+        cols = col:(col + size(basis, 2) - 1)
+        push!(blocks, ConstraintBasisBlock{T}(T_idx, cols, basis))
+        col += size(basis, 2)
     end
     for ℓ in op.l_sets[:Θ]
         Θ_idx = op.index_map[(ℓ, :Θ)]
         riΘ, roΘ = temperature_boundary_indices(Θ_idx)
-        col = _insert_constraint_basis!(Z, col, A, Θ_idx,
-                                        [riΘ, roΘ],
-                                        "temperature ℓ=$ℓ")
+        basis = _constraint_basis_block(A, Θ_idx, [riΘ, roΘ], "temperature ℓ=$ℓ")
+        cols = col:(col + size(basis, 2) - 1)
+        push!(blocks, ConstraintBasisBlock{T}(Θ_idx, cols, basis))
+        col += size(basis, 2)
     end
 
     col == n_reduced + 1 || error("Constraint basis size mismatch")
-    return Z
+    return ConstraintReduction{T}(blocks, n_full, n_reduced)
 end
 
 function _constrained_reduced_matrices(A_full::Matrix{Complex{T}},
@@ -507,10 +520,25 @@ function _constrained_reduced_matrices(A_full::Matrix{Complex{T}},
                                        op::LinearStabilityOperator{T},
                                        interior_dofs::Vector{Int},
                                        boundary_dofs::Vector{Int}) where {T<:Real}
-    Z = _constraint_basis(A_full, op, boundary_dofs)
-    A = Matrix(A_full[interior_dofs, :] * Z)
-    B = Matrix(B_full[interior_dofs, :] * Z)
-    return A, B, Z
+    reduction = _constraint_reduction(A_full, op, boundary_dofs)
+    A = zeros(Complex{T}, reduction.n_reduced, reduction.n_reduced)
+    B = zeros(Complex{T}, reduction.n_reduced, reduction.n_reduced)
+
+    for block in reduction.blocks
+        A[:, block.reduced_indices] .= A_full[interior_dofs, block.full_indices] * block.basis
+        B[:, block.reduced_indices] .= B_full[interior_dofs, block.full_indices] * block.basis
+    end
+
+    return A, B, reduction
+end
+
+function _reconstruct_full_vector(reduction::ConstraintReduction{T},
+                                  reduced_vec::AbstractVector{Complex{T}}) where {T<:Real}
+    full_vec = zeros(Complex{T}, reduction.n_full)
+    for block in reduction.blocks
+        full_vec[block.full_indices] .= block.basis * reduced_vec[block.reduced_indices]
+    end
+    return full_vec
 end
 
 # -----------------------------------------------------------------------------
@@ -589,8 +617,8 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
     OPTIMIZED shift-invert solver using KrylovKit.
     Automatically selects shift based on 'which' parameter for onset problems.
     """
-    A, B, reconstruction = _constrained_reduced_matrices(A_full, B_full, op,
-                                                         interior_dofs, boundary_dofs)
+    A, B, reduction = _constrained_reduced_matrices(A_full, B_full, op,
+                                                    interior_dofs, boundary_dofs)
 
     # Smart shift selection based on what eigenvalues we're targeting
     if isnothing(sigma)
@@ -634,7 +662,7 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
 
     vecs_full = Vector{Vector{Complex{T}}}(undef, length(vecs_int))
     for (i, v_int) in enumerate(vecs_int)
-        vecs_full[i] = reconstruction * v_int
+        vecs_full[i] = _reconstruct_full_vector(reduction, v_int)
     end
 
     ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :

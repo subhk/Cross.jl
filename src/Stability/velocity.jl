@@ -794,6 +794,7 @@ function _mode_layout(problem, m_abs::Int)
             Nr = params_tri.Nr,
             mechanical_bc = params_tri.mechanical_bc,
             thermal_bc = params_tri.thermal_bc,
+            equatorial_symmetry = params_tri.equatorial_symmetry,
             basic_state = nothing
         )
         op = LinearStabilityOperator(params_m)
@@ -820,6 +821,7 @@ function _mode_reconstruction(problem, m_abs::Int)
             Nr = params_tri.Nr,
             mechanical_bc = params_tri.mechanical_bc,
             thermal_bc = params_tri.thermal_bc,
+            equatorial_symmetry = params_tri.equatorial_symmetry,
             basic_state = nothing
         )
         op = LinearStabilityOperator(params_m)

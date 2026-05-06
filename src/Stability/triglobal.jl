@@ -80,11 +80,28 @@ function _triglobal_mode_l_sets(params::TriglobalParams{T}, m::Int) where T
     return compute_l_sets(params_m)
 end
 
+function _triglobal_mode_l_counts(m::Int, lmax::Int, equatorial_symmetry::Symbol)
+    m_abs = abs(m)
+    if equatorial_symmetry === :both
+        n = lmax - m_abs + 1
+        return n, n, n
+    end
+
+    vsymm = _symmetry_flag(equatorial_symmetry)
+    signm = m_abs == 0 ? 0 : 1
+    lm1 = lmax - m_abs + 1
+    s = Int((vsymm + 1) ÷ 2)
+    pol_start = (signm + s) % 2
+    tor_start = (signm + s + 1) % 2
+
+    n_pol = length(pol_start:2:(lm1 - 1))
+    n_tor = length(tor_start:2:(lm1 - 1))
+    return n_pol, n_tor, n_pol
+end
+
 function _triglobal_reduced_block_size(params::TriglobalParams, m::Int)
-    l_sets = _triglobal_mode_l_sets(params, m)
-    return length(l_sets[:P]) * (params.Nr - 4) +
-           length(l_sets[:T]) * (params.Nr - 2) +
-           length(l_sets[:Θ]) * (params.Nr - 2)
+    nP, nT, nΘ = _triglobal_mode_l_counts(m, params.lmax, params.equatorial_symmetry)
+    return nP * (params.Nr - 4) + nT * (params.Nr - 2) + nΘ * (params.Nr - 2)
 end
 
 

@@ -197,10 +197,15 @@ function _hd_total_dof(m::Int, lmax::Int, Nr::Int, symmetry::Symbol)
     return n_l * (Nr + 1) * 3  # 3 fields: poloidal, toroidal, temperature
 end
 
-function _triglobal_total_dof(m_range, lmax::Int, Nr::Int)
-    n_l_avg = _count_l_modes(0, lmax, :both)
-    dof_per_m = n_l_avg * (Nr + 1) * 3
-    return dof_per_m * length(m_range), dof_per_m
+function _triglobal_total_dof(m_range, lmax::Int, Nr::Int, symmetry::Symbol=:both)
+    _validate_triglobal_m_range(m_range, lmax)
+    total_dof = 0
+    for m in m_range
+        nP, nT, nΘ = _triglobal_mode_l_counts(m, lmax, symmetry)
+        total_dof += nP * (Nr - 4) + nT * (Nr - 2) + nΘ * (Nr - 2)
+    end
+    dof_per_m = total_dof / length(m_range)
+    return total_dof, dof_per_m
 end
 
 function _mhd_total_dof(params)
@@ -260,7 +265,8 @@ end
 
 function estimate_size(p::TriglobalProblem)
     params = p.params
-    total_dof, dof_per_m = _triglobal_total_dof(p.m_range, params.lmax, params.Nr)
+    total_dof, dof_per_m = _triglobal_total_dof(
+        p.m_range, params.lmax, params.Nr, params.equatorial_symmetry)
     mem_gb = _mem_gb(total_dof)
 
     @printf("TriglobalProblem size estimate\n")

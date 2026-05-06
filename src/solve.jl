@@ -48,7 +48,8 @@ function _check_memory(p::BiglobalProblem, label)
 end
 
 function _check_memory(p::TriglobalProblem, label)
-    total_dof, _ = _triglobal_total_dof(p.m_range, p.params.lmax, p.params.Nr)
+    total_dof, _ = _triglobal_total_dof(
+        p.m_range, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
     mem = _mem_gb(total_dof)
     if mem > 8.0
         @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or m_range"

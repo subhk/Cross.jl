@@ -8,8 +8,6 @@ module Cross
 
     using Parameters
 
-    using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
-
     using KrylovKit
     using LinearMaps
     using WignerSymbols
@@ -56,10 +54,8 @@ module Cross
 
         # Base types and functions (shared)
         OnsetParams,
-        ShellParams,
         LinearStabilityOperator,
         solve_eigenvalue_problem,
-        leading_modes,
         find_growth_rate,
         find_critical_rayleigh,
         assemble_matrices,

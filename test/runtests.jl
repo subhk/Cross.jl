@@ -2,6 +2,7 @@ using Test
 using Logging
 
 include("project_deps.jl")
+include("legacy_api.jl")
 
 # Existing tests
 include("boundary_conditions.jl")

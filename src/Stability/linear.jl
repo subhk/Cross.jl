@@ -8,7 +8,7 @@
 # =============================================================================
 
 # Dependencies provided by Cross module:
-# LinearAlgebra, KrylovKit, LinearMaps, Parameters, Random, ArnoldiMethod
+# LinearAlgebra, KrylovKit, LinearMaps, Parameters, Random
 # ChebyshevDiffn is available in the Cross namespace
 
 const _fourπ = 4π
@@ -111,35 +111,6 @@ See also [`OnsetProblem`](@ref) for the v2.0 problem wrapper that accepts this t
                mechanical_bc, thermal_bc, use_sparse_weighting, equatorial_symmetry,
                basic_state)
     end
-end
-
-# Backward compatibility: helper function that converts ri/ro to χ
-"""Backward-compatible constructor that accepts `ri`/`ro` and forwards to `OnsetParams`."""
-function ShellParams(; E, Pr=one(E), Ra, m, lmax, Nr,
-                     ri=nothing, ro=nothing, χ=nothing,
-                     mechanical_bc=:no_slip, thermal_bc=:fixed_temperature,
-                     use_sparse_weighting=true, equatorial_symmetry=:both,
-                     basic_state=nothing)
-    # Compute χ from ri and ro if not directly provided
-    if χ === nothing
-        if ri !== nothing && ro !== nothing
-            computed_χ = ri / ro
-        elseif ri !== nothing
-            computed_χ = ri
-            ro = one(E)
-        else
-            error("ShellParams: Must provide either χ or both ri and ro")
-        end
-    else
-        computed_χ = χ
-    end
-
-    # Use OnsetParams constructor
-    return OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=computed_χ, m=m, lmax=lmax, Nr=Nr,
-                      mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
-                      use_sparse_weighting=use_sparse_weighting,
-                      equatorial_symmetry=equatorial_symmetry,
-                      basic_state=basic_state)
 end
 
 # -----------------------------------------------------------------------------
@@ -624,32 +595,6 @@ function find_growth_rate(op::LinearStabilityOperator; kwargs...)
     return σ, ω, eigenvectors[idx]
 end
 
-# Backward compatibility wrapper
-"""Compatibility wrapper that returns eigenpairs, operator, and solver info."""
-function leading_modes(params::OnsetParams; nθ=nothing, kwargs...)
-    # nθ is ignored for now - it's not used in the current eigenvalue solver
-    # but kept for API compatibility
-    op = LinearStabilityOperator(params)
-    eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op; kwargs...)
-    return eigenvalues, eigenvectors, op, info
-end
-
-"""Compatibility overload that infers boundary DOFs from the interior set."""
-function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
-                                       B_full::Matrix{Complex{T}},
-                                       op::LinearStabilityOperator{T},
-                                       interior_dofs::Vector{Int};
-                                       nev::Int,
-                                       tol::Float64,
-                                       maxiter::Int,
-                                       which::Symbol,
-                                       sigma::Union{Nothing,Number}=nothing) where {T<:Float64}
-    boundary_dofs = setdiff(collect(1:size(A_full, 1)), interior_dofs)
-    return _krylov_eigensolve_optimized(A_full, B_full, op, interior_dofs, boundary_dofs;
-                                        nev=nev, tol=tol, maxiter=maxiter,
-                                        which=which, sigma=sigma)
-end
-
 """Constrained KrylovKit shift-invert solve with automatic shift selection."""
 function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
                                        B_full::Matrix{Complex{T}},
@@ -711,124 +656,6 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
     vecs_full = Vector{Vector{Complex{T}}}(undef, length(vecs_int))
     for (i, v_int) in enumerate(vecs_int)
         vecs_full[i] = _reconstruct_full_vector(reduction, v_int)
-    end
-
-    ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
-               which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
-               collect(1:length(eigenvalues))
-
-    return eigenvalues[ordering], vecs_full[ordering], info
-end
-
-"""Legacy ArnoldiMethod eigensolver kept for comparison and fallback use."""
-function _arnoldi_eigensolve(A_full::Matrix{Complex{T}},
-                              B_full::Matrix{Complex{T}},
-                              interior_dofs::Vector{Int};
-                              nev::Int,
-                              tol::Float64,
-                              maxiter::Int,
-                              which::Symbol) where {T<:Float64}
-    """
-    Fast eigenvalue solver using ArnoldiMethod.
-    Directly targets eigenvalues by real part (:LR) without shift-invert.
-    MUCH faster for onset of convection problems.
-    """
-    A = Matrix(A_full[interior_dofs, interior_dofs])
-    B = Matrix(B_full[interior_dofs, interior_dofs])
-
-    # Solve generalized eigenvalue problem A*v = λ*B*v
-    # Convert to standard form: B^{-1}*A*v = λ*v
-    B_lu = lu(B)
-    inv_B_A = B_lu \ A
-
-    # Map which symbol to ArnoldiMethod selector
-    selector = if which == :LR
-        LR()  # Largest Real part - optimal for onset!
-    elseif which == :LI
-        LI()  # Largest Imaginary part
-    elseif which == :LM
-        LM()  # Largest Magnitude
-    else
-        LR()  # Default to LR for onset problems
-    end
-
-    # Use partialschur for robust convergence
-    # For onset problems, eigenvalues can be large - use more Krylov vectors
-    # ArnoldiMethod uses mindim/maxdim for Krylov subspace dimension
-    mindim = max(nev + 5, 10)
-    maxdim = min(size(inv_B_A, 1), max(2*nev + 20, 30))
-    schur_decomp, history = partialschur(inv_B_A, nev=nev, tol=tol,
-                                          restarts=maxiter, which=selector,
-                                          mindim=mindim, maxdim=maxdim)
-
-    # Extract eigenvalues and eigenvectors
-    eigenvalues_int, eigenvectors_int = partialeigen(schur_decomp)
-
-    # Convert to full vectors
-    vecs_full = Vector{Vector{Complex{T}}}(undef, length(eigenvectors_int))
-    n_full = size(A_full, 1)
-    for (i, v_int) in enumerate(eigenvectors_int)
-        full_vec = zeros(Complex{T}, n_full)
-        full_vec[interior_dofs] = v_int
-        vecs_full[i] = full_vec
-    end
-
-    # Create info dict for compatibility
-    # ArnoldiMethod.History fields: mvproducts, nconverged, converged, nev
-    info = Dict("converged" => history.converged,
-                "nconverged" => history.nconverged,
-                "mvproducts" => history.mvproducts,
-                "nev" => history.nev,
-                "solver" => :arnoldi)
-
-    return eigenvalues_int, vecs_full, info
-end
-
-"""Deprecated unconstrained shift-invert solve retained for backward compatibility."""
-function _krylov_eigensolve(A_full::Matrix{Complex{T}},
-                            B_full::Matrix{Complex{T}},
-                            interior_dofs::Vector{Int};
-                            nev::Int,
-                            tol::Float64,
-                            maxiter::Int,
-                            which::Symbol) where {T<:Float64}
-    """
-    DEPRECATED: Slow shift-invert solver using KrylovKit.
-    Use _arnoldi_eigensolve instead for better performance.
-    """
-    A = Matrix(A_full[interior_dofs, interior_dofs])
-    B = Matrix(B_full[interior_dofs, interior_dofs])
-
-    σ = Complex{T}(0.1, 0.1)
-
-    lu_factor = lu(A - σ * B)
-    tmp = zeros(Complex{T}, size(A, 1))
-    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp),
-                                      size(A, 1); ismutating=true)
-
-    krylovdim = min(size(A, 1), max(nev * 8, 60))
-    x0 = randn(Complex{T}, size(A, 1))
-
-    vals_inv, vecs_int, info = eigsolve(shift_map,
-                                        x0, nev, :LM;
-                                        tol=tol,
-                                        maxiter=maxiter,
-                                        krylovdim=krylovdim,
-                                        verbosity=0)
-
-    finite = [abs(λ) > eps(T) for λ in vals_inv]
-    any(finite) || error("No finite eigenvalues returned by eigensolver")
-    vals_inv = vals_inv[finite]
-    vecs_int = vecs_int[finite]
-
-    eigenvalues = Complex{T}[σ + inv(λ) for λ in vals_inv]
-
-    vecs_full = Vector{Vector{Complex{T}}}(undef, length(vecs_int))
-    n_full = size(A_full, 1)
-    for (i, v_int) in enumerate(vecs_int)
-        full_vec = zeros(Complex{T}, n_full)
-        full_vec[interior_dofs] = v_int
-        vecs_full[i] = full_vec
     end
 
     ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :

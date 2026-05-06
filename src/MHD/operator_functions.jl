@@ -11,7 +11,7 @@
 
 """
 MHD operator function implementations.
-Must be included after MHD/types.jl (formerly MHDOperator.jl).
+Must be included after MHD/types.jl.
 """
 
 # This file is included via MHD/MHD.jl after types.jl
@@ -23,13 +23,6 @@ Must be included after MHD/types.jl (formerly MHDOperator.jl).
 
 const SparseF64 = SparseMatrixCSC{Float64,Int}
 const SparseC64 = SparseMatrixCSC{ComplexF64,Int}
-
-"""Return a complex sparse background-field radial operator with an optional power shift."""
-@inline function complex_background_operator(op::MHDStabilityOperator,
-                                             p::Int, h::Int, d::Int,
-                                             shift::Int=0)
-    return SparseC64(background_operator(op, p + shift, h, d))
-end
 
 """Return a correctly sized sparse complex zero block for one radial mode."""
 @inline function zero_block(op::MHDStabilityOperator)
@@ -887,41 +880,6 @@ function operator_b_toroidal(op::MHDStabilityOperator{T}, l::Int) where {T}
         return L * op.r5_D0_g
     end
     return L * op.r2_D0_g
-end
-
-# -----------------------------------------------------------------------------
-# Background Field Structure Functions
-# -----------------------------------------------------------------------------
-
-"""
-    compute_background_field_coefficients(B0_type, N, ri, ro)
-
-Compute Chebyshev coefficients for background field structure function h(r).
-
-For axial field: h(r) = r
-For dipole field: h(r) = 1/r² (more complex)
-"""
-function compute_background_field_coefficients(B0_type::BackgroundField,
-                                              N::Int, ri::Float64, ro::Float64)
-    if B0_type == axial
-        # Axial field: h(r) = r
-        # Chebyshev coefficients already computed in operator building
-        return nothing  # Use r^1 operators directly
-    elseif B0_type == dipole
-        # Dipole field: h(r) = 1/r²
-        # Need special handling for negative powers
-        error("""Dipole background field (B0_type=dipole) is not yet implemented.
-
-The scaffolding exists in MHD/dipole.jl (radial power shifts, shifted operators)
-but the operator assembly in MHD/operator_functions.jl has not been updated to
-use them. Contributions welcome!
-
-For now, use B0_type=axial for an axial background field, or B0_type=no_field
-for pure hydrodynamic problems.""")
-    else
-        # No background field
-        return nothing
-    end
 end
 
 # Note: apply_magnetic_boundary_conditions! is now defined in boundary_conditions.jl

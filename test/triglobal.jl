@@ -25,6 +25,49 @@ function _empty_basic_state_3d(::Type{T}, Nr::Int, χ; lmax_bs::Int=0, mmax_bs::
     )
 end
 
+function _basic_state_3d_with_modes(cd;
+                                     lmax_bs::Int=1,
+                                     mmax_bs::Int=1,
+                                     theta_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}(),
+                                     dtheta_dr_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}(),
+                                     ur_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}(),
+                                     utheta_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}(),
+                                     uphi_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}(),
+                                     dur_dr_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}(),
+                                     dutheta_dr_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}(),
+                                     duphi_dr_coeffs=Dict{Tuple{Int,Int}, Vector{eltype(cd.x)}}())
+    T = eltype(cd.x)
+    return BasicState3D{T}(
+        lmax_bs = lmax_bs,
+        mmax_bs = mmax_bs,
+        Nr = length(cd.x),
+        r = cd.x,
+        theta_coeffs = theta_coeffs,
+        dtheta_dr_coeffs = dtheta_dr_coeffs,
+        ur_coeffs = ur_coeffs,
+        utheta_coeffs = utheta_coeffs,
+        uphi_coeffs = uphi_coeffs,
+        dur_dr_coeffs = dur_dr_coeffs,
+        dutheta_dr_coeffs = dutheta_dr_coeffs,
+        duphi_dr_coeffs = duphi_dr_coeffs
+    )
+end
+
+function _field_rows(single_mode_op, ℓ::Int, field::Symbol)
+    full_indices = Set(single_mode_op.idx_map[(ℓ, field)])
+    return [i for (i, dof) in enumerate(single_mode_op.interior_dofs) if dof in full_indices]
+end
+
+function _field_cols(single_mode_op, ℓ::Int, field::Symbol)
+    full_indices = single_mode_op.idx_map[(ℓ, field)]
+    for block in single_mode_op.reduction.blocks
+        if block.full_indices == full_indices
+            return collect(block.reduced_indices)
+        end
+    end
+    error("No reduced block found for field $field at ℓ=$ℓ")
+end
+
 @testset "Triglobal Stability" begin
 
     # =========================================================================
@@ -159,6 +202,20 @@ end
         @test !(6 in coupled_4)  # Outside range
     end
 
+    @testset "Velocity-only modes contribute to coupling structure" begin
+        χ = 0.35
+        Nr = 12
+        cd = ChebyshevDiffn(Nr, [χ, 1.0], 2)
+        flow = Dict((1, 1) => ones(Float64, Nr))
+        bs3d = _basic_state_3d_with_modes(cd; ur_coeffs=flow)
+
+        coupling_graph, all_m_bs = Cross.build_mode_coupling_structure(1:2, bs3d)
+
+        @test all_m_bs == [1]
+        @test coupling_graph[1] == [1, 2]
+        @test coupling_graph[2] == [1, 2]
+    end
+
     # =========================================================================
     # Test 3: DOF Counting Consistency
     # =========================================================================
@@ -261,6 +318,70 @@ end
 
         @test eltype(A) == Complex{T}
         @test eltype(B) == Complex{T}
+    end
+
+    @testset "Off-diagonal zonal flow advects momentum fields" begin
+        E = 1e-3
+        Pr = 1.0
+        Ra = 1e4
+        χ = 0.35
+        Nr = 12
+        lmax = 4
+        cd = ChebyshevDiffn(Nr, [χ, 1.0], 2)
+        uphi = Dict((1, 1) => ones(Float64, Nr))
+        duphi_dr = Dict((1, 1) => zeros(Float64, Nr))
+        bs3d = _basic_state_3d_with_modes(cd; uphi_coeffs=uphi, duphi_dr_coeffs=duphi_dr)
+        params = TriglobalParams(
+            E = E, Pr = Pr, Ra = Ra, χ = χ,
+            m_range = 1:2,
+            lmax = lmax,
+            Nr = Nr,
+            basic_state_3d = bs3d
+        )
+
+        problem = setup_coupled_mode_problem(params)
+        single_mode_ops = Cross.build_single_mode_operators(problem, false)
+        coupling_ops = Cross.build_mode_coupling_operators(problem, single_mode_ops, false)
+        C = coupling_ops[(1, 2)]
+        source = single_mode_ops[1]
+        target = single_mode_ops[2]
+
+        @test norm(C[_field_rows(target, 2, :P), _field_cols(source, 1, :P)]) > 0
+        @test norm(C[_field_rows(target, 2, :T), _field_cols(source, 1, :T)]) > 0
+        @test norm(C[_field_rows(target, 2, :P), _field_cols(source, 1, :T)]) > 0
+    end
+
+    @testset "Azimuthal temperature-gradient coupling uses unweighted angular integral" begin
+        E = 1e-3
+        Pr = 1.0
+        Ra = 1e4
+        χ = 0.35
+        Nr = 12
+        lmax = 4
+        cd = ChebyshevDiffn(Nr, [χ, 1.0], 2)
+        theta = Dict((1, 1) => ones(Float64, Nr))
+        dtheta_dr = Dict((1, 1) => zeros(Float64, Nr))
+        bs3d = _basic_state_3d_with_modes(cd; theta_coeffs=theta, dtheta_dr_coeffs=dtheta_dr)
+
+        @test Cross.compute_sh_coupling_coefficient(1, 1, 1, 1, 4, 2) == 0.0
+        @test abs(Cross.compute_sh_coupling_unweighted(1, 1, 1, 1, 4, 2)) > 1e-12
+
+        params = TriglobalParams(
+            E = E, Pr = Pr, Ra = Ra, χ = χ,
+            m_range = 1:2,
+            lmax = lmax,
+            Nr = Nr,
+            basic_state_3d = bs3d
+        )
+        problem = setup_coupled_mode_problem(params)
+        single_mode_ops = Cross.build_single_mode_operators(problem, false)
+        coupling_ops = Cross.build_mode_coupling_operators(problem, single_mode_ops, false)
+        source = single_mode_ops[1]
+        target = single_mode_ops[2]
+        C = get(coupling_ops, (1, 2), zeros(ComplexF64,
+            length(target.interior_dofs), source.reduction.n_reduced))
+
+        @test norm(C[_field_rows(target, 4, :Θ), _field_cols(source, 1, :T)]) > 0
     end
 
     # =========================================================================

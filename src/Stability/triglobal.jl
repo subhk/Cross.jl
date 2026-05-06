@@ -146,6 +146,30 @@ function get_coupling_modes(m::Int, m_bs::Int, m_range::UnitRange{Int})
     return sort(unique(coupled_modes))
 end
 
+"""Return nonzero 3D basic-state modes that can induce triglobal coupling."""
+function _nonzero_basic_state_modes_3d(basic_state::BasicState3D; tol=1e-14)
+    modes = Tuple{Int,Int}[]
+    coefficient_dicts = (
+        basic_state.theta_coeffs,
+        basic_state.dtheta_dr_coeffs,
+        basic_state.ur_coeffs,
+        basic_state.utheta_coeffs,
+        basic_state.uphi_coeffs,
+        basic_state.dur_dr_coeffs,
+        basic_state.dutheta_dr_coeffs,
+        basic_state.duphi_dr_coeffs,
+    )
+
+    for coefficient_dict in coefficient_dicts
+        for ((ℓ, m_bs), coeff) in coefficient_dict
+            if m_bs != 0 && maximum(abs.(coeff)) > tol
+                push!(modes, (ℓ, m_bs))
+            end
+        end
+    end
+
+    return sort(unique(modes))
+end
 
 """
     build_mode_coupling_structure(m_range::UnitRange{Int},
@@ -162,19 +186,8 @@ This information is used to construct the block-sparse eigenvalue problem.
 function build_mode_coupling_structure(m_range::UnitRange{Int},
                                        basic_state::BasicState3D{T}) where T
 
-    # Find all non-zero azimuthal modes in the basic state
-    all_m_bs = Int[]
-    for ((ℓ, m_bs), theta_coeff) in basic_state.theta_coeffs
-        if m_bs != 0 && maximum(abs.(theta_coeff)) > 1e-14
-            push!(all_m_bs, m_bs)
-        end
-    end
-    for ((ℓ, m_bs), uphi_coeff) in basic_state.uphi_coeffs
-        if m_bs != 0 && maximum(abs.(uphi_coeff)) > 1e-14
-            push!(all_m_bs, m_bs)
-        end
-    end
-    all_m_bs = sort(unique(all_m_bs))
+    bs_modes = _nonzero_basic_state_modes_3d(basic_state)
+    all_m_bs = sort(unique(m_bs for (_, m_bs) in bs_modes))
 
     # Build coupling graph
     coupling_graph = Dict{Int, Vector{Int}}()
@@ -653,34 +666,7 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
     end
 
     # Find all non-zero basic state modes (ℓ_bs, m_bs)
-    bs_modes = Tuple{Int,Int}[]
-    for ((ℓ_bs, m_bs), coeff) in basic_state.theta_coeffs
-        if m_bs != 0 && maximum(abs.(coeff)) > 1e-14
-            push!(bs_modes, (ℓ_bs, m_bs))
-        end
-    end
-    # Also check uphi for non-zero modes
-    for ((ℓ_bs, m_bs), coeff) in basic_state.uphi_coeffs
-        if m_bs != 0 && maximum(abs.(coeff)) > 1e-14
-            if (ℓ_bs, m_bs) ∉ bs_modes
-                push!(bs_modes, (ℓ_bs, m_bs))
-            end
-        end
-    end
-    for ((ℓ_bs, m_bs), coeff) in basic_state.ur_coeffs
-        if m_bs != 0 && maximum(abs.(coeff)) > 1e-14
-            if (ℓ_bs, m_bs) ∉ bs_modes
-                push!(bs_modes, (ℓ_bs, m_bs))
-            end
-        end
-    end
-    for ((ℓ_bs, m_bs), coeff) in basic_state.utheta_coeffs
-        if m_bs != 0 && maximum(abs.(coeff)) > 1e-14
-            if (ℓ_bs, m_bs) ∉ bs_modes
-                push!(bs_modes, (ℓ_bs, m_bs))
-            end
-        end
-    end
+    bs_modes = _nonzero_basic_state_modes_3d(basic_state)
 
     if verbose
         println("  Non-zero basic state modes: ", bs_modes)
@@ -733,6 +719,9 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                     add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                            m_from, m_to, ℓ_bs, m_bs_eff,
                                            r, uphi_interp, params)
+                    add_metric_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                         m_from, m_to, ℓ_bs, m_bs_eff,
+                                         r, uphi_interp, params)
                     add_radial_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                                    m_from, m_to, ℓ_bs, m_bs_eff,
                                                    r, ur_interp, cd.D1, params)
@@ -767,6 +756,9 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                     add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                            m_from, m_to, ℓ_bs, m_bs_eff,
                                            r, uphi_interp, params)
+                    add_metric_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                         m_from, m_to, ℓ_bs, m_bs_eff,
+                                         r, uphi_interp, params)
                     add_radial_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
                                                    m_from, m_to, ℓ_bs, m_bs_eff,
                                                    r, ur_interp, cd.D1, params)
@@ -866,44 +858,92 @@ function add_advection_coupling!(C::Matrix{Complex{T}},
     bs_scale = _basic_state_mode_scale(m_bs, T)
     adv_coeff = im * m_from .* (bs_scale .* uphi_bs) ./ r
 
-    # Loop over ℓ modes in both from and to operators
-    for (ℓ_from, field_from) in keys(op_from.index_map)
-        if field_from != :Θ
-            continue  # Only temperature is advected
+    for field in (:P, :T, :Θ)
+        for (ℓ_from, field_from) in keys(op_from.index_map)
+            if field_from != field || ℓ_from < m_pert_from
+                continue
+            end
+
+            for (ℓ_to, field_to) in keys(op_to.index_map)
+                if field_to != field || ℓ_to < m_pert_to
+                    continue
+                end
+
+                # Compute UNWEIGHTED spherical harmonic coupling coefficient.
+                # This correctly handles the 1/sinθ factor in the advection operator.
+                coupling_coeff = compute_sh_coupling_unweighted(
+                    ℓ_from, m_from, ℓ_bs, m_bs, ℓ_to, m_to
+                )
+
+                if abs(coupling_coeff) < 1e-14
+                    continue
+                end
+
+                idx_from = idx_map_from[(ℓ_from, field)]
+                idx_to = idx_map_to[(ℓ_to, field)]
+
+                for i in 1:Nr
+                    row = idx_to[i]
+                    col = idx_from[i]
+                    (row == 0 || col == 0) && continue
+                    C[row, col] += coupling_coeff * adv_coeff[i]
+                end
+            end
         end
-        if ℓ_from < m_pert_from
+    end
+end
+
+"""Add curvilinear metric coupling from zonal basic flow into the poloidal equation."""
+function add_metric_coupling!(C::Matrix{Complex{T}},
+                              op_from, op_to,
+                              idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                              idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
+                              m_from::Int, m_to::Int,
+                              ℓ_bs::Int, m_bs::Int,
+                              r::Vector{T},
+                              uphi_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
+                              params) where T
+    Nr = length(r)
+    m_pert_from = abs(m_from)
+    m_pert_to = abs(m_to)
+
+    key_bs = (ℓ_bs, abs(m_bs))
+    if !haskey(uphi_coeffs, key_bs)
+        return
+    end
+    uphi_bs = uphi_coeffs[key_bs]
+    if maximum(abs.(uphi_bs)) < 1e-14
+        return
+    end
+
+    bs_scale = _basic_state_mode_scale(m_bs, T)
+    metric_profile = -(bs_scale .* uphi_bs) ./ r
+
+    for (ℓ_from, field_from) in keys(op_from.index_map)
+        if field_from != :T || ℓ_from < m_pert_from
             continue
         end
 
         for (ℓ_to, field_to) in keys(op_to.index_map)
-            if field_to != :Θ
-                continue
-            end
-            if ℓ_to < m_pert_to
+            if field_to != :P || ℓ_to < m_pert_to
                 continue
             end
 
-            # Compute UNWEIGHTED spherical harmonic coupling coefficient
-            # This correctly handles the 1/sinθ factor in the advection operator
-            # Y_{ℓ_to, m_to} from Y_{ℓ_from, m_from} × Y_{ℓ_bs, m_bs}
-            coupling_coeff = compute_sh_coupling_unweighted(
+            metric_coeff = compute_sh_coupling_unweighted(
                 ℓ_from, m_from, ℓ_bs, m_bs, ℓ_to, m_to
             )
-
-            if abs(coupling_coeff) < 1e-14
+            if abs(metric_coeff) < 1e-14
                 continue
             end
 
-            # Get index ranges
-            idx_from = idx_map_from[(ℓ_from, :Θ)]
-            idx_to = idx_map_to[(ℓ_to, :Θ)]
+            idx_from = idx_map_from[(ℓ_from, :T)]
+            idx_to = idx_map_to[(ℓ_to, :P)]
 
-            # Add diagonal coupling (radial operator) on interior DOFs
             for i in 1:Nr
                 row = idx_to[i]
                 col = idx_from[i]
                 (row == 0 || col == 0) && continue
-                C[row, col] += coupling_coeff * adv_coeff[i]
+                C[row, col] += metric_coeff * metric_profile[i]
             end
         end
     end
@@ -1206,9 +1246,10 @@ function add_temperature_gradient_phi_coupling!(C::Matrix{Complex{T}},
                 continue
             end
 
-            # Compute spherical harmonic coupling coefficient
-            # The 1/sinθ factor is incorporated in the azimuthal coupling
-            coupling_coeff = compute_sh_coupling_coefficient(
+            # Compute the unweighted spherical harmonic coupling coefficient.
+            # The 1/sinθ factor in the azimuthal derivative cancels the sinθ
+            # integration measure, matching the zonal-advection coupling.
+            coupling_coeff = compute_sh_coupling_unweighted(
                 ℓ_from, m_from, ℓ_bs, m_bs, ℓ_to, m_to
             )
 

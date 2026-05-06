@@ -2,8 +2,8 @@
 
 Complete reference for Cross.jl functions, types, and modules.
 
-> **Note:** The v1.x API (documented below under "Core Types", "Solver Functions", etc.) remains
-> fully functional for backward compatibility. New code should prefer the v2.0 Unified API.
+> **Note:** The public API is the v2 problem/solve/result interface. Lower-level
+> operator constructors remain documented for advanced workflows.
 
 ---
 

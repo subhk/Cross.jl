@@ -184,7 +184,7 @@ The `mode` keyword selects the construction strategy:
 | `:selfconsistent` | `BasicState3D` | Iterative solver for full geostrophic balance |
 | `:nonaxisymmetric` | `BasicState3D` | Laplace-approximation 3D state |
 
-!!! note "Legacy API"
+!!! note "Low-level API"
     The low-level functions `conduction_basic_state`, `meridional_basic_state`, `nonaxisymmetric_basic_state`, and `basic_state_selfconsistent` remain fully supported. The unified API is a convenience wrapper.
 
 ---

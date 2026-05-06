@@ -277,7 +277,6 @@ op = LinearStabilityOperator(params)
 
 ### Compute Eigenvalues
 
-**Legacy API:**
 ```julia
 # Build basic state with unified constructor
 bs = basic_state(params; mode=:meridional, amplitude=0.1)

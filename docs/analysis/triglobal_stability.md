@@ -414,7 +414,6 @@ println("  DOFs per mode:       ", size_report.dofs_per_mode)
 
 ### Step 4: Build and Solve
 
-**Legacy API:**
 ```julia
 # Build coupled problem
 println("Building coupled-mode problem...")

@@ -30,6 +30,11 @@ end
     # Validation: Nr mismatch between params and basic state
     params_bad = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=10, Nr=32)
     @test_throws ArgumentError BiglobalProblem(params_bad, bs)
+
+    # Validation: same Nr but incompatible radial grid
+    cd_wrong_grid = ChebyshevDiffn(params.Nr, [0.40, 1.0], 4)
+    bs_wrong_grid = conduction_basic_state(cd_wrong_grid, 0.40, 6)
+    @test_throws ArgumentError BiglobalProblem(params, bs_wrong_grid)
 end
 
 @testset "TriglobalProblem construction and validation" begin

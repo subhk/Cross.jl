@@ -82,6 +82,42 @@ end
         )
     end
 
+    @testset "Axisymmetric perturbations retain zonal-flow metric coupling" begin
+        E = 1e-3
+        Pr = 1.0
+        Ra = 1e4
+        χ = 0.35
+        m = 0
+        lmax = 4
+        Nr = 12
+
+        cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
+        r = cd.x
+        uphi = ones(Float64, Nr)
+        bs = BasicState(
+            lmax_bs = 0,
+            Nr = Nr,
+            r = r,
+            theta_coeffs = Dict(0 => zeros(Float64, Nr)),
+            uphi_coeffs = Dict(0 => uphi),
+            dtheta_dr_coeffs = Dict(0 => zeros(Float64, Nr)),
+            duphi_dr_coeffs = Dict(0 => cd.D1 * uphi)
+        )
+
+        params = OnsetParams(
+            E = E, Pr = Pr, Ra = Ra, χ = χ,
+            m = m, lmax = lmax, Nr = Nr,
+            basic_state = bs
+        )
+        op = LinearStabilityOperator(params)
+        bs_ops = Cross.build_basic_state_operators(bs, op, m)
+
+        @test haskey(bs_ops.metric_poloidal_blocks, (1, 1))
+        if haskey(bs_ops.metric_poloidal_blocks, (1, 1))
+            @test norm(bs_ops.metric_poloidal_blocks[(1, 1)]) > 0
+        end
+    end
+
     @testset "Triglobal single-mode blocks use constraint-preserving reduction" begin
         E = 1e-3
         Pr = 1.0

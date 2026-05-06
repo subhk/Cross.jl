@@ -316,7 +316,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
     lmax_bs = maximum(ℓ_bs_modes)
     coupling_tol = 1e-14
 
-    azimuthal_cache = m == 0 ? nothing : _build_azimuthal_coupling_cache(m, lmax_pert, lmax_bs)
+    azimuthal_cache = _build_azimuthal_coupling_cache(m, lmax_pert, lmax_bs)
 
     @info "Building basic state operators" ℓ_bs_modes=ℓ_bs_modes ℓ_pert_modes=ℓ_pert_modes m=m
 
@@ -433,7 +433,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
             #       (ū · ∇)u'_θ contains: -ū_φ u'_φ cot(θ) / r
             #     These project onto the poloidal equation through angular integrals.
             # =====================================================================
-            if uphi_max > coupling_tol && m != 0
+            if uphi_max > coupling_tol
                 # The metric coupling coefficient involves angular integrals similar
                 # to the azimuthal advection but with different weighting.
                 # Use the same azimuthal coupling structure.

@@ -146,6 +146,28 @@ function analytical_uphi_quadratic_theta(r, r_i, r_o, Ra, E, Pr, ℓ_theta, A, L
     return @. prefactor * c_L * A * (r^4 - r_i^5 / r) / 5
 end
 
+"""
+Coupling coefficient from non-axisymmetric temperature mode `(ℓ, m)` to
+velocity mode `L = ℓ + 1` in the diagonal triglobal thermal-wind approximation.
+"""
+function coupling_coeff_plus_3d(ℓ::Int, m::Int, T::Type=Float64)
+    numer = T((ℓ + 1)^2 - m^2)
+    denom = T((2ℓ + 1) * (2ℓ + 3))
+    norm_ratio = sqrt(T(2ℓ + 1) / T(2 * (ℓ + 1) + 1))
+    return -T(ℓ + 1) * sqrt(numer / denom) * norm_ratio
+end
+
+"""
+Analytical diagonal triglobal thermal-wind solution for constant `θ̄_ℓm(r) = A`
+and `L = ℓ + 1`, satisfying the inner no-slip boundary condition.
+"""
+function analytical_uphi_constant_theta_3d(r, r_i, r_o, Ra, E, Pr, ℓ_theta, m, A, L)
+    L == ℓ_theta + 1 || return zeros(length(r))
+    prefactor = thermal_wind_prefactor(Ra, E, Pr, r_o)
+    c_L = coupling_coeff_plus_3d(ℓ_theta, m)
+    return @. prefactor * c_L * A * (r^2 - r_i^3 / r) / 3
+end
+
 
 # =============================================================================
 #  Test Suite
@@ -544,9 +566,7 @@ end  # @testset "Thermal Wind Balance"
         end
     end
 
-    @testset "Non-axisymmetric coupling structure (m_bs=2)" begin
-        # For m_bs=2, temperature ℓ=2 should couple to velocity L=1,3 with m=2
-
+    @testset "Non-axisymmetric diagonal solver matches analytical coefficient (m_bs=2)" begin
         solve_tw_3d! = Cross.solve_thermal_wind_balance_3d!
 
         A = 0.1
@@ -561,17 +581,38 @@ end  # @testset "Thermal Wind Balance"
         solve_tw_3d!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs, m_bs,
                      cd, r_i, r_o, Ra, Pr; E=E)
 
-        # L=3 should be non-zero (from ℓ=2+1, and L >= m_bs=2 ✓)
-        # L=1 should be zero (L=1 < m_bs=2, so not valid)
+        expected_L3 = analytical_uphi_constant_theta_3d(r, r_i, r_o, Ra, E, Pr,
+                                                        2, m_bs, A, 3)
+        interior = 3:(Nr-2)
+        rel_error = norm(uphi_coeffs[3][interior] - expected_L3[interior]) /
+                    (norm(expected_L3[interior]) + 1e-14)
 
-        # Note: The coupling L >= m_bs is required
-        # So for m_bs=2: L=1 is NOT coupled (L < m_bs)
-        # L=3 IS coupled (L >= m_bs)
+        @test maximum(abs.(uphi_coeffs[3])) > 1e-14
+        @test rel_error < 0.05
+        @test maximum(abs.(get(uphi_coeffs, 1, zeros(Nr)))) < 1e-14
+        @test abs(uphi_coeffs[3][1]) < 1e-10
+    end
 
-        if haskey(uphi_coeffs, 3)
-            @test maximum(abs.(uphi_coeffs[3])) > 1e-14 ||
-                  maximum(abs.(uphi_coeffs[3])) < 1e-14  # May or may not be zero depending on coupling
-        end
+    @testset "Coupled triglobal solver enforces only the inner radial BC" begin
+        A = 0.1
+        m_bs = 2
+        lmax_bs = 6
+
+        theta_coeffs = Dict(ℓ => (ℓ == 2 ? fill(A, Nr) : zeros(Nr)) for ℓ in m_bs:lmax_bs)
+        uphi_coeffs = Dict(ℓ => zeros(Nr) for ℓ in 0:(lmax_bs + 1))
+        duphi_dr_coeffs = Dict(ℓ => zeros(Nr) for ℓ in 0:(lmax_bs + 1))
+
+        Cross.solve_thermal_wind_coupled!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+                                          m_bs, cd, r_i, r_o, Ra, Pr;
+                                          mechanical_bc=:no_slip, E=E,
+                                          lmax=lmax_bs + 1)
+
+        idx_inner = abs(r[1] - r_i) < abs(r[end] - r_i) ? 1 : length(r)
+        idx_outer = idx_inner == 1 ? length(r) : 1
+        outer_amplitude = maximum(abs(uphi[idx_outer]) for uphi in values(uphi_coeffs))
+
+        @test all(abs(uphi[idx_inner]) < 1e-10 for uphi in values(uphi_coeffs))
+        @test outer_amplitude > 1e-14
     end
 
     @testset "Amplitude scaling for 3D" begin

@@ -90,8 +90,6 @@ module Cross
         # Thermal wind solvers
         solve_thermal_wind_balance!,
         solve_thermal_wind_balance_3d!,
-        build_thermal_wind,
-        build_thermal_wind_3d,
         theta_derivative_coeff_3d,
 
         # Basic state operators

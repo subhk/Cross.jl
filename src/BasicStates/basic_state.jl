@@ -2049,12 +2049,15 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     # Apply boundary conditions
     # =========================================================================
     #
-    # For each mode K, apply BC at inner boundary:
+    # For each mode K, apply one BC at the inner boundary:
     # - No-slip: Ū_K(r_i) = 0
     # - Stress-free: dŪ_K/dr - Ū_K/r = 0
+    #
+    # The coupled thermal-wind balance is still first-order in radius. Applying
+    # both radial boundaries would replace two collocation equations per mode and
+    # overconstrain the continuous problem.
 
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
-    idx_outer = idx_inner == 1 ? Nr : 1
 
     for k in 1:n_modes
         # Row index for the BC at inner boundary for mode k
@@ -2073,21 +2076,6 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
             L_op[bc_row, col_start:col_end] .= D1[idx_inner, :]
             L_op[bc_row, bc_row] -= one(T) / r[idx_inner]
             F_vec[bc_row] = zero(T)
-        end
-
-        # Also apply BC at outer boundary for better conditioning
-        bc_row_outer = (k - 1) * Nr + idx_outer
-        if mechanical_bc == :no_slip
-            L_op[bc_row_outer, :] .= zero(T)
-            L_op[bc_row_outer, bc_row_outer] = one(T)
-            F_vec[bc_row_outer] = zero(T)
-        else
-            L_op[bc_row_outer, :] .= zero(T)
-            col_start = (k - 1) * Nr + 1
-            col_end = k * Nr
-            L_op[bc_row_outer, col_start:col_end] .= D1[idx_outer, :]
-            L_op[bc_row_outer, bc_row_outer] -= one(T) / r[idx_outer]
-            F_vec[bc_row_outer] = zero(T)
         end
     end
 

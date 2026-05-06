@@ -74,6 +74,12 @@ end
         @test kwargs.equatorial_symmetry == :antisymmetric
         @test kwargs.nev == 4
         @test kwargs.basic_state === bs
+
+        @test_throws ArgumentError Cross.find_critical_Ra_biglobal(
+            E = 1e-3, Pr = 1.0, χ = χ, m = 1, lmax = 4, Nr = Nr,
+            basic_state = bs, equatorial_symmetry = :invalid,
+            Ra_guess = 1e4, Ra_bracket = (1e3, 1e5)
+        )
     end
 
     @testset "Triglobal single-mode blocks use constraint-preserving reduction" begin

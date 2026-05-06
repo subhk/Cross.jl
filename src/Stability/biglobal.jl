@@ -431,17 +431,17 @@ scale with Ra.
 - `ω_c::Real` - Drift frequency at onset
 - `eigenvector` - Critical eigenmode
 """
-function find_critical_Ra_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int,
-                                    basic_state::Union{BasicState{T},Nothing}=nothing,
+function find_critical_Ra_biglobal(; E::Real, Pr::Real, χ::Real, m::Int, lmax::Int, Nr::Int,
+                                    basic_state::Union{BasicState,Nothing}=nothing,
                                     basic_state_builder::Union{Nothing,Function}=nothing,
-                                    Ra_guess::T=T(1e6),
-                                    tol::T=T(1e-6),
-                                    Ra_bracket::Tuple{T,T}=(Ra_guess/10, Ra_guess*10),
+                                    Ra_guess::Real=1e6,
+                                    tol::Real=1e-6,
+                                    Ra_bracket::Tuple{<:Real,<:Real}=(Ra_guess/10, Ra_guess*10),
                                     mechanical_bc::Symbol=:no_slip,
                                     thermal_bc::Symbol=:fixed_temperature,
                                     equatorial_symmetry::Symbol=:both,
                                     nev::Int=6,
-                                    verbose::Bool=false) where {T<:Real}
+                                    verbose::Bool=false)
 
     if (basic_state === nothing) && (basic_state_builder === nothing)
         error("find_critical_Ra_biglobal requires either `basic_state` or `basic_state_builder`")
@@ -449,13 +449,20 @@ function find_critical_Ra_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::
         error("Provide only one of `basic_state` or `basic_state_builder`")
     end
 
+    equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
+        "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$equatorial_symmetry"))
+
+    T = promote_type(typeof(E), typeof(Pr), typeof(χ), typeof(Ra_guess),
+                     typeof(tol), typeof(Ra_bracket[1]), typeof(Ra_bracket[2]))
+
     rayleigh_kwargs = _biglobal_rayleigh_kwargs(
         mechanical_bc, thermal_bc, equatorial_symmetry, nev,
         basic_state, basic_state_builder)
 
     Ra_c, ω_c, vec_c = find_critical_rayleigh(
-        E, Pr, χ, m, lmax, Nr;
-        Ra_guess=Ra_guess, tol=tol, Ra_bracket=Ra_bracket,
+        T(E), T(Pr), T(χ), m, lmax, Nr;
+        Ra_guess=T(Ra_guess), tol=T(tol),
+        Ra_bracket=(T(Ra_bracket[1]), T(Ra_bracket[2])),
         rayleigh_kwargs...
     )
 

@@ -128,3 +128,13 @@ end
     output = sprint(show, MIME("text/plain"), bp)
     @test occursin("BiglobalParams", output)
 end
+
+@testset "BiglobalParams validation rejects negative Rayleigh" begin
+    params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=10, Nr=16)
+    cd = ChebyshevDiffn(params.Nr, [params.χ, 1.0], 4)
+    bs = conduction_basic_state(cd, params.χ, 6)
+
+    @test_throws ArgumentError BiglobalParams(
+        E=1e-3, Pr=1.0, Ra=-100.0, χ=0.35, m=4, lmax=10, Nr=16,
+        basic_state=bs)
+end

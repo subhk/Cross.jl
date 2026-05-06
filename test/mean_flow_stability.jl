@@ -82,6 +82,39 @@ end
         )
     end
 
+    @testset "Biglobal sweep preserves fixed-flux basic state" begin
+        E = 1e-3
+        Pr = 1.0
+        Ra = 1e4
+        χ = 0.35
+        m = 1
+        lmax = 4
+        Nr = 12
+        amplitude = 0.05
+
+        cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
+        bs_flux = meridional_basic_state(cd, χ, E, Ra, Pr, 6, amplitude;
+                                         thermal_bc = :fixed_flux)
+        params_flux = OnsetParams(
+            E = E, Pr = Pr, Ra = Ra, χ = χ,
+            m = m, lmax = lmax, Nr = Nr,
+            thermal_bc = :fixed_flux,
+            basic_state = bs_flux
+        )
+        σ_expected, ω_expected, _ = find_growth_rate(LinearStabilityOperator(params_flux))
+
+        results = sweep_thermal_wind_amplitude(
+            E = E, Pr = Pr, χ = χ, m = m, lmax = lmax, Nr = Nr, Ra = Ra,
+            amplitudes = [amplitude],
+            thermal_bc = :fixed_flux,
+            verbose = false
+        )
+
+        @test length(results) == 1
+        @test results[1].σ ≈ σ_expected rtol=1e-8 atol=1e-10
+        @test results[1].ω ≈ ω_expected rtol=1e-8 atol=1e-10
+    end
+
     @testset "Axisymmetric perturbations retain zonal-flow metric coupling" begin
         E = 1e-3
         Pr = 1.0

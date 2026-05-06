@@ -43,3 +43,23 @@ end
         @test abs(dot(D1[end, :], P)) / scale < 1e-7
     end
 end
+
+@testset "solve(BiglobalProblem) honors requested eigenpair count" begin
+    Random.seed!(1234)
+    E = 1e-3
+    Pr = 1.0
+    Ra = 1e4
+    χ = 0.35
+    m = 2
+    lmax = 6
+    Nr = 14
+    cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
+    bs = meridional_basic_state(cd, χ, E, Ra, Pr, 6, 0.05)
+    params = OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m=m, lmax=lmax, Nr=Nr,
+                         basic_state=bs)
+
+    result = solve(BiglobalProblem(params, bs); nev=4)
+
+    @test length(result.eigenvalues) <= 4
+    @test size(result.eigenvectors, 2) == length(result.eigenvalues)
+end

@@ -661,6 +661,7 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
     ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
                which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
                collect(1:length(eigenvalues))
+    ordering = ordering[1:min(nev, length(ordering))]
 
     return eigenvalues[ordering], vecs_full[ordering], info
 end

@@ -93,6 +93,8 @@ See also: [`solve_biglobal_problem`](@ref), [`create_thermal_wind_basic_state`](
             "Ekman number E must be positive, got $E"))
         Pr > 0 || throw(ArgumentError(
             "Prandtl number Pr must be positive, got $Pr"))
+        Ra >= 0 || throw(ArgumentError(
+            "Rayleigh number Ra must be non-negative, got $Ra"))
         m >= 0 || throw(ArgumentError(
             "Azimuthal wavenumber m must be non-negative, got $m"))
         lmax >= m || throw(ArgumentError(
@@ -195,6 +197,9 @@ This drives a zonal flow through thermal wind balance:
 - `amplitude::Real` - Amplitude of Y_20 boundary variation (default: 0.1)
 - `lmax_bs::Int` - Maximum ℓ for basic state (default: 6)
 - `mechanical_bc::Symbol` - Boundary conditions (default: :no_slip)
+- `thermal_bc::Symbol` - Thermal boundary conditions (default: :fixed_temperature)
+- `outer_flux_mean::Real` - Mean outer flux for fixed-flux states
+- `outer_flux_Y20::Real` - Y20 outer flux for fixed-flux states
 
 # Returns
 - `BasicState` - Basic state with thermal wind
@@ -215,10 +220,16 @@ For typical parameters (Ra~10⁷, E~10⁻⁵), this gives ū_φ ~ amplitude.
 function create_thermal_wind_basic_state(χ::T, E::T, Ra::T, Pr::T, Nr::Int;
                                           amplitude::T=T(0.1),
                                           lmax_bs::Int=6,
-                                          mechanical_bc::Symbol=:no_slip) where T<:Real
+                                          mechanical_bc::Symbol=:no_slip,
+                                          thermal_bc::Symbol=:fixed_temperature,
+                                          outer_flux_mean::T=zero(T),
+                                          outer_flux_Y20::T=zero(T)) where T<:Real
     cd = ChebyshevDiffn(Nr, [χ, one(T)], 4)
     bs = meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, amplitude;
-                                mechanical_bc=mechanical_bc)
+                                mechanical_bc=mechanical_bc,
+                                thermal_bc=thermal_bc,
+                                outer_flux_mean=outer_flux_mean,
+                                outer_flux_Y20=outer_flux_Y20)
     return bs, cd
 end
 
@@ -525,7 +536,8 @@ function compare_onset_vs_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::
     # Biglobal (with thermal wind)
     bs, cd = create_thermal_wind_basic_state(χ, E, Ra, Pr, Nr;
                                               amplitude=basic_state_amplitude,
-                                              mechanical_bc=mechanical_bc)
+                                              mechanical_bc=mechanical_bc,
+                                              thermal_bc=thermal_bc)
     params_biglobal = OnsetParams(
         E=E, Pr=Pr, Ra=Ra, χ=χ, m=m, lmax=lmax, Nr=Nr,
         mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
@@ -608,7 +620,8 @@ function sweep_thermal_wind_amplitude(; E::T, Pr::T, χ::T, m::Int, lmax::Int, N
         else
             bs, _ = create_thermal_wind_basic_state(χ, E, Ra, Pr, Nr;
                                                      amplitude=amp,
-                                                     mechanical_bc=mechanical_bc)
+                                                     mechanical_bc=mechanical_bc,
+                                                     thermal_bc=thermal_bc)
             params = OnsetParams(
                 E=E, Pr=Pr, Ra=Ra, χ=χ, m=m, lmax=lmax, Nr=Nr,
                 mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,

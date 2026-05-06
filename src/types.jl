@@ -23,11 +23,11 @@ Use `estimate_size` to preview memory requirements before solving.
 p = OnsetProblem(OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=30, Nr=64))
 ```
 """
-struct OnsetProblem{T}
-    params::OnsetParams{T, <:Any}
-    function OnsetProblem(params::OnsetParams{T, <:Any}) where {T}
+struct OnsetProblem{T, BS}
+    params::OnsetParams{T, BS}
+    function OnsetProblem(params::OnsetParams{T, BS}) where {T, BS}
         validate_onset_params(params)
-        new{T}(params)
+        new{T, BS}(params)
     end
 end
 
@@ -48,13 +48,13 @@ consistency between them on construction.
 p = BiglobalProblem(params, basic_state)
 ```
 """
-struct BiglobalProblem{T}
-    params::OnsetParams{T, <:Any}
+struct BiglobalProblem{T, BS}
+    params::OnsetParams{T, BS}
     basic_state::BasicState{T}
-    function BiglobalProblem(params::OnsetParams{T, <:Any}, basic_state::BasicState{T}) where {T}
+    function BiglobalProblem(params::OnsetParams{T, BS}, basic_state::BasicState{T}) where {T, BS}
         validate_onset_params(params)
         validate_basic_state_consistency(basic_state, params)
-        new{T}(params, basic_state)
+        new{T, BS}(params, basic_state)
     end
 end
 
@@ -75,13 +75,13 @@ Couples multiple azimuthal wavenumbers `m` simultaneously via a `BasicState3D`.
 p = TriglobalProblem(params, basic_state_3d, 0:4)
 ```
 """
-struct TriglobalProblem{T}
-    params::OnsetParams{T, <:Any}
+struct TriglobalProblem{T, BS}
+    params::OnsetParams{T, BS}
     basic_state::BasicState3D{T}
     m_range::UnitRange{Int}
-    function TriglobalProblem(params::OnsetParams{T, <:Any}, basic_state::BasicState3D{T}, m_range::UnitRange{Int}) where {T}
+    function TriglobalProblem(params::OnsetParams{T, BS}, basic_state::BasicState3D{T}, m_range::UnitRange{Int}) where {T, BS}
         validate_triglobal_params(params, basic_state, m_range)
-        new{T}(params, basic_state, m_range)
+        new{T, BS}(params, basic_state, m_range)
     end
 end
 
@@ -169,11 +169,11 @@ Return the oscillation frequency (imaginary part of the leading eigenvalue) from
 frequency(r::StabilityResult) = r.frequency
 
 """
-    leading_mode(r::StabilityResult) -> Vector
+    leading_mode(r::StabilityResult) -> AbstractVector
 
 Return the eigenvector corresponding to the most unstable (largest real part) eigenvalue.
 """
-leading_mode(r::StabilityResult) = r.eigenvectors[:, r.leading_index]
+leading_mode(r::StabilityResult) = @view r.eigenvectors[:, r.leading_index]
 
 # --- Problem size estimation (shared helpers) ---
 

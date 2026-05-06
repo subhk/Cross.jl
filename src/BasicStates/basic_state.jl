@@ -217,18 +217,23 @@ function Base.:*(c::Real, bc::SphericalHarmonicBC{T}) where T
 end
 
 # Scalar multiplication (from right)
+"""Scale a symbolic spherical-harmonic boundary condition from the right."""
 Base.:*(bc::SphericalHarmonicBC, c::Real) = c * bc
 
 # Division by scalar
+"""Divide all amplitudes in a symbolic boundary condition by a scalar."""
 Base.:/(bc::SphericalHarmonicBC, c::Real) = (1/c) * bc
 
 # Negation
+"""Negate all amplitudes in a symbolic boundary condition."""
 Base.:-(bc::SphericalHarmonicBC) = (-1) * bc
 
 # Subtraction
+"""Subtract one symbolic spherical-harmonic boundary condition from another."""
 Base.:-(a::SphericalHarmonicBC, b::SphericalHarmonicBC) = a + (-b)
 
 # Zero check
+"""Return true when all stored boundary-condition amplitudes are zero."""
 Base.iszero(bc::SphericalHarmonicBC) = isempty(bc.coeffs) || all(iszero, values(bc.coeffs))
 
 # =============================================================================

@@ -51,7 +51,11 @@ end
 
 """Build the short problem label embedded in `StabilityResult` display output."""
 _problem_name(p::OnsetProblem) = "OnsetProblem (E=$(p.params.E), Ra=$(p.params.Ra))"
+
+"""Build the short biglobal problem label embedded in `StabilityResult` display output."""
 _problem_name(p::BiglobalProblem) = "BiglobalProblem (E=$(p.params.E), Ra=$(p.params.Ra))"
+
+"""Build the short triglobal problem label embedded in `StabilityResult` display output."""
 _problem_name(p::TriglobalProblem) = "TriglobalProblem (E=$(p.params.E), m=$(p.m_range))"
 
 """Build the MHD problem label while tolerating incomplete custom params."""
@@ -63,6 +67,8 @@ function _problem_name(p::MHDProblem)
         return "MHDProblem"
     end
 end
+
+"""Fallback problem label for unknown result wrappers."""
 _problem_name(::Any) = "Unknown"
 
 # --- Problem types ---

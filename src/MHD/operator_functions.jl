@@ -39,6 +39,8 @@ end
 
 """Combine `(coefficient, sparse_matrix)` terms into one sparse radial block."""
 combine_terms(terms::AbstractVector{<:Tuple}) = _combine_terms(Float64, terms)
+
+"""Combine complex sparse radial terms without dropping imaginary coefficients."""
 combine_terms(terms::AbstractVector{<:Tuple{ComplexF64,SparseC64}}) =
     _combine_terms(ComplexF64, terms)
 

@@ -193,7 +193,7 @@ op = get_shifted_radial_operator(2, 0, shift, N, ri, ro)  # r⁵D⁰
 function get_shifted_radial_operator(base_power::Int, deriv_order::Int,
                                      shift::Int, N::Int, ri::Real, ro::Real)
     total_power = base_power + shift
-    return UltrasphericalSpectral.sparse_radial_operator(total_power, deriv_order, N, ri, ro)
+    return sparse_radial_operator(total_power, deriv_order, N, ri, ro)
 end
 
 """

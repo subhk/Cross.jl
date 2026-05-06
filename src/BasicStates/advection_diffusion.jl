@@ -608,7 +608,7 @@ function solve_meridional_coupled!(
         end
 
         # =================================================================
-        # Boundary conditions: u_θ = 0 at r_i and r_o (no-slip)
+        # Boundary conditions for u_θ at r_i and r_o
         # =================================================================
         if mechanical_bc == :no_slip
             A_full[row_start + idx_inner - 1, :] .= zero(T)
@@ -618,6 +618,20 @@ function solve_meridional_coupled!(
             A_full[row_start + idx_outer - 1, :] .= zero(T)
             A_full[row_start + idx_outer - 1, row_start + idx_outer - 1] = one(T)
             RHS_full[row_start + idx_outer - 1] = zero(T)
+        elseif mechanical_bc == :stress_free
+            inner_row = row_start + idx_inner - 1
+            A_full[inner_row, :] .= zero(T)
+            A_full[inner_row, row_start:row_end] .= D1[idx_inner, :]
+            A_full[inner_row, row_start + idx_inner - 1] -= one(T) / r[idx_inner]
+            RHS_full[inner_row] = zero(T)
+
+            outer_row = row_start + idx_outer - 1
+            A_full[outer_row, :] .= zero(T)
+            A_full[outer_row, row_start:row_end] .= D1[idx_outer, :]
+            A_full[outer_row, row_start + idx_outer - 1] -= one(T) / r[idx_outer]
+            RHS_full[outer_row] = zero(T)
+        else
+            throw(ArgumentError("mechanical_bc must be :no_slip or :stress_free, got :$mechanical_bc"))
         end
     end
 
@@ -830,6 +844,18 @@ function solve_meridional_simple!(
                 A_mat[idx_outer, :] .= zero(T)
                 A_mat[idx_outer, idx_outer] = one(T)
                 forcing[idx_outer] = zero(T)
+            elseif mechanical_bc == :stress_free
+                A_mat[idx_inner, :] .= zero(T)
+                A_mat[idx_inner, :] .= D1[idx_inner, :]
+                A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
+                forcing[idx_inner] = zero(T)
+
+                A_mat[idx_outer, :] .= zero(T)
+                A_mat[idx_outer, :] .= D1[idx_outer, :]
+                A_mat[idx_outer, idx_outer] -= one(T) / r[idx_outer]
+                forcing[idx_outer] = zero(T)
+            else
+                throw(ArgumentError("mechanical_bc must be :no_slip or :stress_free, got :$mechanical_bc"))
             end
 
             # Solve for u_θ

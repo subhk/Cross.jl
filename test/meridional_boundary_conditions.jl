@@ -15,8 +15,8 @@ end
     idx_outer = length(r)
 
     theta_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}(
-        (1, 1) => @. 0.2 + r * (1 - r),
-        (2, 1) => @. 0.1 * r^2,
+        (1, 1) => 0.2 .+ r .* (1 .- r),
+        (2, 1) => 0.1 .* r.^2,
     )
     uphi_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}()
     ur_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}()

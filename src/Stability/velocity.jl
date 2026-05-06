@@ -773,6 +773,8 @@ end
 
 const _mode_layout_cache = IdDict{UInt64, Dict{Int, NamedTuple{(:P, :T, :Θ),
     Tuple{Vector{Int}, Vector{Int}, Vector{Int}}}}}()
+const _mode_reconstruction_cache = IdDict{UInt64, Dict{Int, NamedTuple{(:op, :reduction),
+    Tuple{LinearStabilityOperator, ConstraintReduction}}}}()
 
 function _mode_layout(problem, m_abs::Int)
     prob_key = objectid(problem)
@@ -799,6 +801,35 @@ function _mode_layout(problem, m_abs::Int)
     end
 end
 
+function _mode_reconstruction(problem, m_abs::Int)
+    prob_key = objectid(problem)
+    cache = get!(_mode_reconstruction_cache, prob_key) do
+        Dict{Int, NamedTuple{(:op, :reduction),
+            Tuple{LinearStabilityOperator, ConstraintReduction}}}()
+    end
+
+    return get!(cache, m_abs) do
+        params_tri = problem.params
+        params_m = OnsetParams(
+            E = params_tri.E,
+            Pr = params_tri.Pr,
+            Ra = params_tri.Ra,
+            χ = params_tri.χ,
+            m = m_abs,
+            lmax = params_tri.lmax,
+            Nr = params_tri.Nr,
+            mechanical_bc = params_tri.mechanical_bc,
+            thermal_bc = params_tri.thermal_bc,
+            basic_state = nothing
+        )
+        op = LinearStabilityOperator(params_m)
+        A, B, interior_dofs, boundary_dofs = assemble_matrices(op)
+        _, _, reduction = _constrained_reduced_matrices(
+            A, B, op, interior_dofs, boundary_dofs)
+        return (op = op, reduction = reduction)
+    end
+end
+
 """
     _extract_mode_coefficients(eigenvector, problem, m)
 
@@ -814,41 +845,19 @@ function _extract_mode_coefficients(eigenvector::AbstractVector{<:Complex},
 
     block_range = problem.block_indices[m]
     block_vec = eigenvector[block_range]
-
-    layout = _mode_layout(problem, abs(m))
-
-    nP = max(Nr - 4, 0)
-    nT = max(Nr - 2, 0)
-    nΘ = nT
+    reconstruction = _mode_reconstruction(problem, abs(m))
+    op = reconstruction.op
+    full_vec = _reconstruct_full_vector(reconstruction.reduction, block_vec)
 
     P_coeffs = Dict{Int, Vector{ComplexF64}}()
     T_coeffs = Dict{Int, Vector{ComplexF64}}()
 
-    idx = 1
-    for ℓ in layout.P
-        if nP > 0 && idx + nP - 1 <= length(block_vec)
-            coeffs = zeros(ComplexF64, Nr)
-            coeffs[3:Nr-2] .= block_vec[idx:idx+nP-1]
-            P_coeffs[ℓ] = coeffs
-        else
-            P_coeffs[ℓ] = zeros(ComplexF64, Nr)
-        end
-        idx += nP
+    for ℓ in op.l_sets[:P]
+        P_coeffs[ℓ] = ComplexF64.(full_vec[op.index_map[(ℓ, :P)]])
     end
 
-    for ℓ in layout.T
-        if nT > 0 && idx + nT - 1 <= length(block_vec)
-            coeffs = zeros(ComplexF64, Nr)
-            coeffs[2:Nr-1] .= block_vec[idx:idx+nT-1]
-            T_coeffs[ℓ] = coeffs
-        else
-            T_coeffs[ℓ] = zeros(ComplexF64, Nr)
-        end
-        idx += nT
-    end
-
-    for _ in layout.Θ
-        idx += nΘ
+    for ℓ in op.l_sets[:T]
+        T_coeffs[ℓ] = ComplexF64.(full_vec[op.index_map[(ℓ, :T)]])
     end
 
     return P_coeffs, T_coeffs

@@ -24,21 +24,25 @@ Must be included after MHD/types.jl (formerly MHDOperator.jl).
 const SparseF64 = SparseMatrixCSC{Float64,Int}
 const SparseC64 = SparseMatrixCSC{ComplexF64,Int}
 
+"""Return a complex sparse background-field radial operator with an optional power shift."""
 @inline function complex_background_operator(op::MHDStabilityOperator,
                                              p::Int, h::Int, d::Int,
                                              shift::Int=0)
     return SparseC64(background_operator(op, p + shift, h, d))
 end
 
+"""Return a correctly sized sparse complex zero block for one radial mode."""
 @inline function zero_block(op::MHDStabilityOperator)
     n = op.params.N + 1
     return spzeros(ComplexF64, n, n)
 end
 
+"""Combine `(coefficient, sparse_matrix)` terms into one sparse radial block."""
 combine_terms(terms::AbstractVector{<:Tuple}) = _combine_terms(Float64, terms)
 combine_terms(terms::AbstractVector{<:Tuple{ComplexF64,SparseC64}}) =
     _combine_terms(ComplexF64, terms)
 
+"""Shared implementation for `combine_terms` with a chosen output scalar type."""
 function _combine_terms(::Type{T}, terms) where {T}
     isempty(terms) && return spzeros(T, 0, 0)
     rows, cols = size(terms[1][2])
@@ -61,6 +65,7 @@ end
 # Axial-field Lorentz helper functions (match Kore exactly)
 # -----------------------------------------------------------------------------
 
+"""Axial-field Lorentz coupling from poloidal magnetic field into poloidal velocity."""
 function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
@@ -173,6 +178,7 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
     end
 end
 
+"""Axial-field Lorentz coupling from toroidal magnetic field into poloidal velocity."""
 function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
@@ -266,6 +272,7 @@ function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
     return (Le^2) * (2im * m) * combo
 end
 
+"""Return off-diagonal toroidal-magnetic to poloidal-velocity Lorentz coupling."""
 function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
                                            l::Int, m::Int, offset::Int,
                                            Le::T) where {T}
@@ -311,6 +318,7 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
     end
 end
 
+"""Return poloidal-magnetic to poloidal-velocity Lorentz coupling for offsets -2:2."""
 function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
                                              l::Int, m::Int, offset::Int,
                                              Le::T) where {T}
@@ -422,6 +430,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     end
 end
 
+"""Return the diagonal poloidal-magnetic to toroidal-velocity Lorentz block."""
 function operator_lorentz_toroidal(op::MHDStabilityOperator{T},
                                    l::Int, Le::T) where {T}
     L = l * (l + 1)
@@ -439,6 +448,7 @@ function operator_lorentz_toroidal(op::MHDStabilityOperator{T},
     return (Le^2) * (1im * m) * combo
 end
 
+"""Return poloidal-magnetic to toroidal-velocity Lorentz coupling for offsets -1:1."""
 function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
                                              l::Int, m::Int, offset::Int,
                                              Le::T) where {T}
@@ -477,6 +487,7 @@ function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
     end
 end
 
+"""Return toroidal-magnetic to toroidal-velocity Lorentz coupling for offsets -2:2."""
 function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
                                              l::Int, m::Int, offset::Int,
                                              Le::T) where {T}
@@ -629,6 +640,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
     end
 end
 
+"""Return toroidal-velocity to poloidal-magnetic induction coupling."""
 function operator_induction_poloidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int, m::Int, offset::Int) where {T}
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
@@ -721,6 +733,7 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
     end
 end
 
+"""Return toroidal-velocity to toroidal-magnetic induction coupling for offsets -2:2."""
 function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int, m::Int, offset::Int) where {T}
     Np1 = op.params.N + 1

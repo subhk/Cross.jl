@@ -55,6 +55,7 @@ which can become very large. Use sparse methods and Krylov subspace solvers.
     equatorial_symmetry::Symbol = :both
 end
 
+"""Validate that every requested azimuthal mode can be represented at `lmax`."""
 function _validate_triglobal_m_range(m_range::UnitRange{Int}, lmax::Int)
     isempty(m_range) && throw(ArgumentError("m_range must be non-empty"))
     max_abs_m = maximum(abs, m_range)
@@ -63,12 +64,14 @@ function _validate_triglobal_m_range(m_range::UnitRange{Int}, lmax::Int)
     return nothing
 end
 
+"""Validate triglobal equatorial-symmetry selection before constructing blocks."""
 function _validate_triglobal_symmetry(equatorial_symmetry::Symbol)
     equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
         "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$equatorial_symmetry"))
     return nothing
 end
 
+"""Compute the per-field l sets for a triglobal mode using the onset layout rules."""
 function _triglobal_mode_l_sets(params::TriglobalParams{T}, m::Int) where T
     params_m = OnsetParams(
         E = params.E,
@@ -86,6 +89,7 @@ function _triglobal_mode_l_sets(params::TriglobalParams{T}, m::Int) where T
     return compute_l_sets(params_m)
 end
 
+"""Count poloidal, toroidal, and temperature l modes for one triglobal m block."""
 function _triglobal_mode_l_counts(m::Int, lmax::Int, equatorial_symmetry::Symbol)
     m_abs = abs(m)
     if equatorial_symmetry === :both
@@ -105,6 +109,7 @@ function _triglobal_mode_l_counts(m::Int, lmax::Int, equatorial_symmetry::Symbol
     return n_pol, n_tor, n_pol
 end
 
+"""Return the reduced block size after tau constraints for one triglobal m block."""
 function _triglobal_reduced_block_size(params::TriglobalParams, m::Int)
     nP, nT, nΘ = _triglobal_mode_l_counts(m, params.lmax, params.equatorial_symmetry)
     return nP * (params.Nr - 4) + nT * (params.Nr - 2) + nΘ * (params.Nr - 2)
@@ -309,6 +314,7 @@ end
 #  Helper Functions for Tri-Global Eigenvalue Problem
 # =============================================================================
 
+"""Extract the axisymmetric part of a 3D basic state for diagonal m blocks."""
 function axisymmetric_basic_state(basic_state::BasicState3D{T}) where T
     lmax_bs = basic_state.lmax_bs
     Nr = basic_state.Nr
@@ -335,6 +341,7 @@ function axisymmetric_basic_state(basic_state::BasicState3D{T}) where T
     )
 end
 
+"""Return true when an axisymmetric basic state has any active temperature or flow."""
 function _has_nonzero_basic_state(basic_state::BasicState{T}; tol=1e-14) where T
     for coeff in values(basic_state.theta_coeffs)
         maximum(abs.(coeff)) > tol && return true
@@ -345,6 +352,7 @@ function _has_nonzero_basic_state(basic_state::BasicState{T}; tol=1e-14) where T
     return false
 end
 
+"""Single-m block operator plus the reductions needed for triglobal assembly."""
 struct SingleModeOperator{T<:Real}
     A::Matrix{Complex{T}}
     B::Matrix{Complex{T}}
@@ -477,6 +485,7 @@ function interpolate_to_grid(coeffs_bs::Vector{T}, r_bs::Vector{T}, r_op::Vector
     return coeffs_interp
 end
 
+"""Scale stored real basic-state modes to the complex spherical-harmonic convention."""
 function _basic_state_mode_scale(m_bs::Int, ::Type{T}) where {T<:Real}
     if m_bs == 0
         return one(T)
@@ -488,6 +497,7 @@ end
 
 # Note: _theta_derivative_coeff is defined in basic_state_operators.jl
 
+"""Angular coupling for a basic-state meridional derivative acting on perturbations."""
 function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int,
                               m_from::Int, m_bs::Int, m_to::Int)
     c_plus, c_minus = _theta_derivative_coeff(l_bs, abs(m_bs))
@@ -509,6 +519,7 @@ function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int,
     return coupling
 end
 
+"""Angular coupling for a perturbation meridional derivative acting on the basic state."""
 function _perturbation_meridional_coupling(l_pert::Int, l_bs::Int, l_output::Int,
                                            m_from::Int, m_bs::Int, m_to::Int)
     c_plus, c_minus = _theta_derivative_coeff(l_pert, abs(m_from))
@@ -530,6 +541,7 @@ function _perturbation_meridional_coupling(l_pert::Int, l_bs::Int, l_output::Int
     return coupling
 end
 
+"""Convert `UnitRange` entries in a `LinearStabilityOperator` index map to vectors."""
 function _full_index_map(op::LinearStabilityOperator)
     idx_map = Dict{Tuple{Int,Symbol}, Vector{Int}}()
     for (key, idx_range) in op.index_map
@@ -539,6 +551,7 @@ function _full_index_map(op::LinearStabilityOperator)
     return idx_map
 end
 
+"""Project a full coupling block into source constrained coordinates and target equations."""
 function _project_coupling_block(C_full::Matrix{Complex{T}},
                                  target::SingleModeOperator{T},
                                  source::SingleModeOperator{T}) where {T<:Real}
@@ -552,6 +565,7 @@ function _project_coupling_block(C_full::Matrix{Complex{T}},
     return C
 end
 
+"""Build all off-diagonal mode-coupling blocks induced by the 3D basic state."""
 function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                                         single_mode_ops::Dict,
                                         verbose::Bool) where T

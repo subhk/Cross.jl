@@ -27,6 +27,7 @@ Must be included after MHD/types.jl and MHD/operator_functions.jl.
 # These extend the functions from SparseOperator.jl to work with MHDStabilityOperator
 # -----------------------------------------------------------------------------
 
+"""Return the poloidal-velocity mass operator for the MHD B matrix."""
 function operator_u(op::MHDStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
     if is_dipole_case(op.params.B0_type, op.params.ricb)
@@ -36,6 +37,7 @@ function operator_u(op::MHDStabilityOperator{T}, l::Int) where {T}
     end
 end
 
+"""Return the diagonal Coriolis contribution in the poloidal velocity equation."""
 function operator_coriolis_diagonal(op::MHDStabilityOperator{T}, l::Int, m::Int) where {T}
     L = l * (l + 1)
     if is_dipole_case(op.params.B0_type, op.params.ricb)
@@ -45,6 +47,7 @@ function operator_coriolis_diagonal(op::MHDStabilityOperator{T}, l::Int, m::Int)
     end
 end
 
+"""Return the `l -> l +/- 1` Coriolis coupling from toroidal to poloidal velocity."""
 function operator_coriolis_offdiag(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
     dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     if offset == -1
@@ -68,6 +71,7 @@ function operator_coriolis_offdiag(op::MHDStabilityOperator{T}, l::Int, m::Int, 
     end
 end
 
+"""Return the viscous poloidal-velocity diffusion block."""
 function operator_viscous_diffusion(op::MHDStabilityOperator{T}, l::Int, E::T) where {T}
     L = l * (l + 1)
     if is_dipole_case(op.params.B0_type, op.params.ricb)
@@ -83,6 +87,7 @@ function operator_viscous_diffusion(op::MHDStabilityOperator{T}, l::Int, E::T) w
     end
 end
 
+"""Return the temperature-to-poloidal-velocity buoyancy coupling block."""
 function operator_buoyancy(op::MHDStabilityOperator{T}, l::Int, Ra::T, Pr::T) where {T}
     # Convert gap-based Ra to internal Ra
     # Ra_internal = Ra_gap / gap^3 (gap = r_o - r_i = 1 - ricb when r_o = 1)
@@ -101,6 +106,7 @@ function operator_buoyancy(op::MHDStabilityOperator{T}, l::Int, Ra::T, Pr::T) wh
     end
 end
 
+"""Return the reverse Coriolis coupling from poloidal to toroidal velocity rows."""
 function operator_coriolis_v_to_u(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
     dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     if offset == -1
@@ -122,6 +128,7 @@ function operator_coriolis_v_to_u(op::MHDStabilityOperator{T}, l::Int, m::Int, o
     end
 end
 
+"""Return the toroidal-velocity mass operator for the MHD B matrix."""
 function operator_u_toroidal(op::MHDStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
     if is_dipole_case(op.params.B0_type, op.params.ricb)
@@ -131,6 +138,7 @@ function operator_u_toroidal(op::MHDStabilityOperator{T}, l::Int) where {T}
     end
 end
 
+"""Return the diagonal Coriolis contribution in the toroidal velocity equation."""
 function operator_coriolis_toroidal(op::MHDStabilityOperator{T}, l::Int, m::Int) where {T}
     if is_dipole_case(op.params.B0_type, op.params.ricb)
         return -2im * m * op.r5_D0_v
@@ -139,6 +147,7 @@ function operator_coriolis_toroidal(op::MHDStabilityOperator{T}, l::Int, m::Int)
     end
 end
 
+"""Return the viscous toroidal-velocity diffusion block."""
 function operator_viscous_toroidal(op::MHDStabilityOperator{T}, l::Int, E::T) where {T}
     L = l * (l + 1)
     if is_dipole_case(op.params.B0_type, op.params.ricb)
@@ -148,6 +157,7 @@ function operator_viscous_toroidal(op::MHDStabilityOperator{T}, l::Int, E::T) wh
     end
 end
 
+"""Return the temperature mass operator for differential or internal heating."""
 function operator_theta(op::MHDStabilityOperator{T}, l::Int) where {T}
     if op.params.heating == :differential
         return op.r3_D0_h
@@ -156,6 +166,7 @@ function operator_theta(op::MHDStabilityOperator{T}, l::Int) where {T}
     end
 end
 
+"""Return the thermal diffusion block in the temperature equation."""
 function operator_thermal_diffusion(op::MHDStabilityOperator{T}, l::Int, Etherm::T) where {T}
     L = l * (l + 1)
     if op.params.heating == :differential
@@ -165,6 +176,7 @@ function operator_thermal_diffusion(op::MHDStabilityOperator{T}, l::Int, Etherm:
     end
 end
 
+"""Return the poloidal-velocity-to-temperature advection block."""
 function operator_thermal_advection(op::MHDStabilityOperator{T}, l::Int) where {T}
     L = l * (l + 1)
     if op.params.heating == :differential
@@ -581,6 +593,7 @@ end
 # Boundary condition helpers
 # -----------------------------------------------------------------------------
 
+"""Overwrite MHD velocity tau rows with the selected poloidal and toroidal BCs."""
 function apply_velocity_boundary_conditions!(A, B, op)
     # Apply boundary conditions to velocity fields (poloidal and toroidal)
     # Following the correct implementation from SparseOperator.jl
@@ -673,6 +686,7 @@ function apply_velocity_boundary_conditions!(A, B, op)
     end
 end
 
+"""Overwrite MHD temperature tau rows with fixed-temperature or fixed-flux BCs."""
 function apply_temperature_boundary_conditions!(A, B, op)
     # Apply boundary conditions to temperature field
     # Following the correct implementation from SparseOperator.jl

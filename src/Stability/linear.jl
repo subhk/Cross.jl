@@ -13,6 +13,7 @@
 
 const _fourπ = 4π
 
+"""Convert the public equatorial-symmetry symbol to the parity flag used internally."""
 @inline function _symmetry_flag(sym::Symbol)
     sym === :symmetric && return 1
     sym === :antisymmetric && return -1
@@ -20,6 +21,7 @@ const _fourπ = 4π
     error("Invalid equatorial symmetry flag $sym")
 end
 
+"""Return the four tau rows used for the poloidal boundary constraints."""
 @inline function poloidal_tau_indices(idx::UnitRange{Int})
     length(idx) ≥ 4 || throw(ArgumentError("Need at least 4 radial points to impose boundary conditions."))
     ri = first(idx)
@@ -27,10 +29,12 @@ end
     return ri, ri + 1, ro - 1, ro
 end
 
+"""Return inner and outer tau rows for toroidal boundary constraints."""
 @inline function toroidal_boundary_indices(idx::UnitRange{Int})
     return first(idx), last(idx)
 end
 
+"""Return inner and outer tau rows for temperature boundary constraints."""
 @inline function temperature_boundary_indices(idx::UnitRange{Int})
     return first(idx), last(idx)
 end
@@ -110,6 +114,7 @@ See also [`OnsetProblem`](@ref) for the v2.0 problem wrapper that accepts this t
 end
 
 # Backward compatibility: helper function that converts ri/ro to χ
+"""Backward-compatible constructor that accepts `ri`/`ro` and forwards to `OnsetParams`."""
 function ShellParams(; E, Pr=one(E), Ra, m, lmax, Nr,
                      ri=nothing, ro=nothing, χ=nothing,
                      mechanical_bc=:no_slip, thermal_bc=:fixed_temperature,
@@ -141,6 +146,12 @@ end
 #  Linear Stability Operator
 # -----------------------------------------------------------------------------
 
+"""
+    compute_l_sets(p::OnsetParams)
+
+Return the retained spherical-harmonic degrees for poloidal, toroidal, and
+temperature fields after applying equatorial-symmetry truncation.
+"""
 function compute_l_sets(p::OnsetParams{T}) where {T<:Real}
     if p.equatorial_symmetry === :both
         if p.m == 0
@@ -172,6 +183,7 @@ function compute_l_sets(p::OnsetParams{T}) where {T<:Real}
     return Dict(:P => pol_ls, :T => tor_ls, :Θ => pol_ls)
 end
 
+"""Dense hydrodynamic stability operator and its field-to-index layout."""
 struct LinearStabilityOperator{T<:Real, BS}
     params::OnsetParams{T, BS}
     cd::ChebyshevDiffn{T}
@@ -182,6 +194,7 @@ struct LinearStabilityOperator{T<:Real, BS}
     radial_cache::Dict{Tuple{Int,Int}, Matrix{T}}
 end
 
+"""Build a Chebyshev radial grid, field index map, and derivative cache."""
 function LinearStabilityOperator(params::OnsetParams{T, BS}) where {T, BS}
     cd = ChebyshevDiffn(params.Nr, [params.ri, params.ro], 4)
     r = cd.x
@@ -208,6 +221,12 @@ end
 #  Radial helper utilities
 # -----------------------------------------------------------------------------
 
+"""
+    radial_matrix(op, power, order)
+
+Return and cache the dense radial matrix `r^power * d^order/dr^order` on the
+operator grid.
+"""
 function radial_matrix(op::LinearStabilityOperator{T}, power::Int, order::Int) where {T}
     cache = op.radial_cache
     key = (power, order)
@@ -236,6 +255,12 @@ function radial_matrix(op::LinearStabilityOperator{T}, power::Int, order::Int) w
     return mat
 end
 
+"""
+    impose_boundary_conditions!(A, B, op)
+
+Replace tau rows in the dense generalized eigenproblem with the selected
+mechanical and thermal boundary constraints.
+"""
 function impose_boundary_conditions!(A::Matrix{Complex{T}}, B::Matrix{Complex{T}},
                                      op::LinearStabilityOperator{T}) where {T<:Real}
     p = op.params
@@ -292,6 +317,12 @@ end
 #  Matrix Assembly
 # -----------------------------------------------------------------------------
 
+"""
+    assemble_matrices(op)
+
+Assemble dense hydrodynamic onset or biglobal matrices and return the interior
+and boundary DOF partition used by the constrained eigensolver.
+"""
 function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     p = op.params
     n = op.total_dof
@@ -448,18 +479,21 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     return A, B, interior_dofs, boundary_dofs
 end
 
+"""Constraint basis for one field block after eliminating tau boundary rows."""
 struct ConstraintBasisBlock{T<:Real}
     full_indices::UnitRange{Int}
     reduced_indices::UnitRange{Int}
     basis::Matrix{Complex{T}}
 end
 
+"""Mapping from reduced interior coordinates back to full tau-constrained vectors."""
 struct ConstraintReduction{T<:Real}
     blocks::Vector{ConstraintBasisBlock{T}}
     n_full::Int
     n_reduced::Int
 end
 
+"""Compute a nullspace basis that satisfies the tau rows for one field block."""
 function _constraint_basis_block(A::Matrix{Complex{T}},
                                  idx::UnitRange{Int},
                                  constraint_rows::Vector{Int},
@@ -476,6 +510,7 @@ function _constraint_basis_block(A::Matrix{Complex{T}},
     return basis
 end
 
+"""Build all per-field nullspace bases needed to eliminate boundary constraints."""
 function _constraint_reduction(A::Matrix{Complex{T}},
                                op::LinearStabilityOperator{T},
                                boundary_dofs::Vector{Int}) where {T<:Real}
@@ -515,6 +550,7 @@ function _constraint_reduction(A::Matrix{Complex{T}},
     return ConstraintReduction{T}(blocks, n_full, n_reduced)
 end
 
+"""Project full tau-form matrices into the reduced interior coordinate system."""
 function _constrained_reduced_matrices(A_full::Matrix{Complex{T}},
                                        B_full::Matrix{Complex{T}},
                                        op::LinearStabilityOperator{T},
@@ -532,6 +568,7 @@ function _constrained_reduced_matrices(A_full::Matrix{Complex{T}},
     return A, B, reduction
 end
 
+"""Reconstruct a full eigenvector, including constrained boundary coefficients."""
 function _reconstruct_full_vector(reduction::ConstraintReduction{T},
                                   reduced_vec::AbstractVector{Complex{T}}) where {T<:Real}
     full_vec = zeros(Complex{T}, reduction.n_full)
@@ -545,6 +582,7 @@ end
 #  Eigenvalue solve
 # -----------------------------------------------------------------------------
 
+"""Mutable shift-invert map `(A - sigma B) \\ (B*x)` used by KrylovKit."""
 struct ShiftInvertMap{TF,TB,Ttmp}
     lu::TF
     B::TB
@@ -553,6 +591,12 @@ end
 
 (M::ShiftInvertMap)(y, x) = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
 
+"""
+    solve_eigenvalue_problem(op; nev, tol, maxiter, which, sigma)
+
+Assemble the dense linear-stability problem and compute leading eigenpairs with
+the constrained shift-invert solver.
+"""
 function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   nev::Int=6,
                                   tol::Float64=1e-10,
@@ -570,6 +614,7 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
 end
 
 
+"""Return the leading growth rate, drift frequency, and full eigenvector."""
 function find_growth_rate(op::LinearStabilityOperator; kwargs...)
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op; kwargs...)
     idx = argmax(real.(eigenvalues))
@@ -580,6 +625,7 @@ function find_growth_rate(op::LinearStabilityOperator; kwargs...)
 end
 
 # Backward compatibility wrapper
+"""Compatibility wrapper that returns eigenpairs, operator, and solver info."""
 function leading_modes(params::OnsetParams; nθ=nothing, kwargs...)
     # nθ is ignored for now - it's not used in the current eigenvalue solver
     # but kept for API compatibility
@@ -588,6 +634,7 @@ function leading_modes(params::OnsetParams; nθ=nothing, kwargs...)
     return eigenvalues, eigenvectors, op, info
 end
 
+"""Compatibility overload that infers boundary DOFs from the interior set."""
 function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
                                        B_full::Matrix{Complex{T}},
                                        op::LinearStabilityOperator{T},
@@ -603,6 +650,7 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
                                         which=which, sigma=sigma)
 end
 
+"""Constrained KrylovKit shift-invert solve with automatic shift selection."""
 function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
                                        B_full::Matrix{Complex{T}},
                                        op::LinearStabilityOperator{T},
@@ -672,6 +720,7 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
     return eigenvalues[ordering], vecs_full[ordering], info
 end
 
+"""Legacy ArnoldiMethod eigensolver kept for comparison and fallback use."""
 function _arnoldi_eigensolve(A_full::Matrix{Complex{T}},
                               B_full::Matrix{Complex{T}},
                               interior_dofs::Vector{Int};
@@ -735,6 +784,7 @@ function _arnoldi_eigensolve(A_full::Matrix{Complex{T}},
     return eigenvalues_int, vecs_full, info
 end
 
+"""Deprecated unconstrained shift-invert solve retained for backward compatibility."""
 function _krylov_eigensolve(A_full::Matrix{Complex{T}},
                             B_full::Matrix{Complex{T}},
                             interior_dofs::Vector{Int};
@@ -788,6 +838,12 @@ function _krylov_eigensolve(A_full::Matrix{Complex{T}},
     return eigenvalues[ordering], vecs_full[ordering], info
 end
 
+"""
+    find_critical_rayleigh(E, Pr, chi, m, lmax, Nr; kwargs...)
+
+Search for the Rayleigh number where the leading hydrodynamic growth rate
+changes sign, optionally rebuilding a basic state at each sample.
+"""
 function find_critical_rayleigh(E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int;
                                 Ra_guess::T=one(T)*1e6,
                                 tol::T=1e-6,

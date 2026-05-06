@@ -8,7 +8,6 @@ This page provides an overview of the Cross.jl source code organization, helping
 Cross.jl/
 ├── src/                              # Source code
 │   ├── Cross.jl                      # Main module — includes submodules, exports public API
-│   ├── banner.jl                     # Welcome message
 │   ├── types.jl                      # v2.0: StabilityResult, problem types, estimate_size
 │   ├── validation.jl                 # v2.0: Input validation with errors and warnings
 │   ├── show.jl                       # v2.0: Pretty-printing for all public types
@@ -32,7 +31,7 @@ Cross.jl/
 │   ├── Stability/
 │   │   ├── Stability.jl              # Entry point
 │   │   ├── linear.jl                # OnsetParams, LinearStabilityOperator
-│   │   ├── solver.jl                # Eigenvalue solving (Arnoldi, Krylov)
+│   │   ├── solver.jl                # KrylovKit shift-invert eigensolvers
 │   │   ├── velocity.jl              # Velocity reconstruction
 │   │   ├── onset.jl                 # Onset convection (no mean flow)
 │   │   ├── biglobal.jl              # Biglobal (axisymmetric mean flow)
@@ -69,7 +68,6 @@ module Cross
     using KrylovKit
 
     # v2.0 core (order matters!)
-    include("banner.jl")               # Welcome message
     include("types.jl")                # StabilityResult, problem types, estimate_size
     include("validation.jl")           # Input validation
     include("show.jl")                 # Pretty-printing for public types
@@ -107,13 +105,6 @@ Input validation layer introduced in v2.0. Emits structured errors and warnings 
 
 #### `show.jl`
 Pretty-printing methods (`Base.show`) for all public types, introduced in v2.0.
-
-#### `banner.jl`
-Welcome message printed on package load.
-
-**Key Exports:**
-- `CROSS_BANNER` - ASCII art banner string
-- `print_cross_header()` - Print the banner
 
 ### Spectral Submodule (`Spectral/`)
 
@@ -253,7 +244,7 @@ end
 - `assemble_matrices(op)` - Build A and B matrices
 
 #### `Stability/solver.jl`
-Eigenvalue solving via Arnoldi (shift-invert) and Krylov iterative methods.
+Eigenvalue solving via KrylovKit shift-invert iteration.
 
 **Key Functions:**
 - `solve_eigenvalue_problem(op; nev, which)` - Compute eigenvalues

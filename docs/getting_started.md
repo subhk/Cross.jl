@@ -98,8 +98,7 @@ Cross.jl/
 │   ├── MHDOperator.jl        # MHD operator structure
 │   ├── MHDOperatorFunctions.jl   # MHD operator implementations
 │   ├── MHDAssembly.jl        # MHD matrix assembly
-│   ├── CompleteMHD.jl        # Complete MHD module
-│   └── banner.jl             # ASCII banner
+│   └── CompleteMHD.jl        # Complete MHD module
 ├── example/                  # Example scripts
 │   ├── linear_stability_demo.jl
 │   ├── mhd_dynamo_example.jl

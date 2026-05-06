@@ -99,9 +99,10 @@ OnsetParams{Float64}
 ```julia
 estimate_size(OnsetProblem(params))
 # OnsetProblem size estimate
-#   l-modes:      27 (m=4, lmax=30, both)
-#   Total matrix:  5265 x 5265
-#   Memory (A+B):  ~0.8 GB
+# ├── l-modes: 27 (m=4, lmax=30, both)
+# ├── degrees of freedom per mode: 195 (Nr=64, 3 fields)
+# ├── matrix size: 5265 × 5265
+# └── dense storage estimate: ~0.8 GB
 ```
 
 ## 8. New: Plotting

@@ -78,13 +78,14 @@ end
     # OnsetProblem (already tested in test_show.jl, but verify here too)
     output = _capture_stdout(() -> estimate_size(OnsetProblem(params)))
     @test occursin("OnsetProblem", output)
-    @test occursin("Total matrix", output)
+    @test occursin("matrix size", output)
 
     # BiglobalProblem
     cd = ChebyshevDiffn(params.Nr, [params.χ, 1.0], 4)
     bs = conduction_basic_state(cd, params.χ, 6)
     biglobal_output = _capture_stdout(() -> estimate_size(BiglobalProblem(params, bs)))
-    @test occursin("BiglobalProblem", output) || occursin("Total matrix", biglobal_output)
+    @test occursin("BiglobalProblem", biglobal_output)
+    @test occursin("matrix size", biglobal_output)
 
     # TriglobalProblem
     params_tri = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=0, lmax=10, Nr=16)
@@ -103,7 +104,7 @@ end
     )
     triglobal_output = _capture_stdout(() -> estimate_size(TriglobalProblem(params_tri, bs3d, 0:2)))
     @test occursin("TriglobalProblem", triglobal_output)
-    @test occursin("Total matrix", triglobal_output)
+    @test occursin("matrix size", triglobal_output)
 end
 
 @testset "find_critical_Ra MHDProblem error" begin

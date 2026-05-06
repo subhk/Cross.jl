@@ -270,12 +270,12 @@ function estimate_size(p::OnsetProblem)
     total_dof = _hd_total_dof(params.m, params.lmax, params.Nr, params.equatorial_symmetry)
     mem_gb = _mem_gb(total_dof)
 
-    @printf("OnsetProblem size estimate\n")
-    @printf("  l-modes:      %d (m=%d, lmax=%d, %s)\n", n_l, params.m, params.lmax, params.equatorial_symmetry)
-    @printf("  DOF per mode: %d (Nr=%d, 3 fields)\n", (params.Nr + 1) * 3, params.Nr)
-    @printf("  Total matrix: %d × %d\n", total_dof, total_dof)
-    @printf("  Memory (A+B): ~%.1f GB\n", mem_gb)
-    mem_gb > 8.0 && @printf("  ⚠ Large problem — consider reducing lmax or Nr\n")
+    println("OnsetProblem size estimate")
+    _tree_row(stdout, "l-modes", "$n_l (m=$(params.m), lmax=$(params.lmax), $(params.equatorial_symmetry))")
+    _tree_row(stdout, "degrees of freedom per mode", "$((params.Nr + 1) * 3) (Nr=$(params.Nr), 3 fields)")
+    _tree_row(stdout, "matrix size", "$total_dof × $total_dof")
+    warning = mem_gb > 8.0 ? " (large; reduce lmax or Nr)" : ""
+    _tree_row(stdout, "dense storage estimate", @sprintf("~%.1f GB%s", mem_gb, warning); last=true)
 end
 
 """
@@ -290,12 +290,12 @@ function estimate_size(p::BiglobalProblem)
     total_dof = _hd_total_dof(params.m, params.lmax, params.Nr, params.equatorial_symmetry)
     mem_gb = _mem_gb(total_dof)
 
-    @printf("BiglobalProblem size estimate\n")
-    @printf("  l-modes:      %d (m=%d, lmax=%d, %s)\n", n_l, params.m, params.lmax, params.equatorial_symmetry)
-    @printf("  DOF per mode: %d (Nr=%d, 3 fields)\n", (params.Nr + 1) * 3, params.Nr)
-    @printf("  Total matrix: %d × %d\n", total_dof, total_dof)
-    @printf("  Memory (A+B): ~%.1f GB\n", mem_gb)
-    mem_gb > 8.0 && @printf("  ⚠ Large problem — consider reducing lmax or Nr\n")
+    println("BiglobalProblem size estimate")
+    _tree_row(stdout, "l-modes", "$n_l (m=$(params.m), lmax=$(params.lmax), $(params.equatorial_symmetry))")
+    _tree_row(stdout, "degrees of freedom per mode", "$((params.Nr + 1) * 3) (Nr=$(params.Nr), 3 fields)")
+    _tree_row(stdout, "matrix size", "$total_dof × $total_dof")
+    warning = mem_gb > 8.0 ? " (large; reduce lmax or Nr)" : ""
+    _tree_row(stdout, "dense storage estimate", @sprintf("~%.1f GB%s", mem_gb, warning); last=true)
 end
 
 """
@@ -309,12 +309,12 @@ function estimate_size(p::TriglobalProblem)
         p.m_range, params.lmax, params.Nr, params.equatorial_symmetry)
     mem_gb = _mem_gb(total_dof)
 
-    @printf("TriglobalProblem size estimate\n")
-    @printf("  Coupled modes: m ∈ [%d, %d] (%d modes)\n", first(p.m_range), last(p.m_range), length(p.m_range))
-    @printf("  DOF per mode:  ~%d (lmax=%d, Nr=%d, 3 fields)\n", dof_per_m, params.lmax, params.Nr)
-    @printf("  Total matrix:  %d × %d\n", total_dof, total_dof)
-    @printf("  Memory (A+B):  ~%.1f GB\n", mem_gb)
-    mem_gb > 8.0 && @printf("  ⚠ Large problem — consider reducing lmax or m_range\n")
+    println("TriglobalProblem size estimate")
+    _tree_row(stdout, "coupled modes", "$(p.m_range) ($(length(p.m_range)) modes)")
+    _tree_row(stdout, "degrees of freedom per mode", "~$dof_per_m (lmax=$(params.lmax), Nr=$(params.Nr), 3 fields)")
+    _tree_row(stdout, "matrix size", "$total_dof × $total_dof")
+    warning = mem_gb > 8.0 ? " (large; reduce lmax or m_range)" : ""
+    _tree_row(stdout, "dense storage estimate", @sprintf("~%.1f GB%s", mem_gb, warning); last=true)
 end
 
 """
@@ -328,12 +328,12 @@ function estimate_size(p::MHDProblem)
     mem_gb = _mem_gb(total_dof)
     n_fields = p.params.B0_type == no_field ? 3 : 5
 
-    @printf("MHDProblem size estimate\n")
-    @printf("  l-modes:      %d poloidal + %d toroidal (%d fields)\n", n_pol, n_tor, n_fields)
-    @printf("  DOF per mode: %d (N=%d)\n", n_per_mode, p.params.N)
-    @printf("  Total matrix: %d × %d\n", total_dof, total_dof)
-    @printf("  Memory (A+B): ~%.1f GB\n", mem_gb)
-    mem_gb > 8.0 && @printf("  ⚠ Large problem — consider reducing lmax or N\n")
+    println("MHDProblem size estimate")
+    _tree_row(stdout, "l-modes", "$n_pol poloidal + $n_tor toroidal ($n_fields fields)")
+    _tree_row(stdout, "degrees of freedom per mode", "$n_per_mode (N=$(p.params.N))")
+    _tree_row(stdout, "matrix size", "$total_dof × $total_dof")
+    warning = mem_gb > 8.0 ? " (large; reduce lmax or N)" : ""
+    _tree_row(stdout, "dense storage estimate", @sprintf("~%.1f GB%s", mem_gb, warning); last=true)
 end
 
 # --- Makie extension stubs ---

@@ -18,38 +18,28 @@ module Cross
     # 1. Spectral methods (ChebyshevDiffn, ultraspherical operators)
     include("Spectral/Spectral.jl")
 
-    # 2. Banner
-    include("banner.jl")
-
-    # 3. Basic states (needs ChebyshevDiffn from Spectral)
+    # 2. Basic states (needs ChebyshevDiffn from Spectral)
     include("BasicStates/BasicStates.jl")
 
-    # 4. Stability analysis (needs ChebyshevDiffn + BasicState types)
+    # 3. Stability analysis (needs ChebyshevDiffn + BasicState types)
     include("Stability/Stability.jl")
 
-    # 5. Sparse operators and boundary conditions
+    # 4. Sparse operators and boundary conditions
     include("Operators/Operators.jl")
 
-    # 6. MHD extensions (needs ultraspherical + sparse operator functions)
+    # 5. MHD extensions (needs ultraspherical + sparse operator functions)
     include("MHD/MHD.jl")
 
-    # 7. v2.0 API layer
+    # 6. v2.0 API layer
     include("validation.jl")
     include("types.jl")
     include("solve.jl")
     include("show.jl")
 
-    # Print banner only if user opts in via environment variable
-    if get(ENV, "CROSS_BANNER", "0") == "1"
-        println(CROSS_BANNER)
-    end
-
     export
         # Core utilities
         ChebyshevDiffn,
         potentials_to_velocity,
-        print_cross_header,
-        CROSS_BANNER,
         compute_l_sets,
 
         # Base types and functions (shared)

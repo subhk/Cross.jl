@@ -704,32 +704,6 @@ for ℓ in op.l_sets[:Θ]
 end
 ```
 
-## Utility Functions
-
-### `print_cross_header`
-
-Print the ASCII banner.
-
-```julia
-print_cross_header()
-```
-
-**Source:** `src/banner.jl`
-
----
-
-### `CROSS_BANNER`
-
-Raw banner string for custom display.
-
-```julia
-println(CROSS_BANNER)
-```
-
-**Source:** `src/banner.jl`
-
----
-
 ## Eigenvalue Selection Options
 
 The `which` parameter controls eigenvalue selection:
@@ -762,7 +736,6 @@ Cross (main module)
 ├── src/
 │   ├── Cross.jl                    # Top-level module & exports
 │   ├── Chebyshev.jl                # ChebyshevDiffn radial discretization
-│   ├── banner.jl                   # ASCII banner
 │   ├── basic_state.jl              # BasicState, BasicState3D, SphericalHarmonicBC
 │   ├── get_velocity.jl             # Velocity reconstruction
 │   ├── linear_stability.jl         # OnsetParams and dense onset solver

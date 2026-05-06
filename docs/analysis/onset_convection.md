@@ -80,7 +80,7 @@ where $\sigma = \sigma_r + i\omega$ is the complex eigenvalue:
 using Cross
 
 # Define problem parameters
-params = ShellParams(
+params = OnsetParams(
     # Physical parameters
     E = 1e-5,              # Ekman number
     Pr = 1.0,              # Prandtl number
@@ -88,8 +88,6 @@ params = ShellParams(
 
     # Geometry
     χ = 0.35,              # Radius ratio r_i/r_o
-    ri = 0.35,             # Inner radius
-    ro = 1.0,              # Outer radius
 
     # Spectral resolution
     m = 10,                # Azimuthal wavenumber
@@ -114,39 +112,11 @@ println("Matrix sparsity: ", 1 - nnz(op.A) / length(op.A))
 ```
 
 !!! note "No BasicState Required"
-    When no `basic_state` argument is provided to `ShellParams`, Cross.jl automatically uses the conductive temperature profile with zero mean flow. This is the default onset convection problem.
+    When no `basic_state` argument is provided to `OnsetParams`, Cross.jl automatically uses the conductive temperature profile with zero mean flow. This is the default onset convection problem.
 
 ### Step 3: Find Leading Eigenvalues
 
 ```julia
-# Compute leading eigenpairs
-eigenvalues, eigenvectors, _, info = leading_modes(params;
-    nev = 8,           # Number of eigenvalues
-    which = :LR,       # Largest real part (most unstable)
-    tol = 1e-8,
-)
-
-# Analyze results
-σ₁ = real(eigenvalues[1])
-ω₁ = imag(eigenvalues[1])
-
-println("Leading eigenvalue: σ = $σ₁, ω = $ω₁")
-
-if σ₁ > 0
-    println("System is UNSTABLE at Ra = $(params.Ra)")
-elseif σ₁ < 0
-    println("System is STABLE at Ra = $(params.Ra)")
-else
-    println("System is at MARGINAL STABILITY")
-end
-```
-
-**v2.0 equivalent** — use `OnsetProblem` and `solve` for a cleaner interface. Call `estimate_size` first to check memory requirements:
-
-```julia
-# v2.0 API
-params = OnsetParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64)
-
 problem = OnsetProblem(params)
 estimate_size(problem)   # print DOFs and estimated memory before solving
 
@@ -279,10 +249,10 @@ The convective columns (thermal Rossby waves) become thinner at lower Ekman numb
 
 ```julia
 # No-slip example
-params_noslip = ShellParams(..., mechanical_bc = :no_slip)
+params_noslip = OnsetParams(..., mechanical_bc = :no_slip)
 
 # Stress-free example
-params_stressfree = ShellParams(..., mechanical_bc = :stress_free)
+params_stressfree = OnsetParams(..., mechanical_bc = :stress_free)
 ```
 
 ### Thermal Boundary Conditions

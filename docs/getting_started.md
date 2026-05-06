@@ -41,7 +41,6 @@ The first run downloads packages including:
 | `LinearAlgebra` | Standard Julia linear algebra |
 | `SparseArrays` | Sparse matrix operations |
 | `KrylovKit` | Krylov subspace eigenvalue solvers |
-| `ArnoldiMethod` | Arnoldi iteration eigenvalue solver |
 | `JLD2` | HDF5-based file I/O |
 | `WignerSymbols` | Wigner 3j symbols for mode coupling |
 | `Parameters` | Keyword argument macros |
@@ -113,8 +112,8 @@ Cross.jl/
 └── Manifest.toml             # Locked dependency versions
 ```
 
-!!! note "v2.0 API"
-    Cross.jl v2.0 introduces `OnsetParams`, `OnsetProblem`, `solve`, and `estimate_size` as the primary public interface. The v1.x `ShellParams` / `leading_modes` style still works but is considered legacy.
+!!! note "Public API"
+    Cross.jl uses `OnsetParams`, typed problem wrappers such as `OnsetProblem`, `solve`, and `estimate_size` as the public stability-analysis interface.
 
 ## Julia Configuration
 
@@ -173,57 +172,21 @@ Open `http://127.0.0.1:8000` in your browser to see the rendered site with live 
 
 Let's compute the growth rate for a rotating convection problem:
 
-=== "v2.0 API"
+```julia
+using Cross
 
-    ```julia
-    using Cross
+# 1. Define parameters
+params = OnsetParams(E=1e-3, Pr=1.0, Ra=1e5, χ=0.35,
+                     m=4, lmax=20, Nr=32)
 
-    # 1. Define parameters
-    params = OnsetParams(E=1e-3, Pr=1.0, Ra=1e5, χ=0.35,
-                         m=4, lmax=20, Nr=32)
+# 2. Create and solve
+problem = OnsetProblem(params)
+result = solve(problem; nev=6)
 
-    # 2. Create and solve
-    problem = OnsetProblem(params)
-    result = solve(problem; nev=6)
-
-    # 3. View results
-    println("Growth rate: ", result.growth_rate)
-    println("Frequency: ", result.frequency)
-    ```
-
-=== "v1.x API"
-
-    ```julia
-    using Cross
-
-    # Define physical parameters
-    E = 1e-5       # Ekman number
-    Pr = 1.0       # Prandtl number
-    Ra = 2.1e7     # Rayleigh number
-    m = 10         # Azimuthal wavenumber
-
-    # Create parameter structure
-    params = ShellParams(
-        E = E,
-        Pr = Pr,
-        Ra = Ra,
-        m = m,
-        lmax = 60,            # Max spherical harmonic degree
-        Nr = 64,              # Radial resolution
-        ri = 0.35,            # Inner radius
-        ro = 1.0,             # Outer radius
-        mechanical_bc = :no_slip,
-        thermal_bc = :fixed_temperature,
-    )
-
-    # Compute leading eigenvalues
-    eigenvalues, eigenvectors, _, info = leading_modes(params; nev=4)
-
-    # Display results
-    for (i, λ) in enumerate(eigenvalues)
-        println("λ[$i] = $(real(λ)) + $(imag(λ))im")
-    end
-    ```
+# 3. View results
+println("Growth rate: ", result.growth_rate)
+println("Frequency: ", result.frequency)
+```
 
 ### Understanding the Output
 
@@ -253,7 +216,7 @@ If issues persist, delete `Manifest.toml` and re-instantiate.
 Reduce `lmax` or `Nr` in the examples. Start with smaller values:
 
 ```julia
-params = ShellParams(
+params = OnsetParams(
     ...,
     lmax = 30,    # Reduced from 60
     Nr = 32,      # Reduced from 64
@@ -265,7 +228,7 @@ params = ShellParams(
 Try adjusting solver parameters:
 
 ```julia
-eigenvalues, eigenvectors, _, info = leading_modes(params;
+result = solve(OnsetProblem(params);
     nev = 4,
     tol = 1e-5,       # Relaxed tolerance
     maxiter = 200,    # More iterations

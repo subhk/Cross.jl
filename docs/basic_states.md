@@ -304,10 +304,10 @@ solve_thermal_wind_balance!(
 
 ### Using Basic States in Problems
 
-Pass the basic state to `ShellParams`:
+Pass the basic state to `OnsetParams` and wrap it in the appropriate problem type:
 
 ```julia
-params = ShellParams(
+params = OnsetParams(
     E = 1e-5,
     Pr = 1.0,
     Ra = 1e7,
@@ -319,6 +319,8 @@ params = ShellParams(
     mechanical_bc = :no_slip,
     thermal_bc = :fixed_temperature,
 )
+
+result = solve(BiglobalProblem(params, bs); nev=8)
 ```
 
 Cross.jl automatically augments the linearized operator with advection terms:
@@ -509,7 +511,7 @@ using JLD2
 @load "basic_states/meridional_l6.jld2" bs_loaded
 
 # Use in new problem
-params = ShellParams(..., basic_state = bs_loaded)
+params = OnsetParams(..., basic_state = bs_loaded)
 ```
 
 ## Reality Conditions

@@ -79,62 +79,27 @@ Cross.jl supports three progressively complex stability analysis approaches:
 
 ## Quick Start
 
-=== "v2.0 API"
+```julia
+using Cross
 
-    ```julia
-    using Cross
+# Define parameters
+params = OnsetParams(E=1e-4, Pr=1.0, Ra=1e6, χ=0.35,
+                     m=4, lmax=30, Nr=64)
 
-    # Define parameters
-    params = OnsetParams(E=1e-4, Pr=1.0, Ra=1e6, χ=0.35,
-                         m=4, lmax=30, Nr=64)
+# Create and solve the problem
+problem = OnsetProblem(params)
+estimate_size(problem)           # check matrix size first
+result = solve(problem; nev=6)
 
-    # Create and solve the problem
-    problem = OnsetProblem(params)
-    estimate_size(problem)           # check matrix size first
-    result = solve(problem; nev=6)
+# Inspect results
+result                           # pretty-printed summary
+result.growth_rate               # fastest-growing mode
+result.eigenvalues               # all eigenvalues
 
-    # Inspect results
-    result                           # pretty-printed summary
-    result.growth_rate               # fastest-growing mode
-    result.eigenvalues               # all eigenvalues
-
-    # Plot eigenvalue spectrum (requires Plots.jl)
-    using Plots
-    plot(result)
-    ```
-
-=== "v1.x API"
-
-    ```julia
-    using Pkg
-    Pkg.activate("Cross.jl")
-    Pkg.instantiate()
-
-    using Cross
-
-    # Define problem parameters
-    params = ShellParams(
-        E = 1e-5,              # Ekman number
-        Pr = 1.0,              # Prandtl number
-        Ra = 2.1e7,            # Rayleigh number
-        m = 10,                # Azimuthal wavenumber
-        lmax = 60,             # Maximum spherical harmonic degree
-        Nr = 64,               # Radial resolution
-        ri = 0.35,             # Inner radius
-        ro = 1.0,              # Outer radius
-        mechanical_bc = :no_slip,
-        thermal_bc = :fixed_temperature,
-    )
-
-    # Build operator and find growth rates
-    op = LinearStabilityOperator(params)
-    eigenvalues, eigenvectors, _, info = leading_modes(params; nev=8)
-
-    # Display results
-    println("Leading eigenvalue: ", eigenvalues[1])
-    println("Growth rate: ", real(eigenvalues[1]))
-    println("Drift frequency: ", imag(eigenvalues[1]))
-    ```
+# Plot eigenvalue spectrum (requires Plots.jl)
+using Plots
+plot(result)
+```
 
 ## Architecture Overview
 
@@ -233,7 +198,7 @@ This translates to:
 ## Requirements
 
 - **Julia**: 1.10 or newer
-- **Dependencies**: LinearAlgebra, SparseArrays, KrylovKit, ArnoldiMethod, JLD2, WignerSymbols
+- **Dependencies**: LinearAlgebra, SparseArrays, KrylovKit, JLD2, WignerSymbols
 
 ## Citation
 

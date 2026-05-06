@@ -6,6 +6,25 @@ using Test
 using Cross
 using LinearAlgebra
 
+function _empty_basic_state_3d(::Type{T}, Nr::Int, χ; lmax_bs::Int=0, mmax_bs::Int=0) where {T<:Real}
+    cd = ChebyshevDiffn(Nr, T[T(χ), one(T)], 1)
+    empty = Dict{Tuple{Int,Int}, Vector{T}}()
+    return BasicState3D{T}(
+        lmax_bs = lmax_bs,
+        mmax_bs = mmax_bs,
+        Nr = Nr,
+        r = cd.x,
+        theta_coeffs = empty,
+        dtheta_dr_coeffs = deepcopy(empty),
+        ur_coeffs = deepcopy(empty),
+        utheta_coeffs = deepcopy(empty),
+        uphi_coeffs = deepcopy(empty),
+        dur_dr_coeffs = deepcopy(empty),
+        dutheta_dr_coeffs = deepcopy(empty),
+        duphi_dr_coeffs = deepcopy(empty)
+    )
+end
+
 @testset "Triglobal Stability" begin
 
     # =========================================================================
@@ -57,10 +76,15 @@ using LinearAlgebra
         compute_sh_unweighted = Cross.compute_sh_coupling_unweighted
         compute_sh_gaunt = Cross.compute_sh_coupling_coefficient
 
-        # Selection rules should be the same as Gaunt
+        # Azimuthal and parity selection still hold, but the unweighted
+        # integral does not obey the Gaunt triangle rule.
         @test compute_sh_unweighted(1, 0, 1, 1, 2, 0) == 0.0  # m selection
-        @test compute_sh_unweighted(1, 0, 1, 0, 5, 0) == 0.0  # triangle
         @test compute_sh_unweighted(1, 0, 1, 0, 1, 0) == 0.0  # parity
+
+        # Y_00 × Y_00 -> Y_20 is forbidden by Gaunt's triangle rule, but the
+        # unweighted dθ dφ integral is non-zero.
+        g_unw_000_000_200 = compute_sh_unweighted(0, 0, 0, 0, 2, 0)
+        @test isapprox(g_unw_000_000_200, sqrt(5π) / 16; rtol=1e-10)
 
         # Valid couplings should be non-zero
         g_unw_110_110_200 = compute_sh_unweighted(1, 0, 1, 0, 2, 0)
@@ -181,6 +205,62 @@ using LinearAlgebra
             actual_block_size = length(problem.block_indices[m])
             @test actual_block_size == expected_block_size
         end
+    end
+
+    @testset "Triglobal validation and symmetry propagation" begin
+        E = 1e-3
+        Pr = 1.0
+        Ra = 1e4
+        χ = 0.35
+        Nr = 12
+        lmax = 6
+        bs3d = _empty_basic_state_3d(Float64, Nr, χ)
+
+        bad_params = TriglobalParams(
+            E = E, Pr = Pr, Ra = Ra, χ = χ,
+            m_range = -8:8,
+            lmax = lmax,
+            Nr = Nr,
+            basic_state_3d = bs3d
+        )
+        @test_throws ArgumentError setup_coupled_mode_problem(bad_params)
+
+        params = TriglobalParams(
+            E = E, Pr = Pr, Ra = Ra, χ = χ,
+            m_range = 0:0,
+            lmax = lmax,
+            Nr = Nr,
+            basic_state_3d = bs3d,
+            equatorial_symmetry = :symmetric
+        )
+        problem = setup_coupled_mode_problem(params)
+        single_mode_ops = Cross.build_single_mode_operators(problem, false)
+
+        @test single_mode_ops[0].op.params.equatorial_symmetry == :symmetric
+        @test single_mode_ops[0].op.l_sets[:P] == [2, 4, 6]
+        @test length(problem.block_indices[0]) == single_mode_ops[0].reduction.n_reduced
+    end
+
+    @testset "Triglobal assembly preserves numeric precision" begin
+        T = Float32
+        χ = T(0.35)
+        Nr = 12
+        lmax = 4
+        bs3d = _empty_basic_state_3d(T, Nr, χ)
+        params = TriglobalParams(
+            E = T(1e-3), Pr = one(T), Ra = T(1e4), χ = χ,
+            m_range = 0:0,
+            lmax = lmax,
+            Nr = Nr,
+            basic_state_3d = bs3d
+        )
+        problem = setup_coupled_mode_problem(params)
+        single_mode_ops = Cross.build_single_mode_operators(problem, false)
+        A, B = Cross.assemble_block_matrices(
+            problem, single_mode_ops, Dict{Tuple{Int,Int}, Matrix{Complex{T}}}(), false)
+
+        @test eltype(A) == Complex{T}
+        @test eltype(B) == Complex{T}
     end
 
     # =========================================================================

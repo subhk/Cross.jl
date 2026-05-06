@@ -11,10 +11,10 @@ end
     cases = [
         SparseOnsetParams(E=1e-4, Pr=1.0, Ra=1e6,
                           ricb=0.35, m=1, lmax=6,
-                          symm=1, N=6),
+                          symm=1, N=8),
         SparseOnsetParams(E=1e-4, Pr=1.0, Ra=1e6,
                           ricb=0.35, m=0, lmax=6,
-                          symm=1, N=6),
+                          symm=1, N=8),
         SparseOnsetParams(E=1e-4, Pr=1.0, Ra=1e6,
                           ricb=0.35, m=2, lmax=7,
                           symm=-1, N=8),

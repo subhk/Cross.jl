@@ -23,6 +23,7 @@ using Cross
 
     # Invalid m
     @test_throws ArgumentError OnsetProblem(OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=-1, lmax=10, Nr=16))
+    @test_throws ArgumentError OnsetProblem(OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=15, lmax=10, Nr=16))
 
     # Invalid BCs
     @test_throws ArgumentError OnsetProblem(OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=10, Nr=16, mechanical_bc=:invalid))
@@ -43,8 +44,6 @@ end
     # lmax >> Nr
     @test_logs (:warn, r"Angular resolution") OnsetProblem(OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=100, Nr=16))
 
-    # m > lmax
-    @test_logs (:warn, r"No modes") OnsetProblem(OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=15, lmax=10, Nr=16))
 end
 
 @testset "Validation - valid params no warnings" begin

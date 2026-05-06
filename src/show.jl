@@ -4,30 +4,48 @@
 
 import Base: show
 
+"""Print one Oceananigans-style tree row."""
+function _tree_row(io::IO, label::AbstractString, value; last::Bool=false)
+    branch = last ? "└── " : "├── "
+    print(io, branch, label, ": ", value)
+    last || println(io)
+    return nothing
+end
+
+"""Format a radial domain for display."""
+function _domain_summary(r)
+    isempty(r) && return "unknown"
+    r_min = @sprintf("%.3f", minimum(r))
+    r_max = @sprintf("%.3f", maximum(r))
+    return "[$r_min, $r_max]"
+end
+
+"""Join active harmonic degrees for compact display."""
+function _degree_summary(keys_iter)
+    degrees = sort(collect(keys_iter))
+    isempty(degrees) && return "none"
+    return join(("ℓ=$ℓ" for ℓ in degrees), ", ")
+end
+
 # --- OnsetParams ---
 """Pretty-print hydrodynamic onset parameters in a compact REPL summary."""
 function show(io::IO, ::MIME"text/plain", p::OnsetParams{T}) where T
     println(io, "OnsetParams{$T}")
-    println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Ra = $(p.Ra)    χ = $(p.χ)")
-    println(io, "  m  = $(p.m)         lmax = $(p.lmax)   Nr = $(p.Nr)")
-    println(io, "  BCs: $(p.mechanical_bc) | $(p.thermal_bc)")
-    print(io,   "  Symmetry: $(p.equatorial_symmetry)")
+    _tree_row(io, "dynamics", "E=$(p.E), Pr=$(p.Pr), Ra=$(p.Ra)")
+    _tree_row(io, "geometry", "χ=$(p.χ), ri=$(p.ri), ro=$(p.ro), L=$(p.L)")
+    _tree_row(io, "resolution", "m=$(p.m), lmax=$(p.lmax), Nr=$(p.Nr)")
+    _tree_row(io, "boundary conditions", "mechanical=$(p.mechanical_bc), thermal=$(p.thermal_bc)")
+    _tree_row(io, "equatorial symmetry", p.equatorial_symmetry; last=true)
 end
 
 # --- BasicState ---
 """Pretty-print active axisymmetric temperature and zonal-flow modes."""
 function show(io::IO, ::MIME"text/plain", bs::BasicState{T}) where T
-    active_theta = sort(collect(keys(bs.theta_coeffs)))
-    active_uphi = sort(collect(keys(bs.uphi_coeffs)))
-    r_min = isempty(bs.r) ? "?" : @sprintf("%.3f", minimum(bs.r))
-    r_max = isempty(bs.r) ? "?" : @sprintf("%.3f", maximum(bs.r))
-
     println(io, "BasicState{$T}")
-    println(io, "  Nr = $(bs.Nr)    lmax_bs = $(bs.lmax_bs)")
-    theta_str = isempty(active_theta) ? "none" : join(["ℓ=$l" for l in active_theta], ",")
-    uphi_str = isempty(active_uphi) ? "none" : join(["ℓ=$l" for l in active_uphi], ",")
-    println(io, "  Active modes: θ̄($theta_str)  ūφ($uphi_str)")
-    print(io,   "  Domain: r ∈ [$r_min, $r_max]")
+    _tree_row(io, "resolution", "lmax_bs=$(bs.lmax_bs), Nr=$(bs.Nr)")
+    _tree_row(io, "temperature modes", _degree_summary(keys(bs.theta_coeffs)))
+    _tree_row(io, "zonal-flow modes", _degree_summary(keys(bs.uphi_coeffs)))
+    _tree_row(io, "radial domain", _domain_summary(bs.r); last=true)
 end
 
 # --- BasicState3D ---
@@ -35,18 +53,21 @@ end
 function show(io::IO, ::MIME"text/plain", bs::BasicState3D{T}) where T
     n_modes = length(bs.theta_coeffs)
     println(io, "BasicState3D{$T}")
-    println(io, "  Nr = $(bs.Nr)    lmax_bs = $(bs.lmax_bs)    mmax_bs = $(bs.mmax_bs)")
-    print(io,   "  Active (ℓ,m) modes: $n_modes")
+    _tree_row(io, "resolution", "lmax_bs=$(bs.lmax_bs), mmax_bs=$(bs.mmax_bs), Nr=$(bs.Nr)")
+    _tree_row(io, "active temperature modes", n_modes)
+    _tree_row(io, "radial domain", _domain_summary(bs.r); last=true)
 end
 
 # --- StabilityResult ---
 """Pretty-print the leading eigenvalue summary and source problem."""
 function show(io::IO, ::MIME"text/plain", r::StabilityResult{T}) where T
     nev = length(r.eigenvalues)
-    println(io, "StabilityResult ($nev eigenvalues)")
-    println(io, "  Growth rate: $(r.growth_rate) + $(r.frequency)im")
-    pname = _problem_name(r.problem)
-    print(io,   "  Problem: $pname")
+    leading_λ = r.eigenvalues[r.leading_index]
+    println(io, "StabilityResult{$T} with $nev eigenvalues")
+    _tree_row(io, "leading eigenvalue", leading_λ)
+    _tree_row(io, "growth rate", r.growth_rate)
+    _tree_row(io, "frequency", r.frequency)
+    _tree_row(io, "problem", _problem_name(r.problem); last=true)
 end
 
 """Build the short problem label embedded in `StabilityResult` display output."""
@@ -75,56 +96,60 @@ _problem_name(::Any) = "Unknown"
 """Pretty-print the defining resolution and physics for an onset wrapper."""
 function show(io::IO, ::MIME"text/plain", p::OnsetProblem{T}) where T
     println(io, "OnsetProblem{$T}")
-    print(io,   "  E=$(p.params.E)  Ra=$(p.params.Ra)  m=$(p.params.m)  lmax=$(p.params.lmax)  Nr=$(p.params.Nr)")
+    _tree_row(io, "parameters", "E=$(p.params.E), Ra=$(p.params.Ra), Pr=$(p.params.Pr), χ=$(p.params.χ)")
+    _tree_row(io, "resolution", "m=$(p.params.m), lmax=$(p.params.lmax), Nr=$(p.params.Nr)")
+    _tree_row(io, "boundary conditions", "mechanical=$(p.params.mechanical_bc), thermal=$(p.params.thermal_bc)"; last=true)
 end
 
 """Pretty-print the defining resolution and attached axisymmetric basic state."""
 function show(io::IO, ::MIME"text/plain", p::BiglobalProblem{T}) where T
     println(io, "BiglobalProblem{$T}")
-    println(io, "  E=$(p.params.E)  Ra=$(p.params.Ra)  m=$(p.params.m)  lmax=$(p.params.lmax)  Nr=$(p.params.Nr)")
-    print(io,   "  BasicState: lmax_bs=$(p.basic_state.lmax_bs)")
+    _tree_row(io, "parameters", "E=$(p.params.E), Ra=$(p.params.Ra), Pr=$(p.params.Pr), χ=$(p.params.χ)")
+    _tree_row(io, "resolution", "m=$(p.params.m), lmax=$(p.params.lmax), Nr=$(p.params.Nr)")
+    _tree_row(io, "basic state", "BasicState with lmax_bs=$(p.basic_state.lmax_bs)"; last=true)
 end
 
 """Pretty-print the coupled-mode range and resolution for a triglobal wrapper."""
 function show(io::IO, ::MIME"text/plain", p::TriglobalProblem{T}) where T
     println(io, "TriglobalProblem{$T}")
-    println(io, "  E=$(p.params.E)  Ra=$(p.params.Ra)  lmax=$(p.params.lmax)  Nr=$(p.params.Nr)")
-    print(io,   "  m_range=$(p.m_range) ($(length(p.m_range)) coupled modes)")
+    _tree_row(io, "parameters", "E=$(p.params.E), Ra=$(p.params.Ra), Pr=$(p.params.Pr), χ=$(p.params.χ)")
+    _tree_row(io, "resolution", "lmax=$(p.params.lmax), Nr=$(p.params.Nr)")
+    _tree_row(io, "coupled modes", "$(p.m_range) ($(length(p.m_range)) modes)"; last=true)
 end
 
 # --- BiglobalParams ---
 """Pretty-print biglobal solver parameters and basic-state resolution."""
 function show(io::IO, ::MIME"text/plain", p::BiglobalParams{T}) where T
     println(io, "BiglobalParams{$T}")
-    println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Ra = $(p.Ra)    χ = $(p.χ)")
-    println(io, "  m  = $(p.m)         lmax = $(p.lmax)   Nr = $(p.Nr)")
-    println(io, "  BCs: $(p.mechanical_bc) | $(p.thermal_bc)")
-    print(io,   "  BasicState: lmax_bs=$(p.basic_state.lmax_bs)")
+    _tree_row(io, "dynamics", "E=$(p.E), Pr=$(p.Pr), Ra=$(p.Ra)")
+    _tree_row(io, "geometry", "χ=$(p.χ)")
+    _tree_row(io, "resolution", "m=$(p.m), lmax=$(p.lmax), Nr=$(p.Nr)")
+    _tree_row(io, "basic state", "lmax_bs=$(p.basic_state.lmax_bs)"; last=true)
 end
 
 # --- TriglobalParams ---
 """Pretty-print triglobal solver parameters, symmetry, and 3D basic-state resolution."""
 function show(io::IO, ::MIME"text/plain", p::TriglobalParams{T}) where T
     println(io, "TriglobalParams{$T}")
-    println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Ra = $(p.Ra)    χ = $(p.χ)")
-    println(io, "  m_range = $(p.m_range)    lmax = $(p.lmax)   Nr = $(p.Nr)")
-    println(io, "  Symmetry: $(p.equatorial_symmetry)")
-    println(io, "  BCs: $(p.mechanical_bc) | $(p.thermal_bc)")
-    print(io,   "  BasicState3D: lmax_bs=$(p.basic_state_3d.lmax_bs), mmax_bs=$(p.basic_state_3d.mmax_bs)")
+    _tree_row(io, "dynamics", "E=$(p.E), Pr=$(p.Pr), Ra=$(p.Ra)")
+    _tree_row(io, "geometry", "χ=$(p.χ)")
+    _tree_row(io, "resolution", "m_range=$(p.m_range), lmax=$(p.lmax), Nr=$(p.Nr)")
+    _tree_row(io, "equatorial symmetry", p.equatorial_symmetry)
+    _tree_row(io, "basic state", "BasicState3D with lmax_bs=$(p.basic_state_3d.lmax_bs), mmax_bs=$(p.basic_state_3d.mmax_bs)"; last=true)
 end
 
 # --- MHDParams ---
 """Pretty-print MHD solver parameters, boundary conditions, and background field."""
 function show(io::IO, ::MIME"text/plain", p::MHDParams{T}) where T
     println(io, "MHDParams{$T}")
-    println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Pm = $(p.Pm)    Ra = $(p.Ra)")
-    println(io, "  Le = $(p.Le)   ricb = $(p.ricb)    m = $(p.m)    lmax = $(p.lmax)")
-    println(io, "  N  = $(p.N)    symm = $(p.symm)")
-    println(io, "  B0: $(p.B0_type) (amplitude=$(p.B0_amplitude))")
-    println(io, "  Mechanical BCs: inner=$(p.bci), outer=$(p.bco)")
-    println(io, "  Thermal BCs:    inner=$(p.bci_thermal), outer=$(p.bco_thermal)")
-    println(io, "  Magnetic BCs:   inner=$(p.bci_magnetic), outer=$(p.bco_magnetic)")
-    print(io,   "  Heating: $(p.heating)")
+    _tree_row(io, "dynamics", "E=$(p.E), Pr=$(p.Pr), Pm=$(p.Pm), Ra=$(p.Ra), Le=$(p.Le)")
+    _tree_row(io, "geometry", "ricb=$(p.ricb)")
+    _tree_row(io, "resolution", "m=$(p.m), lmax=$(p.lmax), N=$(p.N), symm=$(p.symm)")
+    _tree_row(io, "background field", "$(p.B0_type) (amplitude=$(p.B0_amplitude))")
+    _tree_row(io, "mechanical BCs", "inner=$(p.bci), outer=$(p.bco)")
+    _tree_row(io, "thermal BCs", "inner=$(p.bci_thermal), outer=$(p.bco_thermal)")
+    _tree_row(io, "magnetic BCs", "inner=$(p.bci_magnetic), outer=$(p.bco_magnetic)")
+    _tree_row(io, "heating", p.heating; last=true)
 end
 
 # --- MHDProblem ---
@@ -133,9 +158,10 @@ function show(io::IO, ::MIME"text/plain", p::MHDProblem{T, BS}) where {T, BS}
     println(io, "MHDProblem{$T, $BS}")
     try
         mp = p.params
-        println(io, "  E=$(mp.E)  Ra=$(mp.Ra)  Pm=$(mp.Pm)  Le=$(mp.Le)  m=$(mp.m)")
-        print(io,   "  lmax=$(mp.lmax)  N=$(mp.N)  B0=$(mp.B0_type)")
+        _tree_row(io, "dynamics", "E=$(mp.E), Ra=$(mp.Ra), Pm=$(mp.Pm), Le=$(mp.Le)")
+        _tree_row(io, "resolution", "m=$(mp.m), lmax=$(mp.lmax), N=$(mp.N)")
+        _tree_row(io, "background field", mp.B0_type; last=true)
     catch
-        print(io,   "  (params type: $(typeof(p.params)))")
+        _tree_row(io, "params type", typeof(p.params); last=true)
     end
 end

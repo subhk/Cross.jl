@@ -82,13 +82,12 @@ op = MHDStabilityOperator(params)
 A, B, interior_dofs, info = assemble_mhd_matrices(op)
 
 # Solve eigenvalue problem
-using ArnoldiMethod
-decomp, history = partialschur(A[interior_dofs, interior_dofs],
-                                B[interior_dofs, interior_dofs],
-                                nev=20, tol=1e-6, which=LR())
+σ, eigenvectors, history = solve_eigenvalue_problem(
+    A[interior_dofs, interior_dofs],
+    B[interior_dofs, interior_dofs];
+    nev=20, tol=1e-6, which=:LR,
+)
 
-# Extract eigenvalues
-σ = decomp.eigenvalues
 growth_rates = real.(σ)
 frequencies = imag.(σ)
 
@@ -355,23 +354,20 @@ println("  Sparsity: ", nnz(A), " / ", size(A,1)^2,
 
 ### Step 4: Solve Eigenvalue Problem
 
-#### Using ArnoldiMethod (Recommended)
+#### Using KrylovKit
 
 ```julia
-using ArnoldiMethod
-
 # Extract interior problem
 A_int = A[interior_dofs, interior_dofs]
 B_int = B[interior_dofs, interior_dofs]
 
 # Find eigenvalues with largest real part
-decomp, history = partialschur(A_int, B_int,
-                                nev=20,      # Number of eigenvalues
-                                tol=1e-6,    # Tolerance
-                                which=LR())  # Largest real part
-
-σ = decomp.eigenvalues
-v = decomp.Q  # Eigenvectors
+σ, v, history = solve_eigenvalue_problem(
+    A_int, B_int;
+    nev=20,      # Number of eigenvalues
+    tol=1e-6,    # Tolerance
+    which=:LR,   # Largest real part
+)
 
 println("\nEigenvalues found:")
 for i in 1:length(σ)
@@ -434,13 +430,14 @@ params = MHDParams(
 op = MHDStabilityOperator(params)
 A, B, interior_dofs, info = assemble_mhd_matrices(op)
 
-using ArnoldiMethod
-decomp, _ = partialschur(A[interior_dofs, interior_dofs],
-                         B[interior_dofs, interior_dofs],
-                         nev=10, which=LR())
+σ, _, _ = solve_eigenvalue_problem(
+    A[interior_dofs, interior_dofs],
+    B[interior_dofs, interior_dofs];
+    nev=10, which=:LR,
+)
 
-σ_max = maximum(real.(decomp.eigenvalues))
-ω_crit = imag(decomp.eigenvalues[argmax(real.(decomp.eigenvalues))])
+σ_max = maximum(real.(σ))
+ω_crit = imag(σ[argmax(real.(σ))])
 
 println("Critical mode:")
 println("  Growth rate: ", σ_max, " (should be ≈ 0)")
@@ -485,11 +482,13 @@ for Le in Le_values
     op = MHDStabilityOperator(params_le)
     A, B, interior_dofs, _ = assemble_mhd_matrices(op)
 
-    decomp, _ = partialschur(A[interior_dofs, interior_dofs],
-                             B[interior_dofs, interior_dofs],
-                             nev=5, which=LR())
+    σ, _, _ = solve_eigenvalue_problem(
+        A[interior_dofs, interior_dofs],
+        B[interior_dofs, interior_dofs];
+        nev=5, which=:LR,
+    )
 
-    push!(growth_rates, maximum(real.(decomp.eigenvalues)))
+    push!(growth_rates, maximum(real.(σ)))
     println("Le = $Le: σ_max = ", growth_rates[end])
 end
 
@@ -523,13 +522,15 @@ println("  Uses 2-row BC for poloidal magnetic field")
 println("  Interior DOFs: ", length(interior_dofs))
 
 # Solve eigenvalue problem
-decomp, _ = partialschur(A[interior_dofs, interior_dofs],
-                         B[interior_dofs, interior_dofs],
-                         nev=10, which=LR())
+σ, _, _ = solve_eigenvalue_problem(
+    A[interior_dofs, interior_dofs],
+    B[interior_dofs, interior_dofs];
+    nev=10, which=:LR,
+)
 
 println("\nEigenvalues with conducting IC:")
-for (i, σ) in enumerate(decomp.eigenvalues)
-    println("  σ[$i] = ", real(σ), " + ", imag(σ), "im")
+for (i, λ) in enumerate(σ)
+    println("  σ[$i] = ", real(λ), " + ", imag(λ), "im")
 end
 ```
 
@@ -541,20 +542,22 @@ end
 
 ### Problem: Solver doesn't converge
 
-**Symptoms:** `partialschur` or `eigs` throws convergence error
+**Symptoms:** Krylov iteration throws a convergence error
 
 **Solutions:**
 1. Increase `tol` to 1e-5 or 1e-4
 2. Increase `nev` to find more eigenvalues
-3. Try different `which` option (LM, LI, SM)
+3. Try different `which` option (`:LM`, `:LI`, `:LR`)
 4. Check matrix condition number: `cond(Matrix(A_int))`
 
 ```julia
 # More robust solving
-decomp, history = partialschur(A_int, B_int,
-                                nev=30,       # More eigenvalues
-                                tol=1e-4,     # Relaxed tolerance
-                                maxiter=1000) # More iterations
+σ, v, history = solve_eigenvalue_problem(
+    A_int, B_int;
+    nev=30,       # More eigenvalues
+    tol=1e-4,     # Relaxed tolerance
+    maxiter=1000, # More iterations
+)
 ```
 
 ### Problem: Growth rates are all negative (stable)

@@ -103,8 +103,7 @@ function validate_triglobal_params(params, basic_state, m_range)
     validate_onset_params(params)
     validate_basic_state_3d_consistency(basic_state, params)
 
-    isempty(m_range) && throw(ArgumentError(
-        "m_range must be non-empty"))
+    _validate_triglobal_m_range(m_range, params.lmax)
     first(m_range) >= 0 || @warn "m_range starts at $(first(m_range)) — negative m modes included"
 
     return nothing

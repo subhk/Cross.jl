@@ -36,6 +36,7 @@ Fields:
 - `basic_state_3d::BasicState3D{T}` - The 3D basic state
 - `mechanical_bc::Symbol` - :no_slip or :stress_free
 - `thermal_bc::Symbol` - :fixed_temperature or :fixed_flux
+- `equatorial_symmetry::Symbol` - :both, :symmetric, or :antisymmetric
 
 Note: The size of the eigenvalue problem is ~ length(m_range) × lmax × Nr × 3
 which can become very large. Use sparse methods and Krylov subspace solvers.
@@ -51,6 +52,39 @@ which can become very large. Use sparse methods and Krylov subspace solvers.
     basic_state_3d::BasicState3D{T}
     mechanical_bc::Symbol = :no_slip
     thermal_bc::Symbol = :fixed_temperature
+    equatorial_symmetry::Symbol = :both
+end
+
+function _validate_triglobal_m_range(m_range::UnitRange{Int}, lmax::Int)
+    isempty(m_range) && throw(ArgumentError("m_range must be non-empty"))
+    max_abs_m = maximum(abs, m_range)
+    max_abs_m <= lmax || throw(ArgumentError(
+        "m_range includes |m|=$max_abs_m, but lmax=$lmax; require maximum(abs, m_range) <= lmax"))
+    return nothing
+end
+
+function _triglobal_mode_l_sets(params::TriglobalParams{T}, m::Int) where T
+    params_m = OnsetParams(
+        E = params.E,
+        Pr = params.Pr,
+        Ra = params.Ra,
+        χ = params.χ,
+        m = abs(m),
+        lmax = params.lmax,
+        Nr = params.Nr,
+        mechanical_bc = params.mechanical_bc,
+        thermal_bc = params.thermal_bc,
+        equatorial_symmetry = params.equatorial_symmetry,
+        basic_state = nothing
+    )
+    return compute_l_sets(params_m)
+end
+
+function _triglobal_reduced_block_size(params::TriglobalParams, m::Int)
+    l_sets = _triglobal_mode_l_sets(params, m)
+    return length(l_sets[:P]) * (params.Nr - 4) +
+           length(l_sets[:T]) * (params.Nr - 2) +
+           length(l_sets[:Θ]) * (params.Nr - 2)
 end
 
 
@@ -153,20 +187,11 @@ Useful for assessing computational requirements before attempting to solve.
 """
 function estimate_triglobal_problem_size(params::TriglobalParams{T}) where T
     num_modes = length(params.m_range)
-    lmax = params.lmax
-    Nr = params.Nr
-
-    # For each m, we have lmax - m + 1 spherical harmonic degrees ℓ ∈ [m, lmax]
-    # Each (ℓ,m) has:
-    # - Nr coefficients for P_ℓm (poloidal potential)
-    # - Nr coefficients for T_ℓm (toroidal potential)
-    # - Nr coefficients for Θ_ℓm (temperature)
-    # Total: 3 × Nr per (ℓ,m)
+    _validate_triglobal_m_range(params.m_range, params.lmax)
 
     total_dofs = 0
     for m in params.m_range
-        num_ell = lmax - abs(m) + 1
-        total_dofs += num_ell * 3 * Nr
+        total_dofs += _triglobal_reduced_block_size(params, m)
     end
 
     matrix_size = total_dofs
@@ -222,21 +247,23 @@ This analyzes the basic state to determine:
 Returns a CoupledModeProblem structure.
 """
 function setup_coupled_mode_problem(params::TriglobalParams{T}) where T
+    _validate_triglobal_m_range(params.m_range, params.lmax)
+    params.equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
+        "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$(params.equatorial_symmetry)"))
+
     m_range = params.m_range
     basic_state = params.basic_state_3d
 
     # Analyze coupling structure
     coupling_graph, all_m_bs = build_mode_coupling_structure(m_range, basic_state)
 
-    # Compute index ranges for each mode (interior DOFs only).
-    # Each mode m has (lmax - |m| + 1) × (3*Nr - 8) DOFs after removing
-    # boundary rows: P has 4 tau rows, T and Θ each have 2.
+    # Compute index ranges for each mode in reduced coordinates after applying
+    # tau constraints and any requested equatorial-symmetry truncation.
     block_indices = Dict{Int,UnitRange{Int}}()
     current_idx = 1
 
     for m in m_range
-        num_ell = params.lmax - abs(m) + 1
-        block_size = num_ell * (3 * params.Nr - 8)
+        block_size = _triglobal_reduced_block_size(params, m)
 
         block_indices[m] = current_idx:(current_idx + block_size - 1)
         current_idx += block_size
@@ -337,6 +364,7 @@ function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bo
             Nr = params_tri.Nr,
             mechanical_bc = params_tri.mechanical_bc,
             thermal_bc = params_tri.thermal_bc,
+            equatorial_symmetry = params_tri.equatorial_symmetry,
             basic_state = has_axisymmetric ? basic_state_axis : nothing
         )
 
@@ -504,7 +532,7 @@ end
 function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                                         single_mode_ops::Dict,
                                         verbose::Bool) where T
-    coupling_ops = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
+    coupling_ops = Dict{Tuple{Int,Int}, Matrix{Complex{T}}}()
     params = problem.params
     basic_state = params.basic_state_3d
 
@@ -655,7 +683,7 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
             # Build the coupling matrix in full coordinates, then project the
             # source columns into the same constraint basis used by the diagonal
             # blocks while keeping target interior equations.
-            C = zeros(ComplexF64, n_to, n_from)
+            C = zeros(Complex{T}, n_to, n_from)
 
             # Compute coupling through each relevant basic state mode
             for (ℓ_bs, m_bs) in bs_modes
@@ -771,7 +799,7 @@ Gauss-Chebyshev quadrature, providing accurate results even near the poles.
 Arguments:
 - uphi_coeffs: Dictionary of interpolated uphi coefficients on the operator grid
 """
-function add_advection_coupling!(C::Matrix{ComplexF64},
+function add_advection_coupling!(C::Matrix{Complex{T}},
                                   op_from, op_to,
                                   idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                   idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -856,7 +884,7 @@ This term appears in the temperature equation and couples the poloidal velocity
 Arguments:
 - dtheta_dr_coeffs: Dictionary of interpolated dtheta_dr coefficients on the operator grid
 """
-function add_temperature_gradient_coupling!(C::Matrix{ComplexF64},
+function add_temperature_gradient_coupling!(C::Matrix{Complex{T}},
                                              op_from, op_to,
                                              idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                              idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -942,7 +970,7 @@ the basic state velocity gradients.
 Arguments:
 - duphi_dr_coeffs: Dictionary of interpolated duphi_dr coefficients on the operator grid
 """
-function add_shear_coupling!(C::Matrix{ComplexF64},
+function add_shear_coupling!(C::Matrix{Complex{T}},
                               op_from, op_to,
                               idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                               idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1013,7 +1041,7 @@ function add_shear_coupling!(C::Matrix{ComplexF64},
     end
 end
 
-function add_temperature_gradient_theta_coupling!(C::Matrix{ComplexF64},
+function add_temperature_gradient_theta_coupling!(C::Matrix{Complex{T}},
                                                    op_from, op_to,
                                                    idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                                    idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1089,7 +1117,7 @@ equation through the azimuthal derivative of θ̄_bs.
 
 The coupling is: u'_φ × (1/(r sinθ)) × (i × m_bs) × θ̄_bs
 """
-function add_temperature_gradient_phi_coupling!(C::Matrix{ComplexF64},
+function add_temperature_gradient_phi_coupling!(C::Matrix{Complex{T}},
                                                  op_from, op_to,
                                                  idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                                  idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1166,7 +1194,7 @@ function add_temperature_gradient_phi_coupling!(C::Matrix{ComplexF64},
 end
 
 
-function add_shear_theta_coupling!(C::Matrix{ComplexF64},
+function add_shear_theta_coupling!(C::Matrix{Complex{T}},
                                     op_from, op_to,
                                     idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                     idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1228,7 +1256,7 @@ function add_shear_theta_coupling!(C::Matrix{ComplexF64},
     end
 end
 
-function add_radial_advection_coupling!(C::Matrix{ComplexF64},
+function add_radial_advection_coupling!(C::Matrix{Complex{T}},
                                         op_from, op_to,
                                         idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                         idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1286,7 +1314,7 @@ function add_radial_advection_coupling!(C::Matrix{ComplexF64},
     end
 end
 
-function add_meridional_advection_coupling!(C::Matrix{ComplexF64},
+function add_meridional_advection_coupling!(C::Matrix{Complex{T}},
                                              op_from, op_to,
                                              idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                              idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1340,7 +1368,7 @@ function add_meridional_advection_coupling!(C::Matrix{ComplexF64},
     end
 end
 
-function add_radial_velocity_shear!(C::Matrix{ComplexF64},
+function add_radial_velocity_shear!(C::Matrix{Complex{T}},
                                      op_from, op_to,
                                      idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                      idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1396,7 +1424,7 @@ function add_radial_velocity_shear!(C::Matrix{ComplexF64},
     end
 end
 
-function add_meridional_velocity_shear!(C::Matrix{ComplexF64},
+function add_meridional_velocity_shear!(C::Matrix{Complex{T}},
                                          op_from, op_to,
                                          idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
                                          idx_map_to::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1549,20 +1577,14 @@ Arguments:
 Returns:
 - Coupling coefficient (Float64)
 
-Selection rules (same as Gaunt):
+Selection rules:
 - m1 + m2 = m3 (azimuthal)
-- |ℓ1 - ℓ2| ≤ ℓ3 ≤ ℓ1 + ℓ2 (triangle)
 - ℓ1 + ℓ2 + ℓ3 even (parity)
 """
 function compute_sh_coupling_unweighted(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
                                          ℓ3::Int, m3::Int; n_quad::Int=64)
     # Selection rule: m1 + m2 = m3
     if m1 + m2 != m3
-        return 0.0
-    end
-
-    # Triangle inequality
-    if !(abs(ℓ1 - ℓ2) <= ℓ3 <= ℓ1 + ℓ2)
         return 0.0
     end
 
@@ -1742,11 +1764,11 @@ function assemble_block_matrices(problem::CoupledModeProblem{T},
     n_total = problem.total_dofs
     row_A = Int[]
     col_A = Int[]
-    val_A = ComplexF64[]
+    val_A = Complex{T}[]
     row_B = Int[]
     col_B = Int[]
-    val_B = ComplexF64[]
-    tol = 1e-14
+    val_B = Complex{T}[]
+    tol = sqrt(eps(T))
 
     # Fill in diagonal blocks (single-mode operators)
     for m in problem.m_range
@@ -1779,11 +1801,11 @@ end
 
 function _append_block_entries!(row_idx::Vector{Int},
                                  col_idx::Vector{Int},
-                                 val_idx::Vector{ComplexF64},
-                                 block::AbstractMatrix{ComplexF64},
+                                 val_idx::Vector{Complex{T}},
+                                 block::AbstractMatrix{Complex{T}},
                                  rows::UnitRange{Int},
                                  cols::UnitRange{Int},
-                                 tol::Real)
+                                 tol::Real) where {T<:Real}
     for (local_i, global_i) in enumerate(rows)
         for (local_j, global_j) in enumerate(cols)
             val = block[local_i, local_j]
@@ -1804,17 +1826,17 @@ Solve the generalized eigenvalue problem A x = λ B x using shift-invert.
 
 Uses KrylovKit for iterative solution.
 """
-function solve_block_eigenvalue_problem(A::SparseMatrixCSC{ComplexF64,Int},
-                                         B::SparseMatrixCSC{ComplexF64,Int},
+function solve_block_eigenvalue_problem(A::SparseMatrixCSC{Complex{T},Int},
+                                         B::SparseMatrixCSC{Complex{T},Int},
                                          σ_target::Real,
                                          nev::Int,
-                                         verbose::Bool)
+                                         verbose::Bool) where {T<:Real}
     n = size(A, 1)
 
     # Shift-invert: (A - σ B)^{-1} B
     # Eigenvalues of this operator are 1/(λ - σ), so λ = σ + 1/μ
     # Use a small imaginary shift to avoid singularity from boundary conditions
-    shift = ComplexF64(σ_target) + 1e-6im
+    shift = Complex{T}(T(σ_target), T(1e-6))
     A_shifted = A - shift * B
 
     if verbose
@@ -1828,7 +1850,7 @@ function solve_block_eigenvalue_problem(A::SparseMatrixCSC{ComplexF64,Int},
             println("  Warning: LU factorization failed ($err), adding diagonal regularization...")
         end
         A_reg = copy(A_shifted)
-        A_reg += 1e-12 * I
+        A_reg += T(1e-12) * I
         lu(A_reg)
     end
 
@@ -1837,14 +1859,14 @@ function solve_block_eigenvalue_problem(A::SparseMatrixCSC{ComplexF64,Int},
     end
 
     # Define the linear map for shift-invert
-    tmp_rhs = zeros(ComplexF64, n)
+    tmp_rhs = zeros(Complex{T}, n)
     function shift_invert_map(x)
         mul!(tmp_rhs, B, x)
         return F \ tmp_rhs
     end
 
     # Create a random initial vector
-    x0 = randn(ComplexF64, n)
+    x0 = randn(Complex{T}, n)
 
     # Use KrylovKit to find eigenvalues
     # We want the largest magnitude eigenvalues of the shift-invert operator
@@ -1861,7 +1883,7 @@ function solve_block_eigenvalue_problem(A::SparseMatrixCSC{ComplexF64,Int},
     end
 
     # Transform back: λ = σ + 1/μ
-    eigenvalues = [shift + 1.0/μ for μ in vals]
+    eigenvalues = Complex{T}[shift + one(T)/μ for μ in vals]
 
     # Sort by real part (descending)
     perm = sortperm(real.(eigenvalues), rev=true)
@@ -1966,6 +1988,7 @@ end
                                      tol=1e-4, max_iter=20,
                                      mechanical_bc=:no_slip,
                                      thermal_bc=:fixed_temperature,
+                                     equatorial_symmetry=:both,
                                      verbose=true)
 
 Find critical Rayleigh number for onset on a 3D basic state (tri-global analysis).
@@ -1986,6 +2009,7 @@ Arguments:
 - `max_iter` - Maximum iterations (default: 20)
 - `mechanical_bc` - Boundary conditions (default: :no_slip)
 - `thermal_bc` - Thermal boundary conditions (default: :fixed_temperature)
+- `equatorial_symmetry` - :both, :symmetric, or :antisymmetric
 - `verbose` - Print progress (default: true)
 
 Returns:
@@ -1999,6 +2023,7 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
                                           tol=1e-4, max_iter=20,
                                           mechanical_bc=:no_slip,
                                           thermal_bc=:fixed_temperature,
+                                          equatorial_symmetry=:both,
                                           verbose=true)
     if verbose
         println("="^70)
@@ -2027,7 +2052,8 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
     params_low = TriglobalParams(
         E=E, Pr=Pr, Ra=Ra_low, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
         basic_state_3d=basic_state_3d,
-        mechanical_bc=mechanical_bc, thermal_bc=thermal_bc
+        mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
+        equatorial_symmetry=equatorial_symmetry
     )
     vals_low, _ = solve_triglobal_eigenvalue_problem(params_low; nev=3, verbose=false)
     σ_low = real(vals_low[1])
@@ -2035,7 +2061,8 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
     params_high = TriglobalParams(
         E=E, Pr=Pr, Ra=Ra_high, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
         basic_state_3d=basic_state_3d,
-        mechanical_bc=mechanical_bc, thermal_bc=thermal_bc
+        mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
+        equatorial_symmetry=equatorial_symmetry
     )
     vals_high, _ = solve_triglobal_eigenvalue_problem(params_high; nev=3, verbose=false)
     σ_high = real(vals_high[1])
@@ -2075,7 +2102,8 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
         params_mid = TriglobalParams(
             E=E, Pr=Pr, Ra=Ra_mid, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
             basic_state_3d=basic_state_3d,
-            mechanical_bc=mechanical_bc, thermal_bc=thermal_bc
+            mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
+            equatorial_symmetry=equatorial_symmetry
         )
         vals_mid, _ = solve_triglobal_eigenvalue_problem(params_mid; nev=3, verbose=false)
         σ_mid = real(vals_mid[1])
@@ -2113,7 +2141,8 @@ function find_critical_rayleigh_triglobal(E, Pr, χ, m_range, lmax, Nr,
     params_mid = TriglobalParams(
         E=E, Pr=Pr, Ra=Ra_mid, χ=χ, m_range=m_range, lmax=lmax, Nr=Nr,
         basic_state_3d=basic_state_3d,
-        mechanical_bc=mechanical_bc, thermal_bc=thermal_bc
+        mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
+        equatorial_symmetry=equatorial_symmetry
     )
     vals_mid, _ = solve_triglobal_eigenvalue_problem(params_mid; nev=3, verbose=false)
     σ_mid = real(vals_mid[1])

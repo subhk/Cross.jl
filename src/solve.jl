@@ -174,7 +174,8 @@ function solve(problem::TriglobalProblem{T};
         E=p.E, Pr=p.Pr, Ra=p.Ra, χ=p.χ,
         m_range=problem.m_range, lmax=p.lmax, Nr=p.Nr,
         basic_state_3d=problem.basic_state,
-        mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc
+        mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
+        equatorial_symmetry=p.equatorial_symmetry
     )
 
     σ_target = sigma === nothing ? 0.0 : sigma
@@ -314,6 +315,7 @@ function find_critical_Ra(problem::TriglobalProblem{T};
         problem.basic_state;
         Ra_min=Ra_min, Ra_max=Ra_max, tol=tol, max_iter=max_iter,
         mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
+        equatorial_symmetry=p.equatorial_symmetry,
         verbose=verbose, kwargs...)
 end
 

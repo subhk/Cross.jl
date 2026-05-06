@@ -686,6 +686,27 @@ end  # @testset "Triglobal"
         @test has_uphi
     end
 
+    @testset "nonaxisymmetric_basic_state computes meridional flow for longitudinal forcing" begin
+        amplitudes = Dict((2, 2) => 0.05)
+
+        bs3d = Cross.nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr,
+                                                  lmax_bs, mmax_bs, amplitudes)
+
+        meridional_norm = zero(Float64)
+        for ((_, m), ur) in bs3d.ur_coeffs
+            if m != 0
+                meridional_norm += norm(ur)
+            end
+        end
+        for ((_, m), uθ) in bs3d.utheta_coeffs
+            if m != 0
+                meridional_norm += norm(uθ)
+            end
+        end
+
+        @test meridional_norm > 1e-14
+    end
+
     @testset "nonaxisymmetric_basic_state defaults to coupled thermal wind" begin
         amplitudes = Dict((2, 2) => 0.05)
 

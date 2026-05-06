@@ -13,6 +13,25 @@ function _capture_stdout(f)
     end
 end
 
+function _basic_state_3d_fixture(params; r=ChebyshevDiffn(params.Nr, [params.χ, 1.0], 1).x,
+                                 coefficient_length=params.Nr)
+    coeffs = Dict{Tuple{Int,Int},Vector{Float64}}(
+        (0, 0) => zeros(Float64, coefficient_length),
+    )
+    return BasicState3D{Float64}(
+        lmax_bs=2, mmax_bs=0, Nr=params.Nr,
+        r=collect(Float64, r),
+        theta_coeffs=copy(coeffs),
+        dtheta_dr_coeffs=copy(coeffs),
+        ur_coeffs=copy(coeffs),
+        utheta_coeffs=copy(coeffs),
+        uphi_coeffs=copy(coeffs),
+        dur_dr_coeffs=copy(coeffs),
+        dutheta_dr_coeffs=copy(coeffs),
+        duphi_dr_coeffs=copy(coeffs)
+    )
+end
+
 @testset "BiglobalProblem construction and validation" begin
     # Create a valid basic state using the conduction profile
     params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=10, Nr=16)
@@ -40,20 +59,7 @@ end
 @testset "TriglobalProblem construction and validation" begin
     params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=0, lmax=10, Nr=16)
 
-    # Build a minimal BasicState3D using the @with_kw keyword constructor
-    r_grid = ChebyshevDiffn(16, [0.35, 1.0], 1).x
-    bs3d = BasicState3D{Float64}(
-        lmax_bs=2, mmax_bs=0, Nr=16,
-        r=r_grid,
-        theta_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        dtheta_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        ur_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        utheta_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        uphi_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        dur_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        dutheta_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        duphi_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}()
-    )
+    bs3d = _basic_state_3d_fixture(params)
 
     problem = TriglobalProblem(params, bs3d, -2:2)
     @test problem.params === params
@@ -65,6 +71,13 @@ end
 
     # Validation: empty m_range
     @test_throws ArgumentError TriglobalProblem(params, bs3d, 1:0)
+
+    # Validation: same Nr but incompatible radial grid
+    wrong_grid = ChebyshevDiffn(params.Nr, [0.40, 1.0], 1).x
+    @test_throws ArgumentError TriglobalProblem(params, _basic_state_3d_fixture(params; r=wrong_grid), 0:2)
+
+    # Validation: coefficient vectors must match the radial resolution
+    @test_throws ArgumentError TriglobalProblem(params, _basic_state_3d_fixture(params; coefficient_length=params.Nr - 1), 0:2)
 end
 
 @testset "MHDProblem construction" begin
@@ -94,19 +107,7 @@ end
 
     # TriglobalProblem
     params_tri = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=0, lmax=10, Nr=16)
-    r_grid = ChebyshevDiffn(16, [0.35, 1.0], 1).x
-    bs3d = BasicState3D{Float64}(
-        lmax_bs=2, mmax_bs=0, Nr=16,
-        r=r_grid,
-        theta_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        dtheta_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        ur_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        utheta_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        uphi_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        dur_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        dutheta_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}(),
-        duphi_dr_coeffs=Dict{Tuple{Int,Int},Vector{Float64}}()
-    )
+    bs3d = _basic_state_3d_fixture(params_tri)
     triglobal_output = _capture_stdout(() -> estimate_size(TriglobalProblem(params_tri, bs3d, 0:2)))
     @test occursin("TriglobalProblem", triglobal_output)
     @test occursin("matrix size", triglobal_output)

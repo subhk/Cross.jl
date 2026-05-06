@@ -91,6 +91,40 @@ Cross-validate that a BasicState3D is compatible with the given parameters.
 function validate_basic_state_3d_consistency(bs, params)
     bs.Nr == params.Nr || throw(ArgumentError(
         "BasicState3D Nr=$(bs.Nr) doesn't match params Nr=$(params.Nr)"))
+    length(bs.r) == params.Nr || throw(ArgumentError(
+        "BasicState3D r must have length Nr=$(params.Nr), got $(length(bs.r))"))
+
+    T = float(eltype(bs.r))
+    χ = T(params.χ)
+    tol = sqrt(eps(T))
+    isapprox(first(bs.r), χ; rtol=tol, atol=tol) || throw(ArgumentError(
+        "BasicState3D r must start at χ=$(params.χ), got $(first(bs.r))"))
+    isapprox(last(bs.r), one(T); rtol=tol, atol=tol) || throw(ArgumentError(
+        "BasicState3D r must end at 1, got $(last(bs.r))"))
+
+    expected_grid = ChebyshevDiffn(params.Nr, [χ, one(T)], 1).x
+    grid_error = maximum(abs.(bs.r .- expected_grid))
+    grid_tol = T(10) * tol
+    grid_error <= grid_tol || throw(ArgumentError(
+        "BasicState3D r must match Chebyshev nodes (max mismatch = $grid_error)"))
+
+    coefficient_fields = (
+        (:theta_coeffs, bs.theta_coeffs),
+        (:dtheta_dr_coeffs, bs.dtheta_dr_coeffs),
+        (:ur_coeffs, bs.ur_coeffs),
+        (:utheta_coeffs, bs.utheta_coeffs),
+        (:uphi_coeffs, bs.uphi_coeffs),
+        (:dur_dr_coeffs, bs.dur_dr_coeffs),
+        (:dutheta_dr_coeffs, bs.dutheta_dr_coeffs),
+        (:duphi_dr_coeffs, bs.duphi_dr_coeffs),
+    )
+    for (field_name, coefficient_dict) in coefficient_fields
+        for coeffs in values(coefficient_dict)
+            length(coeffs) == params.Nr || throw(ArgumentError(
+                "BasicState3D $field_name entries must have length Nr=$(params.Nr)"))
+        end
+    end
+
     return nothing
 end
 

@@ -21,6 +21,12 @@ function solve end
 
 # --- Memory warning helper ---
 
+"""
+    _warn_if_large(problem, label)
+
+Run size estimation before a solve and downgrade estimation failures to debug
+logs so solving remains possible for partially supported problem types.
+"""
 function _warn_if_large(problem, label::String)
     try
         _check_memory(problem, label)
@@ -29,6 +35,7 @@ function _warn_if_large(problem, label::String)
     end
 end
 
+"""Warn when an onset solve is likely to allocate dense matrices larger than the soft limit."""
 function _check_memory(p::OnsetProblem, label)
     total_dof = _hd_total_dof(p.params.m, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
     mem = _mem_gb(total_dof)
@@ -38,6 +45,7 @@ function _check_memory(p::OnsetProblem, label)
     return nothing
 end
 
+"""Warn when a biglobal solve is likely to allocate dense matrices larger than the soft limit."""
 function _check_memory(p::BiglobalProblem, label)
     total_dof = _hd_total_dof(p.params.m, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
     mem = _mem_gb(total_dof)
@@ -47,6 +55,7 @@ function _check_memory(p::BiglobalProblem, label)
     return nothing
 end
 
+"""Warn when a triglobal solve is likely to allocate dense matrices larger than the soft limit."""
 function _check_memory(p::TriglobalProblem, label)
     total_dof, _ = _triglobal_total_dof(
         p.m_range, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
@@ -57,6 +66,7 @@ function _check_memory(p::TriglobalProblem, label)
     return nothing
 end
 
+"""Warn when an MHD solve is likely to allocate dense matrices larger than the soft limit."""
 function _check_memory(p::MHDProblem, label)
     total_dof, _, _, _, _, _ = _mhd_total_dof(p.params)
     mem = _mem_gb(total_dof)

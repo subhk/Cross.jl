@@ -177,6 +177,12 @@ leading_mode(r::StabilityResult) = @view r.eigenvectors[:, r.leading_index]
 
 # --- Problem size estimation (shared helpers) ---
 
+"""
+    _count_l_modes(m, lmax, symmetry)
+
+Count the spherical-harmonic degrees retained for one azimuthal mode after
+applying the requested equatorial-symmetry truncation.
+"""
 function _count_l_modes(m::Int, lmax::Int, symmetry::Symbol)
     if symmetry == :both
         return lmax - m + 1
@@ -187,16 +193,31 @@ function _count_l_modes(m::Int, lmax::Int, symmetry::Symbol)
     end
 end
 
-# Compute total DOF and memory (GB) for two dense complex matrices (A + B).
+"""
+    _mem_gb(total_dof)
+
+Estimate dense generalized-eigenproblem storage in GB for two ComplexF64
+matrices, used only for user-facing size warnings.
+"""
 function _mem_gb(total_dof::Int)
     return 2 * total_dof^2 * sizeof(ComplexF64) / 1024^3
 end
 
+"""
+    _hd_total_dof(m, lmax, Nr, symmetry)
+
+Estimate dense hydrodynamic problem size for onset and biglobal wrappers.
+"""
 function _hd_total_dof(m::Int, lmax::Int, Nr::Int, symmetry::Symbol)
     n_l = _count_l_modes(m, lmax, symmetry)
     return n_l * (Nr + 1) * 3  # 3 fields: poloidal, toroidal, temperature
 end
 
+"""
+    _triglobal_total_dof(m_range, lmax, Nr, symmetry=:both)
+
+Estimate reduced triglobal DOFs across all coupled azimuthal blocks.
+"""
 function _triglobal_total_dof(m_range, lmax::Int, Nr::Int, symmetry::Symbol=:both)
     _validate_triglobal_m_range(m_range, lmax)
     total_dof = 0
@@ -208,6 +229,12 @@ function _triglobal_total_dof(m_range, lmax::Int, Nr::Int, symmetry::Symbol=:bot
     return total_dof, dof_per_m
 end
 
+"""
+    _mhd_total_dof(params)
+
+Estimate MHD problem size and field-block counts from the selected symmetry and
+background-field configuration.
+"""
 function _mhd_total_dof(params)
     m, lmax, symm, N = params.m, params.lmax, params.symm, params.N
     if symm == 1
@@ -249,6 +276,12 @@ function estimate_size(p::OnsetProblem)
     mem_gb > 8.0 && @printf("  ⚠ Large problem — consider reducing lmax or Nr\n")
 end
 
+"""
+    estimate_size(p::BiglobalProblem)
+
+Print the l-mode count, dense matrix dimension, and approximate memory for a
+biglobal solve.
+"""
 function estimate_size(p::BiglobalProblem)
     params = p.params
     n_l = _count_l_modes(params.m, params.lmax, params.equatorial_symmetry)
@@ -263,6 +296,11 @@ function estimate_size(p::BiglobalProblem)
     mem_gb > 8.0 && @printf("  ⚠ Large problem — consider reducing lmax or Nr\n")
 end
 
+"""
+    estimate_size(p::TriglobalProblem)
+
+Print coupled-mode counts and approximate dense storage for a triglobal solve.
+"""
 function estimate_size(p::TriglobalProblem)
     params = p.params
     total_dof, dof_per_m = _triglobal_total_dof(
@@ -277,6 +315,12 @@ function estimate_size(p::TriglobalProblem)
     mem_gb > 8.0 && @printf("  ⚠ Large problem — consider reducing lmax or m_range\n")
 end
 
+"""
+    estimate_size(p::MHDProblem)
+
+Print field counts, matrix dimension, and approximate dense storage for an MHD
+stability solve.
+"""
 function estimate_size(p::MHDProblem)
     total_dof, n_pol, n_tor, _, _, n_per_mode = _mhd_total_dof(p.params)
     mem_gb = _mem_gb(total_dof)
@@ -292,6 +336,11 @@ end
 
 # --- Makie extension stubs ---
 
+"""Extension hook for plotting an eigenvalue spectrum when plotting extras are loaded."""
 function eigenspectrum end
+
+"""Extension hook for plotting meridional fields when plotting extras are loaded."""
 function plot_meridional end
+
+"""Extension hook for plotting radial profiles when plotting extras are loaded."""
 function plot_radial end

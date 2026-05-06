@@ -5,6 +5,7 @@
 import Base: show
 
 # --- OnsetParams ---
+"""Pretty-print hydrodynamic onset parameters in a compact REPL summary."""
 function show(io::IO, ::MIME"text/plain", p::OnsetParams{T}) where T
     println(io, "OnsetParams{$T}")
     println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Ra = $(p.Ra)    χ = $(p.χ)")
@@ -14,6 +15,7 @@ function show(io::IO, ::MIME"text/plain", p::OnsetParams{T}) where T
 end
 
 # --- BasicState ---
+"""Pretty-print active axisymmetric temperature and zonal-flow modes."""
 function show(io::IO, ::MIME"text/plain", bs::BasicState{T}) where T
     active_theta = sort(collect(keys(bs.theta_coeffs)))
     active_uphi = sort(collect(keys(bs.uphi_coeffs)))
@@ -29,6 +31,7 @@ function show(io::IO, ::MIME"text/plain", bs::BasicState{T}) where T
 end
 
 # --- BasicState3D ---
+"""Pretty-print the dimensions and active-mode count for a 3D basic state."""
 function show(io::IO, ::MIME"text/plain", bs::BasicState3D{T}) where T
     n_modes = length(bs.theta_coeffs)
     println(io, "BasicState3D{$T}")
@@ -37,6 +40,7 @@ function show(io::IO, ::MIME"text/plain", bs::BasicState3D{T}) where T
 end
 
 # --- StabilityResult ---
+"""Pretty-print the leading eigenvalue summary and source problem."""
 function show(io::IO, ::MIME"text/plain", r::StabilityResult{T}) where T
     nev = length(r.eigenvalues)
     println(io, "StabilityResult ($nev eigenvalues)")
@@ -45,9 +49,12 @@ function show(io::IO, ::MIME"text/plain", r::StabilityResult{T}) where T
     print(io,   "  Problem: $pname")
 end
 
+"""Build the short problem label embedded in `StabilityResult` display output."""
 _problem_name(p::OnsetProblem) = "OnsetProblem (E=$(p.params.E), Ra=$(p.params.Ra))"
 _problem_name(p::BiglobalProblem) = "BiglobalProblem (E=$(p.params.E), Ra=$(p.params.Ra))"
 _problem_name(p::TriglobalProblem) = "TriglobalProblem (E=$(p.params.E), m=$(p.m_range))"
+
+"""Build the MHD problem label while tolerating incomplete custom params."""
 function _problem_name(p::MHDProblem)
     try
         mp = p.params
@@ -59,17 +66,20 @@ end
 _problem_name(::Any) = "Unknown"
 
 # --- Problem types ---
+"""Pretty-print the defining resolution and physics for an onset wrapper."""
 function show(io::IO, ::MIME"text/plain", p::OnsetProblem{T}) where T
     println(io, "OnsetProblem{$T}")
     print(io,   "  E=$(p.params.E)  Ra=$(p.params.Ra)  m=$(p.params.m)  lmax=$(p.params.lmax)  Nr=$(p.params.Nr)")
 end
 
+"""Pretty-print the defining resolution and attached axisymmetric basic state."""
 function show(io::IO, ::MIME"text/plain", p::BiglobalProblem{T}) where T
     println(io, "BiglobalProblem{$T}")
     println(io, "  E=$(p.params.E)  Ra=$(p.params.Ra)  m=$(p.params.m)  lmax=$(p.params.lmax)  Nr=$(p.params.Nr)")
     print(io,   "  BasicState: lmax_bs=$(p.basic_state.lmax_bs)")
 end
 
+"""Pretty-print the coupled-mode range and resolution for a triglobal wrapper."""
 function show(io::IO, ::MIME"text/plain", p::TriglobalProblem{T}) where T
     println(io, "TriglobalProblem{$T}")
     println(io, "  E=$(p.params.E)  Ra=$(p.params.Ra)  lmax=$(p.params.lmax)  Nr=$(p.params.Nr)")
@@ -77,6 +87,7 @@ function show(io::IO, ::MIME"text/plain", p::TriglobalProblem{T}) where T
 end
 
 # --- BiglobalParams ---
+"""Pretty-print biglobal solver parameters and basic-state resolution."""
 function show(io::IO, ::MIME"text/plain", p::BiglobalParams{T}) where T
     println(io, "BiglobalParams{$T}")
     println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Ra = $(p.Ra)    χ = $(p.χ)")
@@ -86,6 +97,7 @@ function show(io::IO, ::MIME"text/plain", p::BiglobalParams{T}) where T
 end
 
 # --- TriglobalParams ---
+"""Pretty-print triglobal solver parameters, symmetry, and 3D basic-state resolution."""
 function show(io::IO, ::MIME"text/plain", p::TriglobalParams{T}) where T
     println(io, "TriglobalParams{$T}")
     println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Ra = $(p.Ra)    χ = $(p.χ)")
@@ -96,6 +108,7 @@ function show(io::IO, ::MIME"text/plain", p::TriglobalParams{T}) where T
 end
 
 # --- MHDParams ---
+"""Pretty-print MHD solver parameters, boundary conditions, and background field."""
 function show(io::IO, ::MIME"text/plain", p::MHDParams{T}) where T
     println(io, "MHDParams{$T}")
     println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Pm = $(p.Pm)    Ra = $(p.Ra)")
@@ -109,6 +122,7 @@ function show(io::IO, ::MIME"text/plain", p::MHDParams{T}) where T
 end
 
 # --- MHDProblem ---
+"""Pretty-print an MHD problem wrapper while tolerating custom parameter objects."""
 function show(io::IO, ::MIME"text/plain", p::MHDProblem{T, BS}) where {T, BS}
     println(io, "MHDProblem{$T, $BS}")
     try

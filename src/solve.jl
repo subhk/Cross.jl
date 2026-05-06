@@ -32,25 +32,37 @@ end
 function _check_memory(p::OnsetProblem, label)
     total_dof = _hd_total_dof(p.params.m, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
     mem = _mem_gb(total_dof)
-    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
+    if mem > 8.0
+        @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
+    end
+    return nothing
 end
 
 function _check_memory(p::BiglobalProblem, label)
     total_dof = _hd_total_dof(p.params.m, p.params.lmax, p.params.Nr, p.params.equatorial_symmetry)
     mem = _mem_gb(total_dof)
-    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
+    if mem > 8.0
+        @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or Nr"
+    end
+    return nothing
 end
 
 function _check_memory(p::TriglobalProblem, label)
     total_dof, _ = _triglobal_total_dof(p.m_range, p.params.lmax, p.params.Nr)
     mem = _mem_gb(total_dof)
-    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or m_range"
+    if mem > 8.0
+        @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or m_range"
+    end
+    return nothing
 end
 
 function _check_memory(p::MHDProblem, label)
     total_dof, _, _, _, _, _ = _mhd_total_dof(p.params)
     mem = _mem_gb(total_dof)
-    mem > 8.0 && @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or N"
+    if mem > 8.0
+        @warn "$label: estimated memory ~$(round(mem; digits=1)) GB exceeds 8 GB — consider reducing lmax or N"
+    end
+    return nothing
 end
 
 # ============================================================================

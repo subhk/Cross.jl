@@ -90,6 +90,7 @@ function show(io::IO, ::MIME"text/plain", p::TriglobalParams{T}) where T
     println(io, "TriglobalParams{$T}")
     println(io, "  E  = $(p.E)    Pr = $(p.Pr)    Ra = $(p.Ra)    χ = $(p.χ)")
     println(io, "  m_range = $(p.m_range)    lmax = $(p.lmax)   Nr = $(p.Nr)")
+    println(io, "  Symmetry: $(p.equatorial_symmetry)")
     println(io, "  BCs: $(p.mechanical_bc) | $(p.thermal_bc)")
     print(io,   "  BasicState3D: lmax_bs=$(p.basic_state_3d.lmax_bs), mmax_bs=$(p.basic_state_3d.mmax_bs)")
 end

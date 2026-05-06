@@ -63,6 +63,12 @@ function _validate_triglobal_m_range(m_range::UnitRange{Int}, lmax::Int)
     return nothing
 end
 
+function _validate_triglobal_symmetry(equatorial_symmetry::Symbol)
+    equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
+        "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$equatorial_symmetry"))
+    return nothing
+end
+
 function _triglobal_mode_l_sets(params::TriglobalParams{T}, m::Int) where T
     params_m = OnsetParams(
         E = params.E,
@@ -205,6 +211,7 @@ Useful for assessing computational requirements before attempting to solve.
 function estimate_triglobal_problem_size(params::TriglobalParams{T}) where T
     num_modes = length(params.m_range)
     _validate_triglobal_m_range(params.m_range, params.lmax)
+    _validate_triglobal_symmetry(params.equatorial_symmetry)
 
     total_dofs = 0
     for m in params.m_range
@@ -265,8 +272,7 @@ Returns a CoupledModeProblem structure.
 """
 function setup_coupled_mode_problem(params::TriglobalParams{T}) where T
     _validate_triglobal_m_range(params.m_range, params.lmax)
-    params.equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
-        "equatorial_symmetry must be :both, :symmetric, or :antisymmetric, got :$(params.equatorial_symmetry)"))
+    _validate_triglobal_symmetry(params.equatorial_symmetry)
 
     m_range = params.m_range
     basic_state = params.basic_state_3d
@@ -1785,7 +1791,7 @@ function assemble_block_matrices(problem::CoupledModeProblem{T},
     row_B = Int[]
     col_B = Int[]
     val_B = Complex{T}[]
-    tol = sqrt(eps(T))
+    tol = T(1e-14)
 
     # Fill in diagonal blocks (single-mode operators)
     for m in problem.m_range

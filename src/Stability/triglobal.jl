@@ -295,6 +295,16 @@ function _has_nonzero_basic_state(basic_state::BasicState{T}; tol=1e-14) where T
     return false
 end
 
+struct SingleModeOperator{T<:Real}
+    A::Matrix{Complex{T}}
+    B::Matrix{Complex{T}}
+    op::LinearStabilityOperator{T}
+    idx_map::Dict{Tuple{Int,Symbol}, Vector{Int}}
+    interior_dofs::Vector{Int}
+    boundary_dofs::Vector{Int}
+    reduction::ConstraintReduction{T}
+end
+
 """
     build_single_mode_operators(problem::CoupledModeProblem, verbose::Bool)
 
@@ -307,8 +317,7 @@ Returns a dictionary mapping m to a NamedTuple with:
 """
 function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bool) where T
     params_tri = problem.params
-    single_mode_ops = Dict{Int, NamedTuple{(:A, :B, :op, :idx_map), Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, 
-                    Any, Dict{Tuple{Int,Symbol}, Vector{Int}}}}}()
+    single_mode_ops = Dict{Int, SingleModeOperator{T}}()
     basic_state_axis = axisymmetric_basic_state(params_tri.basic_state_3d)
     has_axisymmetric = _has_nonzero_basic_state(basic_state_axis)
 
@@ -333,20 +342,21 @@ function build_single_mode_operators(problem::CoupledModeProblem{T}, verbose::Bo
 
         # Create operator and assemble matrices
         op_m = LinearStabilityOperator(params_m)
-        A_m, B_m, interior_dofs, _ = assemble_matrices(op_m)
+        A_full, B_full, interior_dofs, boundary_dofs = assemble_matrices(op_m)
+        A_m, B_m, reduction = _constrained_reduced_matrices(
+            A_full, B_full, op_m, interior_dofs, boundary_dofs)
         expected_dofs = length(problem.block_indices[m])
-        if length(interior_dofs) != expected_dofs
-            error("Interior DOF count mismatch for m=$m: got $(length(interior_dofs)), expected $expected_dofs")
+        if reduction.n_reduced != expected_dofs
+            error("Reduced DOF count mismatch for m=$m: got $(reduction.n_reduced), expected $expected_dofs")
         end
-        idx_map = _reduced_index_map(op_m, interior_dofs)
-        A_m = A_m[interior_dofs, interior_dofs]
-        B_m = B_m[interior_dofs, interior_dofs]
+        idx_map = _full_index_map(op_m)
         if m < 0
             A_m = conj(A_m)
             B_m = conj(B_m)
         end
 
-        single_mode_ops[m] = (A = A_m, B = B_m, op = op_m, idx_map = idx_map)
+        single_mode_ops[m] = SingleModeOperator(
+            A_m, B_m, op_m, idx_map, interior_dofs, boundary_dofs, reduction)
 
         if verbose && abs(m) <= 2
             println("$(size(A_m, 1)) DOFs")
@@ -469,18 +479,26 @@ function _perturbation_meridional_coupling(l_pert::Int, l_bs::Int, l_output::Int
     return coupling
 end
 
-function _reduced_index_map(op::LinearStabilityOperator, interior_dofs::Vector{Int})
-    full_to_reduced = zeros(Int, op.total_dof)
-    for (i, idx) in enumerate(interior_dofs)
-        full_to_reduced[idx] = i
-    end
-
+function _full_index_map(op::LinearStabilityOperator)
     idx_map = Dict{Tuple{Int,Symbol}, Vector{Int}}()
     for (key, idx_range) in op.index_map
-        idx_map[key] = [full_to_reduced[i] for i in idx_range]
+        idx_map[key] = collect(idx_range)
     end
 
     return idx_map
+end
+
+function _project_coupling_block(C_full::Matrix{Complex{T}},
+                                 target::SingleModeOperator{T},
+                                 source::SingleModeOperator{T}) where {T<:Real}
+    C = zeros(Complex{T}, length(target.interior_dofs), source.reduction.n_reduced)
+
+    for block in source.reduction.blocks
+        C[:, block.reduced_indices] .=
+            C_full[target.interior_dofs, block.full_indices] * block.basis
+    end
+
+    return C
 end
 
 function build_mode_coupling_operators(problem::CoupledModeProblem{T},
@@ -631,10 +649,12 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
             op_to = single_mode_ops[m_to].op
             idx_map_from = single_mode_ops[m_from].idx_map
             idx_map_to = single_mode_ops[m_to].idx_map
-            n_from = length(problem.block_indices[m_from])
-            n_to = length(problem.block_indices[m_to])
+            n_from = op_from.total_dof
+            n_to = op_to.total_dof
 
-            # Build the coupling matrix
+            # Build the coupling matrix in full coordinates, then project the
+            # source columns into the same constraint basis used by the diagonal
+            # blocks while keeping target interior equations.
             C = zeros(ComplexF64, n_to, n_from)
 
             # Compute coupling through each relevant basic state mode
@@ -711,6 +731,8 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                                               r, uphi_interp, cd.D1, params)
                 end
             end
+
+            C = _project_coupling_block(C, single_mode_ops[m_to], single_mode_ops[m_from])
 
             # Store if non-zero
             if maximum(abs.(C)) > 1e-16
@@ -894,8 +916,9 @@ function add_temperature_gradient_coupling!(C::Matrix{ComplexF64},
             idx_from = idx_map_from[(ℓ_from, :P)]
             idx_to = idx_map_to[(ℓ_to, :Θ)]
 
-            # Coupling coefficient: -L_from × ∂θ̄_bs/∂r
-            temp_grad_coeff = -L_from .* (bs_scale .* dtheta_dr_bs)
+            # Match the sparse radial weighting used by the single-mode
+            # temperature equation before projection.
+            temp_grad_coeff = -L_from .* (bs_scale .* (r .^ 2) .* dtheta_dr_bs)
 
             for i in 1:Nr
                 row = idx_to[i]

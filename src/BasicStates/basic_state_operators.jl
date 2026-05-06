@@ -287,6 +287,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
 
     # Radial differentiation operator (from Chebyshev differentiation structure)
     Dr = op.cd.D1
+    temperature_radial_weight = op.params.use_sparse_weighting ? r .^ 2 : r .^ 4
 
     # Storage for operator blocks
     # Key: (ℓ_output, ℓ_input) - coupling from input mode to output mode
@@ -377,9 +378,11 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # =====================================================================
                 # 4. Radial temperature gradient: -u'_r × ∂θ̄/∂r
                 # =====================================================================
-                # u'_r ~ ℓ(ℓ+1)/r² × P for poloidal potential P
+                # Use the same radial equation weighting as the built-in
+                # conduction term in assemble_matrices.
                 if theta_max > 1e-14
-                    temp_grad_op = -L_input * coupling_coeff * Diagonal(dtheta_dr)
+                    temp_grad_op = -L_input * coupling_coeff *
+                                   Diagonal(temperature_radial_weight .* dtheta_dr)
 
                     if !haskey(temp_grad_radial_blocks, (ℓ_output, ℓ_input))
                         temp_grad_radial_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_op)

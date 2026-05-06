@@ -42,14 +42,14 @@ julia -e 'using Pkg; Pkg.activate("."); Pkg.instantiate()'
 
 ## Running Examples
 
-### Q: Example script throws `MethodError`
+### Q: Example script uses removed v1 constructors
 
 **Error:**
 ```
-MethodError: no method matching ShellParams(...)
+UndefVarError from an old v1 setup script
 ```
 
-**Solution:** Ensure Julia is launched with the project environment:
+**Solution:** Update the script to use `OnsetParams`, a problem wrapper, and `solve`, then ensure Julia is launched with the project environment:
 
 ```bash
 julia --project=. example/linear_stability_demo.jl
@@ -79,12 +79,12 @@ using Cross
 
 2. **Reduce the number of eigenvalues:**
    ```julia
-   eigenvalues, _, _ = leading_modes(params; nev=2)
+   result = solve(OnsetProblem(params); nev=2)
    ```
 
 3. **Adjust tolerance:**
    ```julia
-   eigenvalues, _, _ = leading_modes(params; tol=1e-5, maxiter=200)
+   result = solve(OnsetProblem(params); tol=1e-5, maxiter=200)
    ```
 
 4. **Check parameter regime:** Extreme Ekman numbers ($E < 10^{-7}$) require higher resolution.
@@ -111,7 +111,7 @@ using Cross
 
 1. **Reduce resolution:**
    ```julia
-   params = ShellParams(..., lmax=30, Nr=32)  # Reduced from lmax=60, Nr=64
+   params = OnsetParams(..., lmax=30, Nr=32)  # Reduced from lmax=60, Nr=64
    ```
 
 2. **Check DOF before solving:**
@@ -180,16 +180,16 @@ using Cross
 
 3. **Request fewer eigenvalues:**
    ```julia
-   eigenvalues, _, _ = leading_modes(params; nev=4)  # Not nev=20
+   result = solve(OnsetProblem(params); nev=4)  # Not nev=20
    ```
 
 4. **Lower tolerance during exploration:**
    ```julia
    # Quick exploration
-   eigenvalues, _, _ = leading_modes(params; tol=1e-4)
+   result = solve(OnsetProblem(params); tol=1e-4)
 
    # Final production run
-   eigenvalues, _, _ = leading_modes(params; tol=1e-8)
+   result = solve(OnsetProblem(params); tol=1e-8)
    ```
 
 ---
@@ -410,7 +410,7 @@ using BenchmarkTools
 @btime solve_eigenvalue_problem($op; nev=4)
 
 # Profile memory
-@allocated leading_modes(params; nev=4)
+@allocated solve(OnsetProblem(params); nev=4)
 ```
 
 ---

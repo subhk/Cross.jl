@@ -62,9 +62,9 @@ src/MHD/          — MHDParams, Lorentz/induction operators, assembly
 
 All symbols remain in the `Cross` namespace. No import changes needed unless you were including standalone module files directly.
 
-## 4. Deprecated (still functional)
+## 4. Removed v1 Compatibility Constructors
 
-- `ShellParams` — still works for backward compatibility, but maps to `OnsetParams` internally. Use `OnsetParams` directly with the `χ` parameter for new code.
+Older v1 convenience constructors and tuple-returning mode helpers have been removed. Use `OnsetParams` with the `χ` radius ratio, wrap it in the appropriate problem type, and call `solve`.
 
 ## 5. New: Input Validation
 

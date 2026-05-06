@@ -32,11 +32,10 @@ include("example/<script_name>.jl")
 - Displays growth rates and frequencies
 
 **Key concepts:**
-- `ShellParams` configuration
-- `leading_modes` function
+- `OnsetParams` configuration
+- `solve(OnsetProblem(...))` workflow
 - Eigenvalue interpretation
 
-**v2.0 equivalent:**
 ```julia
 params = OnsetParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64)
 result = solve(OnsetProblem(params); nev=8)
@@ -97,7 +96,7 @@ result.growth_rate  # positive = unstable, negative = stable
 **Key concepts:**
 - `ChebyshevDiffn` construction
 - `basic_state` function with symbolic BCs
-- Passing basic state to `ShellParams`
+- Passing basic state to `OnsetParams`
 
 ```julia
 # Create basic state using symbolic BCs (recommended)
@@ -112,8 +111,9 @@ bs = basic_state(cd, χ, E, Ra, Pr; temperature_bc=Y20(0.1))
 # With fixed flux at outer boundary
 bs = basic_state(cd, χ, E, Ra, Pr; flux_bc=Y00(-1.0) + Y20(0.1))
 
-# Use in onset calculation
-params = ShellParams(..., basic_state=bs)
+# Use in a stability calculation
+params = OnsetParams(..., basic_state=bs)
+result = solve(BiglobalProblem(params, bs); nev=8)
 ```
 
 ---
@@ -390,7 +390,7 @@ lmax = 60
 Nr = 64
 
 # === Setup ===
-params = ShellParams(
+params = OnsetParams(
     E = E, Pr = Pr, Ra = Ra, χ = χ,
     m = m, lmax = lmax, Nr = Nr,
     mechanical_bc = :no_slip,
@@ -399,7 +399,10 @@ params = ShellParams(
 
 # === Solve ===
 println("Computing eigenvalues...")
-eigenvalues, eigenvectors, op, info = leading_modes(params; nev=6)
+problem = OnsetProblem(params)
+result = solve(problem; nev=6)
+eigenvalues = result.eigenvalues
+eigenvectors = result.eigenvectors
 
 # === Results ===
 println("\nResults:")
@@ -430,7 +433,7 @@ flux = Y00(-1.0) + Y20(0.1)
 bs = basic_state(cd, χ, E, Ra, Pr; flux_bc=flux)
 
 # Use in problem setup
-params = ShellParams(
+params = OnsetParams(
     E = E, Pr = Pr, Ra = Ra, χ = χ,
     m = m, lmax = lmax, Nr = Nr,
     basic_state = bs,

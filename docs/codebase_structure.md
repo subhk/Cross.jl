@@ -66,7 +66,6 @@ module Cross
     # Dependencies
     using LinearAlgebra, SparseArrays, JLD2, Printf
     using Parameters
-    using ArnoldiMethod: partialschur, partialeigen, LR, LI, LM
     using KrylovKit
 
     # v2.0 core (order matters!)
@@ -398,8 +397,7 @@ Visualization support is provided through Julia's extension mechanism (weak depe
 ┌─────────────────────────────────────────────────────────────────┐
 │                 Generalized Eigenvalue Problem                  │
 │                      A x = λ B x                                │
-│  • ArnoldiMethod (shift-invert)                                 │
-│  • KrylovKit (iterative)                                        │
+│  • KrylovKit shift-invert iteration                             │
 └─────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -467,7 +465,6 @@ Pkg.test("Cross")
 |---------|------|---------|
 | `LinearAlgebra` | stdlib | Standard linear algebra |
 | `SparseArrays` | stdlib | Sparse matrix support |
-| `ArnoldiMethod` | direct | Shift-invert eigensolvers |
 | `KrylovKit` | direct | Iterative eigensolvers |
 | `Parameters` | direct | `@with_kw` struct macros |
 | `JLD2` | direct | Data serialization |

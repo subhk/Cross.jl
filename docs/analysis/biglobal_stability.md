@@ -254,11 +254,11 @@ end
 
 ## Using Basic States in Stability Analysis
 
-### Pass to ShellParams
+### Pass to OnsetParams
 
 ```julia
 # Define parameters with basic state
-params = ShellParams(
+params = OnsetParams(
     E = 1e-5,
     Pr = 1.0,
     Ra = 1e7,
@@ -279,26 +279,13 @@ op = LinearStabilityOperator(params)
 
 **Legacy API:**
 ```julia
-# Find leading modes (modified by mean flow)
-eigenvalues, eigenvectors, _, info = leading_modes(params; nev=8)
-
-σ₁ = real(eigenvalues[1])
-ω₁ = imag(eigenvalues[1])
-
-println("With mean flow:")
-println("  Growth rate: σ = $σ₁")
-println("  Drift frequency: ω = $ω₁")
-```
-
-**v2.0 API:**
-```julia
 # Build basic state with unified constructor
 bs = basic_state(params; mode=:meridional, amplitude=0.1)
 
 # Solve biglobal problem
 result = solve(BiglobalProblem(params, bs); nev=8)
 
-println("With mean flow (v2.0):")
+println("With mean flow:")
 println("  Growth rate: σ = ", result.growth_rate)
 println("  Drift frequency: ω = ", result.frequency)
 ```
@@ -307,18 +294,18 @@ println("  Drift frequency: ω = ", result.frequency)
 
 ```julia
 # Reference: no basic state
-params_ref = ShellParams(
+params_ref = OnsetParams(
     E = 1e-5, Pr = 1.0, Ra = 1e7, χ = 0.35,
     m = 12, lmax = 60, Nr = 64,
     # basic_state omitted → conduction only
 )
 
-eigenvalues_ref, _, _, _ = leading_modes(params_ref; nev=4)
+result_ref = solve(OnsetProblem(params_ref); nev=4)
 
 println("\nComparison:")
-println("  Without mean flow: σ = $(real(eigenvalues_ref[1]))")
-println("  With mean flow:    σ = $(real(eigenvalues[1]))")
-println("  Difference:        Δσ = $(real(eigenvalues[1]) - real(eigenvalues_ref[1]))")
+println("  Without mean flow: σ = $(result_ref.growth_rate)")
+println("  With mean flow:    σ = $(result.growth_rate)")
+println("  Difference:        Δσ = $(result.growth_rate - result_ref.growth_rate)")
 ```
 
 ## Physical Effects of Mean Flow
@@ -434,7 +421,7 @@ for amp in amplitudes
     end
 
     # Build problem with basic state
-    params = ShellParams(
+    params = OnsetParams(
         E = E, Pr = Pr, Ra = Ra, χ = χ,
         m = m_test, lmax = lmax, Nr = Nr,
         basic_state = bs,
@@ -443,10 +430,10 @@ for amp in amplitudes
     )
 
     # Find eigenvalues
-    eigenvalues, _, _, _ = leading_modes(params; nev=4)
+    result = solve(BiglobalProblem(params, bs); nev=4)
 
-    σ = real(eigenvalues[1])
-    ω = imag(eigenvalues[1])
+    σ = result.growth_rate
+    ω = result.frequency
 
     push!(results, (amplitude=amp, σ=σ, ω=ω))
     @printf("σ = %+.6e, ω = %+.6f\n", σ, ω)

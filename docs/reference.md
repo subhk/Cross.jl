@@ -133,13 +133,13 @@ plot_radial(result, 1)                # radial profiles
 
 ---
 
-## Core Types (v1.x)
+## Core Types
 
 ### Parameter Structures
 
 #### `OnsetParams{T, BS}`
 
-Internal parameter structure for onset problems. Use `ShellParams` for construction.
+Parameter structure for onset problems. Use it directly with `OnsetProblem`, `BiglobalProblem`, or lower-level operator constructors.
 
 ```julia
 @with_kw struct OnsetParams{T, BS}
@@ -159,36 +159,6 @@ Internal parameter structure for onset problems. Use `ShellParams` for construct
     equatorial_symmetry::Symbol  # :both, :symmetric, or :antisymmetric
     basic_state::BS         # Optional BasicState or nothing
 end
-```
-
-**Source:** `src/linear_stability.jl`
-
----
-
-#### `ShellParams` (deprecated)
-
-> **Deprecated in v2.0.** Use `OnsetProblem`, `BiglobalProblem`, or `TriglobalProblem` instead.
-> `ShellParams` continues to work for backward compatibility.
-
-User-friendly constructor for `OnsetParams`.
-
-```julia
-params = ShellParams(
-    E = 1e-5,
-    Pr = 1.0,
-    Ra = 1e7,
-    m = 10,
-    lmax = 60,
-    Nr = 64;
-    χ = 0.35,              # or provide ri, ro
-    ri = 0.35,
-    ro = 1.0,
-    mechanical_bc = :no_slip,
-    thermal_bc = :fixed_temperature,
-    use_sparse_weighting = true,
-    equatorial_symmetry = :both,
-    basic_state = nothing,
-)
 ```
 
 **Source:** `src/linear_stability.jl`
@@ -353,31 +323,12 @@ eigenvalues, eigenvectors, info = solve_eigenvalue_problem(
 
 ---
 
-### `leading_modes`
-
-Compute leading eigenpairs for a parameter set.
-
-```julia
-eigenvalues, eigenvectors, op, info = leading_modes(
-    params;               # ShellParams or OnsetParams
-    nev = 6,
-    which = :LR,
-    tol = 1e-6,
-    maxiter = 120,
-    nθ = 96,              # Meridional grid points
-)
-```
-
-**Source:** `src/linear_stability.jl`
-
----
-
 ### `find_growth_rate`
 
 Find the growth rate at fixed parameters.
 
 ```julia
-eigenvalues, eigenvectors, op, info = find_growth_rate(
+σ, ω, eigvec = find_growth_rate(
     op;                   # LinearStabilityOperator
     nev = 8,
     which = :LR,
@@ -814,7 +765,7 @@ Cross (main module)
 │   ├── banner.jl                   # ASCII banner
 │   ├── basic_state.jl              # BasicState, BasicState3D, SphericalHarmonicBC
 │   ├── get_velocity.jl             # Velocity reconstruction
-│   ├── linear_stability.jl         # OnsetParams, ShellParams (deprecated), solver
+│   ├── linear_stability.jl         # OnsetParams and dense onset solver
 │   ├── triglobal_stability.jl      # TriglobalParams, CoupledModeProblem, solver
 │   │
 │   ├── problems/                   # v2.0 unified problem types
@@ -842,10 +793,10 @@ Cross (main module)
 │   ├── leading_mode               # Fastest-growing eigenvector
 │   └── estimate_size              # Memory / size estimation
 │
-├── v1.x API (backward compatible)
+├── Lower-level API
 │   ├── Core Types
 │   │   ├── ChebyshevDiffn
-│   │   ├── OnsetParams, ShellParams (deprecated)
+│   │   ├── OnsetParams
 │   │   ├── LinearStabilityOperator
 │   │   ├── BasicState, BasicState3D
 │   │   ├── SphericalHarmonicBC
@@ -860,7 +811,7 @@ Cross (main module)
 │   │
 │   └── Exported Functions
 │       ├── solve_eigenvalue_problem
-│       ├── leading_modes, find_growth_rate
+│       ├── find_growth_rate
 │       ├── find_critical_rayleigh
 │       ├── basic_state
 │       ├── solve_triglobal_eigenvalue_problem

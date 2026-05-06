@@ -124,15 +124,6 @@ flowchart TD
 
 ### Onset Convection
 
-**Legacy API:**
-```julia
-using Cross
-
-params = ShellParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64)
-eigenvalues, eigenvectors, _, info = leading_modes(params; nev=8)
-```
-
-**v2.0 API:**
 ```julia
 using Cross
 
@@ -143,17 +134,6 @@ result.growth_rate
 
 ### Biglobal
 
-**Legacy API:**
-```julia
-using Cross
-
-cd = ChebyshevDiffn(64, [0.35, 1.0], 4)
-bs = meridional_basic_state(cd, 0.35, 1e-5, 1e7, 1.0; amplitude=0.1)
-params = ShellParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m=10, lmax=60, Nr=64, basic_state=bs)
-eigenvalues, eigenvectors, _, info = leading_modes(params; nev=8)
-```
-
-**v2.0 API:**
 ```julia
 using Cross
 
@@ -164,19 +144,6 @@ result = solve(BiglobalProblem(params, bs); nev=6)
 
 ### Triglobal
 
-**Legacy API:**
-```julia
-using Cross
-
-cd = ChebyshevDiffn(48, [0.35, 1.0], 4)
-boundary_modes = Dict((2,0) => 0.1, (2,2) => 0.05)
-bs3d = nonaxisymmetric_basic_state(cd, 0.35, 1e-5, 1e7, 1.0, 8, 4, boundary_modes)
-
-params = TriglobalParams(E=1e-5, Pr=1.0, Ra=1e7, χ=0.35, m_range=-2:2, lmax=40, Nr=48, basic_state_3d=bs3d)
-eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(params; nev=8)
-```
-
-**v2.0 API:**
 ```julia
 using Cross
 

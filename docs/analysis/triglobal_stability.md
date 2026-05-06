@@ -727,14 +727,14 @@ println("="^60)
 bs_axi = meridional_basic_state(cd, χ, E, Ra, Pr;
     lmax_bs = 6, amplitude = 0.1)
 
-params_bi = ShellParams(
+params_bi = OnsetParams(
     E = E, Pr = Pr, Ra = Ra, χ = χ,
     m = 0, lmax = 35, Nr = Nr,
     basic_state = bs_axi,
 )
 
-eigenvalues_bi, _, _, _ = leading_modes(params_bi; nev=4)
-σ_biglobal = real(eigenvalues_bi[1])
+result_bi = solve(BiglobalProblem(params_bi, bs_axi); nev=4)
+σ_biglobal = result_bi.growth_rate
 
 @printf("\n  Biglobal (m=0 only):  σ = %+.6e\n", σ_biglobal)
 @printf("  Triglobal (coupled):  σ = %+.6e\n", σ₁)

@@ -172,8 +172,8 @@ function compute_l_sets(p::OnsetParams{T}) where {T<:Real}
     return Dict(:P => pol_ls, :T => tor_ls, :Θ => pol_ls)
 end
 
-struct LinearStabilityOperator{T<:Real}
-    params::OnsetParams{T}
+struct LinearStabilityOperator{T<:Real, BS}
+    params::OnsetParams{T, BS}
     cd::ChebyshevDiffn{T}
     r::Vector{T}
     index_map::Dict{Tuple{Int,Symbol}, UnitRange{Int}}
@@ -182,7 +182,7 @@ struct LinearStabilityOperator{T<:Real}
     radial_cache::Dict{Tuple{Int,Int}, Matrix{T}}
 end
 
-function LinearStabilityOperator(params::OnsetParams{T}) where {T}
+function LinearStabilityOperator(params::OnsetParams{T, BS}) where {T, BS}
     cd = ChebyshevDiffn(params.Nr, [params.ri, params.ro], 4)
     r = cd.x
 
@@ -200,8 +200,8 @@ function LinearStabilityOperator(params::OnsetParams{T}) where {T}
     end
 
     total_dof = idx - 1
-    return LinearStabilityOperator{T}(params, cd, r, index_map, l_sets, total_dof,
-                                      Dict{Tuple{Int,Int}, Matrix{T}}())
+    return LinearStabilityOperator{T, BS}(params, cd, r, index_map, l_sets, total_dof,
+                                          Dict{Tuple{Int,Int}, Matrix{T}}())
 end
 
 # -----------------------------------------------------------------------------

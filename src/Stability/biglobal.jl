@@ -54,6 +54,7 @@ include advection and shear terms from the basic state.
 - `basic_state::BasicState{T}` - Axisymmetric basic state (required)
 - `mechanical_bc::Symbol` - :no_slip or :stress_free
 - `thermal_bc::Symbol` - :fixed_temperature or :fixed_flux
+- `equatorial_symmetry::Symbol` - :both, :symmetric, or :antisymmetric
 
 # Example
 ```julia
@@ -373,6 +374,34 @@ function solve_biglobal_problem(params::BiglobalParams{T};
 end
 
 
+function _biglobal_rayleigh_kwargs(mechanical_bc::Symbol,
+                                    thermal_bc::Symbol,
+                                    equatorial_symmetry::Symbol,
+                                    nev::Int,
+                                    basic_state,
+                                    basic_state_builder)
+    rayleigh_kwargs = (; mechanical_bc=mechanical_bc,
+                        thermal_bc=thermal_bc,
+                        equatorial_symmetry=equatorial_symmetry,
+                        nev=nev)
+
+    if basic_state !== nothing
+        rayleigh_kwargs = (; rayleigh_kwargs..., basic_state=basic_state)
+    end
+
+    if basic_state_builder !== nothing
+        builder_wrapper = function (Ra_val)
+            bs = basic_state_builder(Ra_val)
+            bs isa BasicState || error("basic_state_builder must return a BasicState, got $(typeof(bs))")
+            return bs
+        end
+        rayleigh_kwargs = (; rayleigh_kwargs..., basic_state_builder=builder_wrapper)
+    end
+
+    return rayleigh_kwargs
+end
+
+
 """
     find_critical_Ra_biglobal(; E, Pr, χ, m, lmax, Nr, basic_state, kwargs...)
 
@@ -395,6 +424,7 @@ scale with Ra.
 - `basic_state_builder::Function` - Callback `f(Ra) -> BasicState` for Ra-dependent states (optional)
 - `Ra_guess::Real` - Initial guess for Ra_c
 - `tol::Real` - Tolerance for convergence
+- `equatorial_symmetry::Symbol` - :both, :symmetric, or :antisymmetric
 
 # Returns
 - `Ra_c::Real` - Critical Rayleigh number
@@ -409,6 +439,7 @@ function find_critical_Ra_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::
                                     Ra_bracket::Tuple{T,T}=(Ra_guess/10, Ra_guess*10),
                                     mechanical_bc::Symbol=:no_slip,
                                     thermal_bc::Symbol=:fixed_temperature,
+                                    equatorial_symmetry::Symbol=:both,
                                     nev::Int=6,
                                     verbose::Bool=false) where {T<:Real}
 
@@ -418,22 +449,9 @@ function find_critical_Ra_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::
         error("Provide only one of `basic_state` or `basic_state_builder`")
     end
 
-    rayleigh_kwargs = (; mechanical_bc=mechanical_bc,
-                        thermal_bc=thermal_bc,
-                        nev=nev)
-
-    if basic_state !== nothing
-        rayleigh_kwargs = (; rayleigh_kwargs..., basic_state=basic_state)
-    end
-
-    if basic_state_builder !== nothing
-        builder_wrapper = function (Ra_val)
-            bs = basic_state_builder(Ra_val)
-            bs isa BasicState || error("basic_state_builder must return a BasicState, got $(typeof(bs))")
-            return bs
-        end
-        rayleigh_kwargs = (; rayleigh_kwargs..., basic_state_builder=builder_wrapper)
-    end
+    rayleigh_kwargs = _biglobal_rayleigh_kwargs(
+        mechanical_bc, thermal_bc, equatorial_symmetry, nev,
+        basic_state, basic_state_builder)
 
     Ra_c, ω_c, vec_c = find_critical_rayleigh(
         E, Pr, χ, m, lmax, Nr;

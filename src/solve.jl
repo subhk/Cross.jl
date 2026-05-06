@@ -297,6 +297,7 @@ function find_critical_Ra(problem::BiglobalProblem{T};
         basic_state=problem.basic_state,
         Ra_guess=Ra_guess, tol=tol,
         mechanical_bc=p.mechanical_bc, thermal_bc=p.thermal_bc,
+        equatorial_symmetry=p.equatorial_symmetry,
         nev=nev, verbose=verbose, kwargs...)
 end
 

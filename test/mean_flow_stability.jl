@@ -60,6 +60,22 @@ end
         @test norm(A_builtin - A_explicit) <= 1e-10 * max(norm(A_builtin), 1.0)
     end
 
+    @testset "Biglobal critical search preserves equatorial symmetry" begin
+        χ = 0.35
+        Nr = 12
+        cd = ChebyshevDiffn(Nr, [χ, 1.0], 4)
+        bs = conduction_basic_state(cd, χ, 6)
+
+        kwargs = Cross._biglobal_rayleigh_kwargs(
+            :no_slip, :fixed_temperature, :antisymmetric, 4, bs, nothing)
+
+        @test kwargs.mechanical_bc == :no_slip
+        @test kwargs.thermal_bc == :fixed_temperature
+        @test kwargs.equatorial_symmetry == :antisymmetric
+        @test kwargs.nev == 4
+        @test kwargs.basic_state === bs
+    end
+
     @testset "Triglobal single-mode blocks use constraint-preserving reduction" begin
         E = 1e-3
         Pr = 1.0

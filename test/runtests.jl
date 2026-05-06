@@ -6,6 +6,8 @@ include("legacy_api.jl")
 
 # Existing tests
 include("boundary_conditions.jl")
+include("mhd_boundary_conditions.jl")
+include("meridional_boundary_conditions.jl")
 include("chebyshev.jl")
 include("sparse_operator.jl")
 include("thermal_wind.jl")

@@ -579,14 +579,14 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
     nb_v = length(op.ll_v)
     nb_f = length(op.ll_f)
     nb_g = length(op.ll_g)
-    scale = UltrasphericalSpectral._radial_scale(ri, ro)
-    r_outer = UltrasphericalSpectral._boundary_radius(ri, ro, :outer)
-    r_inner = UltrasphericalSpectral._boundary_radius(ri, ro, :inner)
-    outer_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :outer)
-    inner_vals = UltrasphericalSpectral._chebyshev_boundary_values(N, :inner)
-    outer_deriv = scale * UltrasphericalSpectral._chebyshev_boundary_derivative(N, :outer)
-    inner_deriv = scale * UltrasphericalSpectral._chebyshev_boundary_derivative(N, :inner)
-    inner_second = scale^2 * UltrasphericalSpectral._chebyshev_boundary_second_derivative(N, :inner)
+    scale = _radial_scale(ri, ro)
+    r_outer = _boundary_radius(ri, ro, :outer)
+    r_inner = _boundary_radius(ri, ro, :inner)
+    outer_vals = _chebyshev_boundary_values(N, :outer)
+    inner_vals = _chebyshev_boundary_values(N, :inner)
+    outer_deriv = scale * _chebyshev_boundary_derivative(N, :outer)
+    inner_deriv = scale * _chebyshev_boundary_derivative(N, :inner)
+    inner_second = scale^2 * _chebyshev_boundary_second_derivative(N, :inner)
 
     if section == :f  # Poloidal magnetic field
         for (k, l) in enumerate(op.ll_f)
@@ -640,7 +640,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                     error("Conducting magnetic BC requires Em > 0")
                 end
 
-                # If frequency is zero (steady state), condition reduces to f(ri) = 0
+                # Steady limit of f - k * (j_l' / j_l) * f' = 0:
+                # k * (j_l' / j_l) -> l / ri, so ri * f - l * f' = 0.
                 if iszero(freq)
                     A[row_icb, :] .= zero(ComplexF64)
                     B[row_icb, :] .= zero(ComplexF64)
@@ -716,25 +717,11 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 A[row_icb, block_range] = ComplexF64.(inner_vals)
 
             elseif params.bci_magnetic == 1
-                freq = params.forcing_frequency
-                Em = params.Em
-                if Em <= 0
-                    error("Conducting magnetic BC requires Em > 0")
-                end
-
-                if iszero(freq)
-                    A[row_icb, :] .= zero(ComplexF64)
-                    B[row_icb, :] .= zero(ComplexF64)
-                    A[row_icb, block_range] = ComplexF64.(r_inner .* inner_vals .- l .* inner_deriv)
-                else
-                    k_wave = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
-                    dlog = spherical_bessel_j_logderiv(l, k_wave * ri)
-
-                    A[row_icb, :] .= zero(ComplexF64)
-                    B[row_icb, :] .= zero(ComplexF64)
-                    A[row_icb, block_range] = ComplexF64.(inner_vals) .-
-                                             k_wave * dlog .* ComplexF64.(inner_deriv)
-                end
+                # No toroidal field is supported outside an insulating or
+                # finitely conducting boundary in this formulation.
+                A[row_icb, :] .= zero(ComplexF64)
+                B[row_icb, :] .= zero(ComplexF64)
+                A[row_icb, block_range] = ComplexF64.(inner_vals)
 
             elseif params.bci_magnetic == 2
                 # Perfect conductor: Em·(-g' - 1/ri·g) = 0

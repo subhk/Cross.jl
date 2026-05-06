@@ -2,6 +2,7 @@ const CROSS_BANNER = """
 
 """
 
+"""Print the run header and reference table used by example onset scripts."""
 function print_cross_header(; E, Pr, χ, lmax, Nr, use_kore, table_ref)
     println(CROSS_BANNER)
     println()

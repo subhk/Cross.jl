@@ -288,6 +288,7 @@ struct MHDParams{T<:Real}
 end
 
 # Constructor with keyword arguments
+"""Construct validated MHD parameters and derived diffusion numbers from keywords."""
 function MHDParams(; E, Pr=1.0, Pm=1.0, Ra, ricb,
                    Le=0.0,
                    m::Int, lmax::Int, symm::Int=1, N::Int,
@@ -433,6 +434,7 @@ struct MHDStabilityOperator{T<:Real}
 end
 
 # Constructor
+"""Precompute radial operators, mode parities, and matrix dimensions for MHD assembly."""
 function MHDStabilityOperator(params::MHDParams{T}) where {T}
     @info "Building MHD sparse operators" N=params.N ricb=params.ricb
 
@@ -613,6 +615,7 @@ end
 
 const MAX_BACKGROUND_H_ORDER = 3
 
+"""Evaluate the background-field radial structure multiplied by `r^r_power`."""
 function background_profile_value(r::Real, B0_type::BackgroundField,
                                   h_order::Int, r_power::Int)
     if B0_type == no_field
@@ -653,6 +656,7 @@ function background_profile_value(r::Real, B0_type::BackgroundField,
     end
 end
 
+"""Build a sparse radial operator for a background-field derivative term."""
 function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int,
                                     params::MHDParams{T}) where {T<:Real}
     B0_type = params.B0_type
@@ -701,6 +705,7 @@ function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int
     return sparse(M * D)
 end
 
+"""Fetch or cache a background-field radial operator for the MHD operator."""
 function background_operator(op::MHDStabilityOperator,
                              r_power::Int, h_order::Int, deriv_order::Int)
     key = (r_power, h_order, deriv_order)
@@ -737,6 +742,7 @@ function compute_mhd_l_modes(m::Int, lmax::Int, symm::Int, B0_type::BackgroundFi
     return ll_u, ll_v
 end
 
+"""Estimate sparse-matrix sparsity percentage from active MHD field blocks."""
 function estimate_mhd_sparsity(N::Int,
                                ll_u::Vector{Int},
                                ll_v::Vector{Int},
@@ -759,4 +765,3 @@ function estimate_mhd_sparsity(N::Int,
 end
 
 # Continued in next part...
-

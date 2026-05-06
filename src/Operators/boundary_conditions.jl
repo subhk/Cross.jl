@@ -110,6 +110,7 @@ function apply_mechanical_bc_from_potentials!(res_r, res_θ, res_φ,
     return nothing
 end
 
+"""Apply one mechanical boundary condition at a selected radial boundary row."""
 function enforce_mechanical_bc_at!(res_r, res_θ, res_φ,
                                    u_r, u_θ, u_φ,
                                    dr_uθ, dr_uφ,
@@ -164,6 +165,7 @@ function apply_thermal_bc_from_potentials!(res_T, Θ, op;
     return nothing
 end
 
+"""Apply one thermal boundary condition at a selected radial boundary row."""
 function apply_thermal_bc_at!(res_T, Θ, dΘ_dr,
                               bc::Symbol,
                               value::Real,
@@ -178,6 +180,7 @@ function apply_thermal_bc_at!(res_T, Θ, dΘ_dr,
     end
 end
 
+"""Return inner and outer radial row indices for either ascending or descending grids."""
 function _boundary_indices(op, Nr::Int)
     if hasproperty(op, :r)
         r = op.r
@@ -192,6 +195,7 @@ function _boundary_indices(op, Nr::Int)
     return Nr, 1
 end
 
+"""Extract `im*m` from an operator-like object."""
 function _get_im_m(op)
     if hasproperty(op, :im_m)
         return op.im_m
@@ -203,6 +207,7 @@ function _get_im_m(op)
     throw(ArgumentError("op must define `m` or `im_m` for azimuthal wavenumber"))
 end
 
+"""Extract or derive inverse-radius data from an operator-like object."""
 function _get_inv_r(op, Nr::Int)
     if hasproperty(op, :inv_r)
         inv_r = op.inv_r
@@ -216,6 +221,7 @@ function _get_inv_r(op, Nr::Int)
     throw(ArgumentError("op must define `inv_r` or `r`"))
 end
 
+"""Return `1/(r sin(theta))` as an `Nr x Ntheta` array."""
 function _get_inv_r_sinθ(op, inv_r, Nr::Int, Nθ::Int)
     if hasproperty(op, :inv_r_sinθ)
         inv_r_sinθ = op.inv_r_sinθ
@@ -230,6 +236,7 @@ function _get_inv_r_sinθ(op, inv_r, Nr::Int, Nθ::Int)
     return inv_r_vec .* inv_sinθ'
 end
 
+"""Extract or derive the sine of the angular grid."""
 function _get_sinθ(op, Nθ::Int)
     if hasproperty(op, :sintheta)
         sinθ = op.sintheta
@@ -251,6 +258,7 @@ function _get_sinθ(op, Nθ::Int)
     throw(ArgumentError("op must define `sintheta`, `sinθ`, `theta`, or `θ`"))
 end
 
+"""Convert inverse-radius data to a radial vector view."""
 function _inv_r_vector(inv_r, Nr::Int)
     if ndims(inv_r) == 1
         length(inv_r) == Nr || throw(DimensionMismatch("inv_r must have length $Nr"))
@@ -262,6 +270,7 @@ function _inv_r_vector(inv_r, Nr::Int)
     throw(ArgumentError("inv_r must be a vector or matrix"))
 end
 
+"""Read inverse radius at one radial index from vector or matrix storage."""
 function _inv_r_at(inv_r, idx::Int)
     if ndims(inv_r) == 1
         return inv_r[idx]

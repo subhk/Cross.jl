@@ -1078,6 +1078,7 @@ function add_shear_coupling!(C::Matrix{Complex{T}},
     end
 end
 
+"""Add meridional temperature-gradient coupling from poloidal velocity into temperature."""
 function add_temperature_gradient_theta_coupling!(C::Matrix{Complex{T}},
                                                    op_from, op_to,
                                                    idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1231,6 +1232,7 @@ function add_temperature_gradient_phi_coupling!(C::Matrix{Complex{T}},
 end
 
 
+"""Add meridional shear coupling from poloidal velocity into toroidal velocity."""
 function add_shear_theta_coupling!(C::Matrix{Complex{T}},
                                     op_from, op_to,
                                     idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1293,6 +1295,7 @@ function add_shear_theta_coupling!(C::Matrix{Complex{T}},
     end
 end
 
+"""Add basic-state radial advection of perturbation temperature."""
 function add_radial_advection_coupling!(C::Matrix{Complex{T}},
                                         op_from, op_to,
                                         idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1351,6 +1354,7 @@ function add_radial_advection_coupling!(C::Matrix{Complex{T}},
     end
 end
 
+"""Add basic-state meridional advection of perturbation temperature."""
 function add_meridional_advection_coupling!(C::Matrix{Complex{T}},
                                              op_from, op_to,
                                              idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1405,6 +1409,7 @@ function add_meridional_advection_coupling!(C::Matrix{Complex{T}},
     end
 end
 
+"""Add perturbation radial-velocity shear acting on the basic radial velocity."""
 function add_radial_velocity_shear!(C::Matrix{Complex{T}},
                                      op_from, op_to,
                                      idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1461,6 +1466,7 @@ function add_radial_velocity_shear!(C::Matrix{Complex{T}},
     end
 end
 
+"""Add perturbation meridional-velocity shear acting on the basic meridional flow."""
 function add_meridional_velocity_shear!(C::Matrix{Complex{T}},
                                          op_from, op_to,
                                          idx_map_from::Dict{Tuple{Int,Symbol}, Vector{Int}},
@@ -1836,6 +1842,7 @@ function assemble_block_matrices(problem::CoupledModeProblem{T},
     return A_coupled, B_coupled
 end
 
+"""Append nonzero entries from a dense block into global sparse COO vectors."""
 function _append_block_entries!(row_idx::Vector{Int},
                                  col_idx::Vector{Int},
                                  val_idx::Vector{Complex{T}},

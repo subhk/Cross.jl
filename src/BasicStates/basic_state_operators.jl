@@ -202,6 +202,7 @@ function _theta_derivative_coeff(l::Int, m::Int)
     return (c_plus, c_minus)
 end
 
+"""Couple a meridional derivative of an axisymmetric basic-state mode into output l."""
 function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int, m::Int)
     c_plus, c_minus = _theta_derivative_coeff(l_bs, 0)
     coupling = 0.0
@@ -218,6 +219,7 @@ function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int, m::Int)
     return coupling
 end
 
+"""Quadrature cache for repeated azimuthal coupling integrals at fixed m."""
 struct AzimuthalCouplingCache
     m::Int
     weight::Float64
@@ -228,6 +230,7 @@ end
 # Note: _double_factorial, _associated_legendre_table, and _normalization_table
 # are defined in get_velocity.jl which is included before this file.
 
+"""Precompute normalized Legendre tables used by azimuthal coupling matrices."""
 function _build_azimuthal_coupling_cache(m::Int, lmax_m::Int, lmax_0::Int)
     ntheta = max(64, 4 * max(lmax_m, lmax_0) + 1)
     k = collect(1:ntheta)
@@ -252,6 +255,7 @@ function _build_azimuthal_coupling_cache(m::Int, lmax_m::Int, lmax_0::Int)
     return AzimuthalCouplingCache(m, weight, y_m, y_0)
 end
 
+"""Compute the quadrature coupling matrix for multiplication by one l_bs mode."""
 function _azimuthal_coupling_matrix(cache::AzimuthalCouplingCache, l_bs::Int)
     y_bs = view(cache.y_0, l_bs + 1, :)
     weighted = cache.y_m .* y_bs'

@@ -49,10 +49,10 @@ end
 #  Helper functions (internal)
 # -----------------------------------------------------------------------------
 
-# Compute Chebyshev–Gauss–Lobatto nodes on [-1, 1] in ascending order (from -1 to 1).
+"""Compute Chebyshev-Gauss-Lobatto nodes on `[-1, 1]` in ascending order."""
 chebyshev_nodes(n::Int) = cospi.(reverse(0:n-1) ./ (n-1))
 
-# Vandermonde matrix evaluating Chebyshev polynomials T_k(x) at nodes x̂.
+"""Build the Vandermonde matrix for Chebyshev polynomials at normalized nodes."""
 function chebyshev_vandermonde(x̂::AbstractVector{T}) where {T<:Real}
     n = length(x̂)
     V = Matrix{T}(undef, n, n)
@@ -63,9 +63,11 @@ function chebyshev_vandermonde(x̂::AbstractVector{T}) where {T<:Real}
     return V
 end
 
-# Derivative of Chebyshev coefficients (ported from Kore's utils.Dcheb).
-# Implements the standard recurrence: a'_{n-2} = 2(n-1)a_{n-1},
-#   a'_k = a'_{k+2} + 2(k+1)a_{k+1} for k = n-3,...,0, then a'_0 /= 2.
+"""
+    chebyshev_coeff_derivative!(out, coeff)
+
+Overwrite `out` with the Chebyshev coefficients of the derivative of `coeff`.
+"""
 function chebyshev_coeff_derivative!(out::Vector{T}, coeff::Vector{T}) where {T<:AbstractFloat}
     s = length(coeff)
     fill!(out, zero(T))
@@ -79,7 +81,7 @@ function chebyshev_coeff_derivative!(out::Vector{T}, coeff::Vector{T}) where {T<
     return out
 end
 
-# Matrix mapping Chebyshev coefficients to derivatives (on [-1, 1]).
+"""Construct the coefficient-space Chebyshev derivative matrix on `[-1, 1]`."""
 function chebyshev_coeff_derivative_matrix(n::Int)
     D = zeros(Float64, n, n)
     scratch = zeros(Float64, n)
@@ -93,13 +95,14 @@ function chebyshev_coeff_derivative_matrix(n::Int)
     return D
 end
 
-# Promote Float64 matrices to element type T.
+"""Convert precomputed Float64 derivative matrices to the requested real type."""
 promote_matrix(::Type{T}, M::Matrix{Float64}) where {T<:Real} = Matrix{T}(M)
 
 # -----------------------------------------------------------------------------
 #  Constructor
 # -----------------------------------------------------------------------------
 
+"""Construct Chebyshev nodes and differentiation matrices on a physical interval."""
 function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) where {T<:AbstractFloat}
     length(domain) == 2 || throw(ArgumentError(
         "Domain must be specified as [a, b], got length $(length(domain))"))
@@ -153,6 +156,7 @@ function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) w
     )
 end
 
+"""Print a compact summary of a Chebyshev differentiation cache."""
 function Base.show(io::IO, cd::ChebyshevDiffn{T}) where {T}
     println(io, "ChebyshevDiffn{$T}")
     println(io, "  points    : ", cd.n)

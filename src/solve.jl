@@ -247,6 +247,7 @@ end
 # Utility: convert Vector{Vector} to Matrix
 # ============================================================================
 
+"""Normalize solver eigenvectors to a dense `Matrix{Complex{T}}` for `StabilityResult`."""
 function _eigvecs_to_matrix(eigenvalues, eigenvectors, ::Type{T}) where T
     if eigenvectors isa AbstractMatrix
         return Matrix{Complex{T}}(eigenvectors)
@@ -282,6 +283,7 @@ Ra_c = find_critical_Ra(OnsetProblem(params); Ra_guess=1e5)
 """
 function find_critical_Ra end
 
+"""Find critical Rayleigh number for an onset problem using its wrapped parameters."""
 function find_critical_Ra(problem::OnsetProblem{T};
                           Ra_guess::T=T(1e6),
                           tol::T=T(1e-6),
@@ -297,6 +299,7 @@ function find_critical_Ra(problem::OnsetProblem{T};
         nev=nev, verbose=verbose, kwargs...)
 end
 
+"""Find critical Rayleigh number for a biglobal problem with an axisymmetric basic state."""
 function find_critical_Ra(problem::BiglobalProblem{T};
                           Ra_guess::T=T(1e6),
                           tol::T=T(1e-6),
@@ -313,6 +316,7 @@ function find_critical_Ra(problem::BiglobalProblem{T};
         nev=nev, verbose=verbose, kwargs...)
 end
 
+"""Find critical Rayleigh number for a triglobal problem with a 3D basic state."""
 function find_critical_Ra(problem::TriglobalProblem{T};
                           Ra_min::Real=1e5,
                           Ra_max::Real=1e8,
@@ -330,6 +334,7 @@ function find_critical_Ra(problem::TriglobalProblem{T};
         verbose=verbose, kwargs...)
 end
 
+"""Report that MHD critical-parameter searches are not exposed as a one-parameter API."""
 function find_critical_Ra(::MHDProblem; kwargs...)
     error("""find_critical_Ra is not supported for MHDProblem.
 

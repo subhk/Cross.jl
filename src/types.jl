@@ -102,6 +102,7 @@ struct MHDProblem{T, BS}
     basic_state::BS
 end
 
+"""Construct an MHD problem without an explicit basic-state object."""
 MHDProblem(params::MHDParams{T}) where {T} = MHDProblem{T, Nothing}(params, nothing)
 
 # --- Result type ---
@@ -140,6 +141,7 @@ struct StabilityResult{T<:Real, P, E} <: AbstractStabilityResult{T}
     extra::E
 end
 
+"""Construct a `StabilityResult` and identify the eigenvalue with largest real part."""
 function StabilityResult(
     eigenvalues::Vector{Complex{T}},
     eigenvectors::Matrix{Complex{T}},

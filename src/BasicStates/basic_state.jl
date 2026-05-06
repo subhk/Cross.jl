@@ -180,9 +180,11 @@ struct SphericalHarmonicBC{T<:Real}
 end
 
 # Empty constructor
+"""Create an empty symbolic spherical-harmonic boundary condition."""
 SphericalHarmonicBC{T}() where T = SphericalHarmonicBC{T}(Dict{Tuple{Int,Int}, T}())
 
 # Single mode constructor
+"""Create a symbolic boundary condition containing one `(l, m)` harmonic."""
 function SphericalHarmonicBC(ℓ::Int, m::Int, amplitude::T) where T<:Real
     if ℓ < 0
         throw(ArgumentError("ℓ must be non-negative, got ℓ=$ℓ"))
@@ -194,6 +196,7 @@ function SphericalHarmonicBC(ℓ::Int, m::Int, amplitude::T) where T<:Real
 end
 
 # Addition: combine multiple spherical harmonic BCs
+"""Combine two symbolic boundary-condition spectra, promoting amplitudes as needed."""
 function Base.:+(a::SphericalHarmonicBC{T}, b::SphericalHarmonicBC{S}) where {T,S}
     R = promote_type(T, S)
     result = Dict{Tuple{Int,Int}, R}()
@@ -207,6 +210,7 @@ function Base.:+(a::SphericalHarmonicBC{T}, b::SphericalHarmonicBC{S}) where {T,
 end
 
 # Scalar multiplication (from left)
+"""Scale all amplitudes in a symbolic spherical-harmonic boundary condition."""
 function Base.:*(c::Real, bc::SphericalHarmonicBC{T}) where T
     R = promote_type(typeof(c), T)
     SphericalHarmonicBC{R}(Dict(k => R(c) * R(v) for (k, v) in bc.coeffs))
@@ -346,6 +350,7 @@ Check if the boundary condition is axisymmetric (m=0 only).
 is_axisymmetric(bc::SphericalHarmonicBC) = get_mmax(bc) == 0
 
 # Pretty printing
+"""Print a compact algebraic representation of a spherical-harmonic boundary condition."""
 function Base.show(io::IO, bc::SphericalHarmonicBC{T}) where T
     if isempty(bc.coeffs)
         print(io, "SphericalHarmonicBC{$T}(empty)")
@@ -373,6 +378,7 @@ function Base.show(io::IO, bc::SphericalHarmonicBC{T}) where T
     end
 end
 
+"""Print all stored harmonic amplitudes in a multiline REPL summary."""
 function Base.show(io::IO, ::MIME"text/plain", bc::SphericalHarmonicBC{T}) where T
     println(io, "SphericalHarmonicBC{$T}:")
     if isempty(bc.coeffs)
@@ -668,6 +674,7 @@ end
 # target degree L to the coefficient c_{ℓ,L} in
 #     P_ℓ'(x) = Σ c_{ℓ,L} P_L(x)
 # with L ranging over ℓ-1, ℓ-3, … (same parity as ℓ-1).
+"""Compute Legendre derivative expansion maps up to degree `lmax`."""
 function legendre_derivative_coefficients(lmax::Int)
     maps = Dict{Int, Dict{Int,Float64}}()
     maps[0] = Dict{Int,Float64}()           # P₀' = 0
@@ -844,6 +851,7 @@ function evaluate_basic_state(bs::BasicState{T}, r_eval::T, theta_eval::T) where
     )
 end
 
+"""Return Legendre values and x-derivatives up to `lmax` at one point."""
 function _legendre_values_and_derivs(lmax::Int, x::T) where T
     P = zeros(T, lmax + 1)
     dPdx = zeros(T, lmax + 1)
@@ -871,6 +879,7 @@ function _legendre_values_and_derivs(lmax::Int, x::T) where T
     return P, dPdx
 end
 
+"""Linearly interpolate radial data regardless of whether the grid ascends or descends."""
 function _linear_interpolate(r::AbstractVector{T}, values::AbstractVector{T}, r_eval::T) where T
     length(r) == length(values) || throw(DimensionMismatch("r and values must have same length"))
     if r[1] <= r[end]
@@ -881,6 +890,7 @@ function _linear_interpolate(r::AbstractVector{T}, values::AbstractVector{T}, r_
     return _linear_interpolate_ascending(r_rev, values_rev, r_eval)
 end
 
+"""Linearly interpolate on an ascending radial grid with endpoint clamping."""
 function _linear_interpolate_ascending(r::AbstractVector{T}, values::AbstractVector{T}, r_eval::T) where T
     n = length(r)
     r_eval <= r[1] && return values[1]
@@ -2511,4 +2521,3 @@ function theta_derivative_coeff_3d(ℓ::Int, m::Int)
 
     return (c_plus, c_minus)
 end
-

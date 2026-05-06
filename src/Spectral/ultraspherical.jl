@@ -487,10 +487,12 @@ end
 # Sparse radial operators
 # -----------------------------------------------------------------------------
 
+"""Return the affine derivative scaling from physical radius to Chebyshev x."""
 function _radial_scale(ri::Real, ro::Real)
     return iszero(ri) ? 1.0 / ro : 2.0 / (ro - ri)
 end
 
+"""Return the physical radius represented by a Chebyshev boundary symbol."""
 function _boundary_radius(ri::Real, ro::Real, boundary::Symbol)
     if boundary === :outer
         return ro
@@ -498,6 +500,7 @@ function _boundary_radius(ri::Real, ro::Real, boundary::Symbol)
     return iszero(ri) ? -ro : ri
 end
 
+"""Evaluate all Chebyshev basis functions at one boundary."""
 function _chebyshev_boundary_values(N::Int, boundary::Symbol)
     row = zeros(Float64, N + 1)
     if boundary === :outer
@@ -510,6 +513,7 @@ function _chebyshev_boundary_values(N::Int, boundary::Symbol)
     return row
 end
 
+"""Evaluate first radial Chebyshev derivatives at one boundary before scaling."""
 function _chebyshev_boundary_derivative(N::Int, boundary::Symbol)
     row = zeros(Float64, N + 1)
     if boundary === :outer
@@ -524,6 +528,7 @@ function _chebyshev_boundary_derivative(N::Int, boundary::Symbol)
     return row
 end
 
+"""Evaluate second radial Chebyshev derivatives at one boundary before scaling."""
 function _chebyshev_boundary_second_derivative(N::Int, boundary::Symbol)
     row = zeros(Float64, N + 1)
     @inbounds for n in 2:N
@@ -789,4 +794,3 @@ function apply_boundary_conditions!(A::SparseMatrixCSC{T}, B::SparseMatrixCSC{T}
 
     return nothing
 end
-

@@ -159,11 +159,11 @@ end
 """Print a compact summary of a Chebyshev differentiation cache."""
 function Base.show(io::IO, cd::ChebyshevDiffn{T}) where {T}
     println(io, "ChebyshevDiffn{$T}")
-    println(io, "  points    : ", cd.n)
-    println(io, "  domain    : [", cd.domain[1], ", ", cd.domain[2], "]")
-    println(io, "  max order : ", cd.max_order)
     available = ["D1", "D2"]
     cd.max_order ≥ 3 && push!(available, "D3")
     cd.max_order ≥ 4 && push!(available, "D4")
-    println(io, "  matrices  : ", join(available, ", "))
+    _tree_row(io, "points", cd.n)
+    _tree_row(io, "domain", "[$(cd.domain[1]), $(cd.domain[2])]")
+    _tree_row(io, "max derivative order", cd.max_order)
+    _tree_row(io, "matrices", join(available, ", "); last=true)
 end

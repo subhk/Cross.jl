@@ -44,6 +44,18 @@ end
     @test occursin("└── boundary conditions: mechanical=no_slip, thermal=fixed_temperature", output)
 end
 
+@testset "Low-level public displays use tree rows" begin
+    cd = ChebyshevDiffn(8, [0.35, 1.0], 4)
+    cd_output = sprint(show, cd)
+    @test startswith(cd_output, "ChebyshevDiffn{Float64}")
+    @test occursin("├── points: 8", cd_output)
+    @test occursin("└── matrices: D1, D2, D3, D4", cd_output)
+
+    bc_output = sprint(show, MIME("text/plain"), Y20(0.1))
+    @test startswith(bc_output, "SphericalHarmonicBC{Float64}")
+    @test occursin("└── Y_2,0: 0.1", bc_output)
+end
+
 @testset "estimate_size uses tree summary" begin
     params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=4, lmax=10, Nr=16)
     problem = OnsetProblem(params)

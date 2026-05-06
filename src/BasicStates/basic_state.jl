@@ -385,13 +385,14 @@ end
 
 """Print all stored harmonic amplitudes in a multiline REPL summary."""
 function Base.show(io::IO, ::MIME"text/plain", bc::SphericalHarmonicBC{T}) where T
-    println(io, "SphericalHarmonicBC{$T}:")
+    println(io, "SphericalHarmonicBC{$T}")
     if isempty(bc.coeffs)
-        println(io, "  (empty)")
+        _tree_row(io, "modes", "none"; last=true)
         return
     end
-    for ((ℓ, m), amp) in sort(collect(bc.coeffs), by=x->(x[1][1], x[1][2]))
-        println(io, "  Y_$ℓ,$m : $amp")
+    pairs = sort(collect(bc.coeffs), by=x->(x[1][1], x[1][2]))
+    for (i, ((ℓ, m), amp)) in enumerate(pairs)
+        _tree_row(io, "Y_$ℓ,$m", amp; last=i == length(pairs))
     end
 end
 

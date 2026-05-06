@@ -51,7 +51,7 @@ Holds a non-axisymmetric (3D) basic state for tri-global instability analysis.
 
 The basic state has both meridional AND longitudinal variations:
 - Temperature: θ̄(r,θ,φ) = Σ_ℓ Σ_m_bs θ̄_ℓm_bs(r) Y_ℓm_bs(θ,φ)
-- Velocity components: ū_r, ū_θ, ū_φ from geostrophic balance
+- Velocity components: ū_r, ū_θ, ū_φ from thermal-wind/geostrophic balance
 
 This enables studying onset of convection on top of 3D thermal and flow structures,
 such as:
@@ -966,6 +966,8 @@ approximation.
 - `outer_fluxes` - Dict{(ℓ,m) => flux} specifying heat flux at outer boundary
                    (only used if thermal_bc=:fixed_flux)
 - `coupled_thermal_wind` - Use full coupled thermal-wind solve (default: true)
+- `include_meridional_flow` - Compute ū_r and ū_θ for m≠0 from geostrophic
+                              balance (default: true)
 
 # Examples
 
@@ -1002,7 +1004,8 @@ function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::
                                      mechanical_bc::Symbol=:no_slip,
                                      thermal_bc::Symbol=:fixed_temperature,
                                      outer_fluxes::AbstractDict=Dict{Tuple{Int,Int},Float64}(),
-                                     coupled_thermal_wind::Bool=true)
+                                     coupled_thermal_wind::Bool=true,
+                                     include_meridional_flow::Bool=true)
 
     r = cd.x
     T = eltype(r)  # Get the element type from the Chebyshev grid
@@ -1173,6 +1176,18 @@ function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::
                 duphi_dr_coeffs[(ℓ, m_bs)] = duphi_dr_m[ℓ]
             end
         end
+    end
+
+    if include_meridional_flow
+        solve_meridional_circulation_toroidal_poloidal!(
+            ur_coeffs, utheta_coeffs, dur_dr_coeffs, dutheta_dr_coeffs,
+            theta_coeffs, uphi_coeffs,
+            r, Matrix(cd.D1), Matrix(cd.D2), r_i, r_o,
+            T(Ra), T(E), T(Pr), lmax_bs, mmax_bs;
+            mechanical_bc=mechanical_bc,
+            include_meridional=true,
+            use_full_coupling=true,
+        )
     end
 
     return BasicState3D(

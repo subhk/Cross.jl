@@ -729,7 +729,7 @@ function sparse_radial_operator(power::Int, deriv_order::Int, N::Int,
         for lam in 0:(deriv_order - 1)
             S_chain = ultraspherical_conversion(lam, N) * S_chain
         end
-        D = sparse(S_chain \ Matrix(D))
+        D = sparse(S_chain \ D)
     end
 
     # Apply r^power multiplication in Chebyshev basis

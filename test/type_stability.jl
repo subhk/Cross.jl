@@ -27,3 +27,11 @@ end
     @test mode == eigenvectors[:, 2]
     @test Base.mightalias(mode, result.eigenvectors)
 end
+
+@testset "Sparse radial operator avoids dense RHS materialization" begin
+    Cross.sparse_radial_operator(4, 4, 256, 0.35, 1.0)
+    GC.gc()
+    bytes = @allocated Cross.sparse_radial_operator(4, 4, 256, 0.35, 1.0)
+
+    @test bytes < 4_800_000
+end

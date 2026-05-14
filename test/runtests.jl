@@ -13,6 +13,7 @@ include("sparse_operator.jl")
 include("thermal_wind.jl")
 include("triglobal.jl")
 include("mean_flow_stability.jl")
+include("velocity_reconstruction.jl")
 
 # v2.0 API tests
 include("test_types.jl")

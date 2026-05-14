@@ -294,6 +294,8 @@ function _gauss_legendre_nodes(n::Int)
     for i in 1:m
         # Initial guess
         z = cos(π * (i - 0.25) / (n + 0.5))
+        p1 = 0.0
+        p2 = 0.0
 
         # Newton iteration
         for _ in 1:100
@@ -474,7 +476,7 @@ Computes: f(r, θ) = Σ_ℓ f_ℓm(r) × Y_ℓm(θ, φ=0)
 # Returns
 - `f_phys::Matrix{ComplexF64}` - f(r, θ) on (Nr, Nθ) grid
 """
-function spectral_to_physical(coeffs::Dict{Int, Vector{<:Complex}},
+function spectral_to_physical(coeffs::AbstractDict{Int, <:AbstractVector{<:Complex}},
                                grid::MeridionalGrid,
                                Nr::Int)
     Nθ = length(grid.θ)
@@ -773,8 +775,7 @@ end
 
 const _mode_layout_cache = IdDict{UInt64, Dict{Int, NamedTuple{(:P, :T, :Θ),
     Tuple{Vector{Int}, Vector{Int}, Vector{Int}}}}}()
-const _mode_reconstruction_cache = IdDict{UInt64, Dict{Int, NamedTuple{(:op, :reduction),
-    Tuple{LinearStabilityOperator, ConstraintReduction}}}}()
+const _mode_reconstruction_cache = IdDict{UInt64, Any}()
 
 function _mode_layout(problem, m_abs::Int)
     prob_key = objectid(problem)
@@ -804,10 +805,12 @@ end
 
 function _mode_reconstruction(problem, m_abs::Int)
     prob_key = objectid(problem)
+    T = typeof(problem.params.E)
+    CacheType = Dict{Int, NamedTuple{(:op, :reduction),
+        Tuple{LinearStabilityOperator{T, Nothing}, ConstraintReduction{T}}}}
     cache = get!(_mode_reconstruction_cache, prob_key) do
-        Dict{Int, NamedTuple{(:op, :reduction),
-            Tuple{LinearStabilityOperator, ConstraintReduction}}}()
-    end
+        CacheType()
+    end::CacheType
 
     return get!(cache, m_abs) do
         params_tri = problem.params

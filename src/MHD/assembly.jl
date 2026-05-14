@@ -243,14 +243,14 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     nb_h > 0 && push!(section_info, "h($nb_h)")
     @info "Assembling MHD sparse matrices" size="$n × $n" sections=join(section_info, ", ")
 
-    # Use COO format for efficient assembly
-    # Use ComplexF64 because Coriolis operator has imaginary terms
+    # Use COO format for efficient assembly. Keep value storage tied to the
+    # parameter precision; Coriolis terms still introduce complex values.
     A_rows = Int[]
     A_cols = Int[]
-    A_vals = ComplexF64[]
+    A_vals = Complex{T}[]
     B_rows = Int[]
     B_cols = Int[]
-    B_vals = ComplexF64[]
+    B_vals = Complex{T}[]
 
     # Helper function to add block to sparse matrix
     function add_block!(rows, cols, vals, block, row_offset, col_offset)
@@ -664,10 +664,10 @@ function apply_velocity_boundary_conditions!(A, B, op)
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + 1
-            A[row, :] .= zero(ComplexF64)
-            B[row, :] .= zero(ComplexF64)
+            A[row, :] .= zero(Complex{T})
+            B[row, :] .= zero(Complex{T})
             block_start = row_base + 1
-            A[row, block_start:(block_start + N)] = ComplexF64.(outer_row)
+            A[row, block_start:(block_start + N)] = Complex{T}.(outer_row)
         end
 
         # Inner boundary (r = ri = ricb)
@@ -678,10 +678,10 @@ function apply_velocity_boundary_conditions!(A, B, op)
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + n_per_mode
-            A[row, :] .= zero(ComplexF64)
-            B[row, :] .= zero(ComplexF64)
+            A[row, :] .= zero(Complex{T})
+            B[row, :] .= zero(Complex{T})
             block_start = row_base + 1
-            A[row, block_start:(block_start + N)] = ComplexF64.(inner_row)
+            A[row, block_start:(block_start + N)] = Complex{T}.(inner_row)
         end
     end
 end

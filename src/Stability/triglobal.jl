@@ -266,7 +266,7 @@ block-coupled eigenvalue problem:
 where A_coupled has diagonal blocks (single-mode operators) and off-diagonal
 blocks (mode coupling through basic state).
 """
-@with_kw struct CoupledModeProblem{T<:Real}
+@with_kw mutable struct CoupledModeProblem{T<:Real}
     params::TriglobalParams{T}
     m_range::UnitRange{Int}
     coupling_graph::Dict{Int,Vector{Int}}
@@ -335,12 +335,13 @@ function axisymmetric_basic_state(basic_state::BasicState3D{T}) where T
     uphi_coeffs = Dict{Int, Vector{T}}()
     dtheta_dr_coeffs = Dict{Int, Vector{T}}()
     duphi_dr_coeffs = Dict{Int, Vector{T}}()
+    zero_coeff = zeros(T, Nr)
 
     for ℓ in 0:lmax_bs
-        theta_coeffs[ℓ] = get(basic_state.theta_coeffs, (ℓ, 0), zeros(T, Nr))
-        uphi_coeffs[ℓ] = get(basic_state.uphi_coeffs, (ℓ, 0), zeros(T, Nr))
-        dtheta_dr_coeffs[ℓ] = get(basic_state.dtheta_dr_coeffs, (ℓ, 0), zeros(T, Nr))
-        duphi_dr_coeffs[ℓ] = get(basic_state.duphi_dr_coeffs, (ℓ, 0), zeros(T, Nr))
+        theta_coeffs[ℓ] = get(basic_state.theta_coeffs, (ℓ, 0), zero_coeff)
+        uphi_coeffs[ℓ] = get(basic_state.uphi_coeffs, (ℓ, 0), zero_coeff)
+        dtheta_dr_coeffs[ℓ] = get(basic_state.dtheta_dr_coeffs, (ℓ, 0), zero_coeff)
+        duphi_dr_coeffs[ℓ] = get(basic_state.duphi_dr_coeffs, (ℓ, 0), zero_coeff)
     end
 
     return BasicState(

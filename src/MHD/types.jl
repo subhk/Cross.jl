@@ -695,7 +695,7 @@ function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int
         for lam in 0:(deriv_order - 1)
             S_chain = ultraspherical_conversion(lam, N) * S_chain
         end
-        D = sparse(S_chain \ Matrix(D))
+        D = sparse(S_chain \ D)
     end
 
     coeffs = chebyshev_coefficients(r -> background_profile_value(r, B0_type, h_order, r_power),

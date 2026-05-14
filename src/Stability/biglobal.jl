@@ -685,7 +685,8 @@ function analyze_basic_state(bs::BasicState{T}; verbose::Bool=true) where T
         println()
     end
 
-    results = Dict{Int, NamedTuple}()
+    Summary = NamedTuple{(:θ_max, :uphi_max), Tuple{T, T}}
+    results = Dict{Int, Summary}()
 
     if verbose
         @printf("  %-4s  %-14s  %-14s\n", "ℓ", "max|θ̄_ℓ|", "max|ū_φ,ℓ|")
@@ -693,8 +694,8 @@ function analyze_basic_state(bs::BasicState{T}; verbose::Bool=true) where T
     end
 
     for ℓ in sort(collect(keys(bs.theta_coeffs)))
-        θ_max = maximum(abs.(bs.theta_coeffs[ℓ]))
-        uphi_max = haskey(bs.uphi_coeffs, ℓ) ? maximum(abs.(bs.uphi_coeffs[ℓ])) : 0.0
+        θ_max = maximum(abs, bs.theta_coeffs[ℓ])
+        uphi_max = haskey(bs.uphi_coeffs, ℓ) ? maximum(abs, bs.uphi_coeffs[ℓ]) : zero(T)
 
         results[ℓ] = (θ_max=θ_max, uphi_max=uphi_max)
 

@@ -48,14 +48,14 @@ advecting vector fields by azimuthal flow:
 These couple the toroidal velocity (T) to the poloidal equation (P).
 """
 struct BasicStateOperators{T<:Real}
-    advection_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
-    shear_radial_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
-    shear_theta_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
-    shear_theta_toroidal_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
-    temp_grad_radial_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
-    temp_grad_theta_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
-    temp_grad_theta_toroidal_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}
-    metric_poloidal_blocks::Dict{Tuple{Int,Int}, Matrix{ComplexF64}}  # T → P coupling from metric terms
+    advection_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}
+    shear_radial_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}
+    shear_theta_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}
+    shear_theta_toroidal_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}
+    temp_grad_radial_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}
+    temp_grad_theta_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}
+    temp_grad_theta_toroidal_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}
+    metric_poloidal_blocks::Dict{Tuple{Int,Int}, Matrix{Complex{T}}}  # T → P coupling from metric terms
     coupling_structure::Vector{Tuple{Int,Int}}
 end
 
@@ -287,7 +287,8 @@ function build_basic_state_operators(basic_state::BasicState{T},
     # Extract radial operators
     r = collect(op.r)  # Radial collocation points
     Nr = length(r)
-    inv_r = 1.0 ./ r
+    inv_r = one(T) ./ r
+    CT = Complex{T}
 
     # Radial differentiation operator (from Chebyshev differentiation structure)
     Dr = op.cd.D1
@@ -295,14 +296,14 @@ function build_basic_state_operators(basic_state::BasicState{T},
 
     # Storage for operator blocks
     # Key: (ℓ_output, ℓ_input) - coupling from input mode to output mode
-    advection_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
-    shear_radial_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
-    shear_theta_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
-    shear_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
-    temp_grad_radial_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
-    temp_grad_theta_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
-    temp_grad_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()
-    metric_poloidal_blocks = Dict{Tuple{Int,Int}, Matrix{ComplexF64}}()  # T → P from metric terms
+    advection_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
+    shear_radial_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
+    shear_theta_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
+    shear_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
+    temp_grad_radial_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
+    temp_grad_theta_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
+    temp_grad_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
+    metric_poloidal_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()  # T → P from metric terms
     coupling_structure = Tuple{Int,Int}[]
 
     # Get basic state modes
@@ -328,8 +329,8 @@ function build_basic_state_operators(basic_state::BasicState{T},
         duphi_dr = basic_state.duphi_dr_coeffs[ℓ_bs]
         dtheta_dr = basic_state.dtheta_dr_coeffs[ℓ_bs]
 
-        uphi_max = maximum(abs.(uphi_coeff))
-        theta_max = maximum(abs.(theta_coeff))
+        uphi_max = maximum(abs, uphi_coeff)
+        theta_max = maximum(abs, theta_coeff)
 
         # Skip if this mode is negligible
         if theta_max < 1e-14 && uphi_max < 1e-14
@@ -365,17 +366,19 @@ function build_basic_state_operators(basic_state::BasicState{T},
 
                 # Angular momentum quantum number for input mode
                 L_input = T(ℓ_input * (ℓ_input + 1))
+                coupling = T(coupling_coeff)
 
                 # =====================================================================
                 # 2. Radial shear: -u'_r × ∂ū_φ/∂r
                 # =====================================================================
                 if uphi_max > 1e-14
-                    shear_op = -L_input * coupling_coeff * Diagonal(duphi_dr)
+                    shear_op = -L_input * coupling * Diagonal(duphi_dr)
+                    shear_block = Matrix{CT}(shear_op)
 
                     if !haskey(shear_radial_blocks, (ℓ_output, ℓ_input))
-                        shear_radial_blocks[(ℓ_output, ℓ_input)] = Matrix(shear_op)
+                        shear_radial_blocks[(ℓ_output, ℓ_input)] = shear_block
                     else
-                        shear_radial_blocks[(ℓ_output, ℓ_input)] .+= Matrix(shear_op)
+                        shear_radial_blocks[(ℓ_output, ℓ_input)] .+= shear_block
                     end
                 end
 
@@ -385,13 +388,14 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # Use the same radial equation weighting as the built-in
                 # conduction term in assemble_matrices.
                 if theta_max > 1e-14
-                    temp_grad_op = -L_input * coupling_coeff *
+                    temp_grad_op = -L_input * coupling *
                                    Diagonal(temperature_radial_weight .* dtheta_dr)
+                    temp_grad_block = Matrix{CT}(temp_grad_op)
 
                     if !haskey(temp_grad_radial_blocks, (ℓ_output, ℓ_input))
-                        temp_grad_radial_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_op)
+                        temp_grad_radial_blocks[(ℓ_output, ℓ_input)] = temp_grad_block
                     else
-                        temp_grad_radial_blocks[(ℓ_output, ℓ_input)] .+= Matrix(temp_grad_op)
+                        temp_grad_radial_blocks[(ℓ_output, ℓ_input)] .+= temp_grad_block
                     end
                 end
 
@@ -415,12 +419,13 @@ function build_basic_state_operators(basic_state::BasicState{T},
                         push!(coupling_structure, (ℓ_output, ℓ_input))
                     end
 
-                    adv_operator = im * m * adv_coupling * Diagonal(uphi_coeff ./ r)
+                    adv_operator = im * m * T(adv_coupling) * Diagonal(uphi_coeff .* inv_r)
+                    adv_block = Matrix{CT}(adv_operator)
 
                     if !haskey(advection_blocks, (ℓ_output, ℓ_input))
-                        advection_blocks[(ℓ_output, ℓ_input)] = Matrix(adv_operator)
+                        advection_blocks[(ℓ_output, ℓ_input)] = adv_block
                     else
-                        advection_blocks[(ℓ_output, ℓ_input)] .+= Matrix(adv_operator)
+                        advection_blocks[(ℓ_output, ℓ_input)] .+= adv_block
                     end
                 end
             end
@@ -453,12 +458,13 @@ function build_basic_state_operators(basic_state::BasicState{T},
 
                         # Metric term: -ū_φ / r × u'_φ
                         # This couples T (source of u'_φ) to P (poloidal equation)
-                        metric_operator = -metric_coupling * Diagonal(uphi_coeff ./ r)
+                        metric_operator = -T(metric_coupling) * Diagonal(uphi_coeff .* inv_r)
+                        metric_block = Matrix{CT}(metric_operator)
 
                         if !haskey(metric_poloidal_blocks, (ℓ_output, ℓ_input))
-                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] = Matrix(metric_operator)
+                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] = metric_block
                         else
-                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] .+= Matrix(metric_operator)
+                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] .+= metric_block
                         end
                     end
                 end
@@ -481,45 +487,50 @@ function build_basic_state_operators(basic_state::BasicState{T},
                     end
                     meridional_coeff = _meridional_coupling(ℓ_input, ℓ_bs, ℓ_output, m)
                     abs(meridional_coeff) < coupling_tol && continue
+                    meridional = T(meridional_coeff)
 
                     if !((ℓ_output, ℓ_input) in coupling_structure)
                         push!(coupling_structure, (ℓ_output, ℓ_input))
                     end
 
                     if uphi_max > coupling_tol
-                        shear_theta_op = -meridional_coeff * (Diagonal(uphi_coeff) * Dr)
+                        shear_theta_op = -meridional * (Diagonal(uphi_coeff) * Dr)
+                        shear_theta_block = Matrix{CT}(shear_theta_op)
                         if !haskey(shear_theta_blocks, (ℓ_output, ℓ_input))
-                            shear_theta_blocks[(ℓ_output, ℓ_input)] = Matrix(shear_theta_op)
+                            shear_theta_blocks[(ℓ_output, ℓ_input)] = shear_theta_block
                         else
-                            shear_theta_blocks[(ℓ_output, ℓ_input)] .+= Matrix(shear_theta_op)
+                            shear_theta_blocks[(ℓ_output, ℓ_input)] .+= shear_theta_block
                         end
 
                         if m != 0
                             tor_factor = (im * m) .* (uphi_coeff .* inv_r)
-                            shear_theta_t_op = -meridional_coeff * Diagonal(tor_factor)
+                            shear_theta_t_op = -meridional * Diagonal(tor_factor)
+                            shear_theta_t_block = Matrix{CT}(shear_theta_t_op)
                             if !haskey(shear_theta_toroidal_blocks, (ℓ_output, ℓ_input))
-                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = Matrix(shear_theta_t_op)
+                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = shear_theta_t_block
                             else
-                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= Matrix(shear_theta_t_op)
+                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= shear_theta_t_block
                             end
                         end
                     end
 
                     if theta_max > coupling_tol
-                        temp_grad_theta_op = -meridional_coeff * (Diagonal(theta_coeff) * Dr)
+                        temp_grad_theta_op = -meridional * (Diagonal(theta_coeff) * Dr)
+                        temp_grad_theta_block = Matrix{CT}(temp_grad_theta_op)
                         if !haskey(temp_grad_theta_blocks, (ℓ_output, ℓ_input))
-                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_theta_op)
+                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] = temp_grad_theta_block
                         else
-                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] .+= Matrix(temp_grad_theta_op)
+                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] .+= temp_grad_theta_block
                         end
 
                         if m != 0
                             tor_factor = (im * m) .* (theta_coeff .* inv_r)
-                            temp_grad_theta_t_op = -meridional_coeff * Diagonal(tor_factor)
+                            temp_grad_theta_t_op = -meridional * Diagonal(tor_factor)
+                            temp_grad_theta_t_block = Matrix{CT}(temp_grad_theta_t_op)
                             if !haskey(temp_grad_theta_toroidal_blocks, (ℓ_output, ℓ_input))
-                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = Matrix(temp_grad_theta_t_op)
+                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = temp_grad_theta_t_block
                             else
-                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= Matrix(temp_grad_theta_t_op)
+                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= temp_grad_theta_t_block
                             end
                         end
                     end
@@ -529,7 +540,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
     end
 
     # Count non-zero blocks
-    n_nonzero_adv = count(block -> maximum(abs.(block)) > 1e-14, values(advection_blocks))
+    n_nonzero_adv = count(block -> maximum(abs, block) > 1e-14, values(advection_blocks))
     @info "Basic state operators built" blocks=length(coupling_structure) nonzero_advection=n_nonzero_adv
 
     return BasicStateOperators{T}(

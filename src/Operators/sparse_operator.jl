@@ -639,15 +639,15 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
 
     @info "Assembling sparse matrices" size="$n × $n" poloidal_modes=op.ll_top toroidal_modes=op.ll_bot
 
-    # Initialize sparse matrices using DOK (Dictionary of Keys) format
-    # We'll convert to CSR at the end
+    # Initialize sparse matrices using COO vectors. Keep value storage tied to
+    # the parameter precision; Coriolis terms still introduce complex values.
     A_rows = Int[]
     A_cols = Int[]
-    A_vals = ComplexF64[]
+    A_vals = Complex{T}[]
 
     B_rows = Int[]
     B_cols = Int[]
-    B_vals = ComplexF64[]
+    B_vals = Complex{T}[]
 
     # Helper function to add block to matrix
     function add_block!(rows, cols, vals, block::SparseMatrixCSC,
@@ -906,10 +906,10 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + 1
-            A[row, :] .= zero(ComplexF64)
-            B[row, :] .= zero(ComplexF64)
+            A[row, :] .= zero(Complex{T})
+            B[row, :] .= zero(Complex{T})
             block_start = row_base + 1
-            A[row, block_start:(block_start + N)] = ComplexF64.(outer_row)
+            A[row, block_start:(block_start + N)] = Complex{T}.(outer_row)
         end
 
         # Inner boundary (r = ri = ricb)
@@ -920,10 +920,10 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + n_per_mode
-            A[row, :] .= zero(ComplexF64)
-            B[row, :] .= zero(ComplexF64)
+            A[row, :] .= zero(Complex{T})
+            B[row, :] .= zero(Complex{T})
             block_start = row_base + 1
-            A[row, block_start:(block_start + N)] = ComplexF64.(inner_row)
+            A[row, block_start:(block_start + N)] = Complex{T}.(inner_row)
         end
     end
 
@@ -958,4 +958,3 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
 
     return nothing
 end
-

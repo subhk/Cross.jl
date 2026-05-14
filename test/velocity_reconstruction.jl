@@ -71,4 +71,27 @@ end
         @test isconcretetype(fieldtype(typeof(reconstruction), :op))
         @test isconcretetype(fieldtype(typeof(reconstruction), :reduction))
     end
+
+    @testset "Triglobal reconstruction caches are keyed by problem objects" begin
+        T = Float64
+        Nr = 8
+        χ = T(0.35)
+        bs3d = _empty_velocity_basic_state_3d(T, Nr, χ)
+        params = Cross.TriglobalParams(
+            E = T(1e-3), Pr = one(T), Ra = T(100.0), χ = χ,
+            m_range = -1:1,
+            lmax = 2,
+            Nr = Nr,
+            basic_state_3d = bs3d
+        )
+        problem = Cross.setup_coupled_mode_problem(params)
+
+        Cross._mode_layout(problem, 1)
+        Cross._mode_reconstruction(problem, 1)
+
+        @test Cross._mode_layout_cache isa WeakKeyDict
+        @test Cross._mode_reconstruction_cache isa WeakKeyDict
+        @test any(key -> key === problem, keys(Cross._mode_layout_cache))
+        @test any(key -> key === problem, keys(Cross._mode_reconstruction_cache))
+    end
 end

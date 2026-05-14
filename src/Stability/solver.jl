@@ -479,7 +479,11 @@ function find_onset_parameters(operator_builder_factory::Function,
 
     @info "Scanning for onset parameters" E=E χ=χ Pr=Pr m_range=m_range
 
-    results = Dict()
+    SuccessResult = NamedTuple{(:Ra_c, :ω_c, :σ_c, :iters),
+        Tuple{Float64, Float64, ComplexF64, Int}}
+    ErrorResult = NamedTuple{(:error,), Tuple{Exception}}
+    Result = Union{SuccessResult, ErrorResult}
+    results = Dict{Int, Result}()
     Ra_c_min = Inf
     m_c = 0
     ω_c_best = 0.0
@@ -494,7 +498,7 @@ function find_onset_parameters(operator_builder_factory::Function,
                 operator_builder, E, χ, m; kwargs...
             )
 
-            results[m] = (Ra_c=Ra_c, ω_c=ω_c, σ_c=σ_c, iters=iters)
+            results[m] = SuccessResult((Ra_c, ω_c, σ_c, iters))
 
             if Ra_c < Ra_c_min
                 Ra_c_min = Ra_c
@@ -506,7 +510,7 @@ function find_onset_parameters(operator_builder_factory::Function,
 
         catch err
             @warn "Failed for mode" m=m exception=err
-            results[m] = (error=err,)
+            results[m] = ErrorResult((err,))
         end
     end
 

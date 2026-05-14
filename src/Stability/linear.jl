@@ -532,8 +532,12 @@ function _constrained_reduced_matrices(A_full::Matrix{Complex{T}},
     B = zeros(Complex{T}, reduction.n_reduced, reduction.n_reduced)
 
     for block in reduction.blocks
-        A[:, block.reduced_indices] .= A_full[interior_dofs, block.full_indices] * block.basis
-        B[:, block.reduced_indices] .= B_full[interior_dofs, block.full_indices] * block.basis
+        mul!(view(A, :, block.reduced_indices),
+             view(A_full, interior_dofs, block.full_indices),
+             block.basis)
+        mul!(view(B, :, block.reduced_indices),
+             view(B_full, interior_dofs, block.full_indices),
+             block.basis)
     end
 
     return A, B, reduction

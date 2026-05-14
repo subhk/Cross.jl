@@ -1366,10 +1366,11 @@ function nonaxisymmetric_basic_state_selfconsistent(
         # ---------------------------------------------------------------------
         # Step 4: Solve Poisson equation ∇²T̄ = S with boundary conditions
         # ---------------------------------------------------------------------
+        zero_forcing = zeros(T, Nr)
         for ℓ in 0:lmax_bs
             for m in 0:min(ℓ, mmax_bs)
                 # Get forcing for this mode (zero if no advection)
-                forcing = get(advection_source, (ℓ, m), zeros(T, Nr))
+                forcing = get(advection_source, (ℓ, m), zero_forcing)
 
                 # Get boundary conditions
                 inner_val, outer_val, bc_type = get(bc_values, (ℓ, m), (zero(T), zero(T), :fixed_temperature))

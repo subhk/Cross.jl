@@ -79,9 +79,10 @@ function potentials_to_velocity(P::AbstractMatrix,
     length(sintheta) == Nθ || throw(DimensionMismatch(
         "sintheta must have length $Nθ, got $(length(sintheta))"))
 
-    inv_r = 1.0 ./ r
+    Treal = eltype(r)
+    inv_r = one(Treal) ./ r
     inv_r2 = inv_r .^ 2
-    inv_sinθ = 1.0 ./ sintheta
+    inv_sinθ = one(eltype(sintheta)) ./ sintheta
 
     # Compute derivatives
     dθ_T = T * Dθ'           # ∂T/∂θ
@@ -138,17 +139,18 @@ Uses the standard recurrence relation for numerical stability.
 # Returns
 - `P::Matrix{Float64}` - P[ℓ-m+1, j] = P_ℓ^m(μ[j])
 """
-function _associated_legendre_table(m::Int, lmax::Int, mu::Vector{Float64})
+function _associated_legendre_table(m::Int, lmax::Int, mu::Vector{T}) where {T<:Real}
     nmu = length(mu)
     n_l = lmax - m + 1
-    P = zeros(Float64, n_l, nmu)
+    P = zeros(T, n_l, nmu)
     n_l <= 0 && return P
 
     # Starting value: P_m^m
     if m == 0
-        P[1, :] .= 1.0
+        P[1, :] .= one(T)
     else
-        Pmm = (-1.0)^m * _double_factorial(2 * m - 1) .* (1 .- mu.^2).^(m / 2)
+        Pmm = T((-1.0)^m * _double_factorial(2 * m - 1)) .*
+              (one(T) .- mu.^2).^(m / 2)
         P[1, :] .= Pmm
     end
 
@@ -181,16 +183,18 @@ where N_ℓm = √[(2ℓ+1)/(4π) × (ℓ-m)!/(ℓ+m)!]
 # Returns
 - `N::Vector{Float64}` - N[ℓ-m+1] = N_ℓm
 """
-function _normalization_table(m::Int, lmax::Int)
+_normalization_table(m::Int, lmax::Int) = _normalization_table(Float64, m, lmax)
+
+function _normalization_table(::Type{T}, m::Int, lmax::Int) where {T<:Real}
     n_l = lmax - m + 1
-    N = Vector{Float64}(undef, n_l)
+    N = Vector{T}(undef, n_l)
     for l in m:lmax
         # Compute (l-m)!/(l+m)! iteratively to avoid overflow
-        ratio = 1.0
+        ratio = one(T)
         for k in (l - m + 1):(l + m)
             ratio /= k
         end
-        N[l - m + 1] = sqrt((2 * l + 1) / (4 * π) * ratio)
+        N[l - m + 1] = sqrt(T(2 * l + 1) / (T(4) * T(π)) * ratio)
     end
     return N
 end
@@ -246,18 +250,19 @@ grid = build_meridional_grid(128, 10, 60)
 ```
 """
 function build_meridional_grid(Nθ::Int, m::Int, lmax::Int;
-                                grid_type::Symbol=:gauss_legendre)
-    T = Float64
+                                grid_type::Symbol=:gauss_legendre,
+                                T::Type{<:Real}=Float64)
 
     # Generate θ grid
     if grid_type == :gauss_legendre
         # Gauss-Legendre nodes (better for spectral accuracy)
         cosθ, weights = _gauss_legendre_nodes(Nθ)
+        cosθ = T.(cosθ)
         θ = acos.(cosθ)
     elseif grid_type == :chebyshev
         # Chebyshev nodes in θ ∈ (0, π)
-        k = collect(1:Nθ)
-        θ = π .* (2 .* k .- 1) ./ (2 * Nθ)
+        k = T.(collect(1:Nθ))
+        θ = T(π) .* (T(2) .* k .- one(T)) ./ T(2 * Nθ)
         cosθ = cos.(θ)
     else  # :uniform
         θ = range(T(π) / (2 * Nθ), T(π) - T(π) / (2 * Nθ), length=Nθ)
@@ -389,15 +394,15 @@ end
 
 Precompute Y_ℓm(θ, φ=0) for ℓ ∈ [m, lmax].
 """
-function _precompute_spherical_harmonics(m::Int, lmax::Int, cosθ::Vector{Float64})
+function _precompute_spherical_harmonics(m::Int, lmax::Int, cosθ::Vector{T}) where {T<:Real}
     Plm = _associated_legendre_table(m, lmax, cosθ)
-    Nlm = _normalization_table(m, lmax)
+    Nlm = _normalization_table(T, m, lmax)
 
-    Ylm = Dict{Int, Vector{ComplexF64}}()
+    Ylm = Dict{Int, Vector{Complex{T}}}()
     for ℓ in m:lmax
         idx = ℓ - m + 1
         # Y_ℓm(θ, φ=0) = N_ℓm × P_ℓ^m(cosθ) × e^{im×0} = N_ℓm × P_ℓ^m(cosθ)
-        Ylm[ℓ] = ComplexF64.(Nlm[idx] .* Plm[idx, :])
+        Ylm[ℓ] = Complex{T}.(Nlm[idx] .* Plm[idx, :])
     end
 
     return Ylm
@@ -431,9 +436,10 @@ P, T, Θ = extract_eigenvector_coefficients(eigenvectors[1], op)
 """
 function extract_eigenvector_coefficients(eigenvector::AbstractVector{<:Complex},
                                            op)
-    P_coeffs = Dict{Int, Vector{ComplexF64}}()
-    T_coeffs = Dict{Int, Vector{ComplexF64}}()
-    Θ_coeffs = Dict{Int, Vector{ComplexF64}}()
+    CT = eltype(eigenvector)
+    P_coeffs = Dict{Int, Vector{CT}}()
+    T_coeffs = Dict{Int, Vector{CT}}()
+    Θ_coeffs = Dict{Int, Vector{CT}}()
 
     # Extract poloidal coefficients
     for ℓ in op.l_sets[:P]
@@ -480,19 +486,28 @@ function spectral_to_physical(coeffs::AbstractDict{Int, <:AbstractVector{<:Compl
                                grid::MeridionalGrid,
                                Nr::Int)
     Nθ = length(grid.θ)
-    f_phys = zeros(ComplexF64, Nr, Nθ)
+    CT = _coefficient_eltype(coeffs)
+    f_phys = zeros(CT, Nr, Nθ)
 
     for (ℓ, f_lm) in coeffs
         if haskey(grid.Ylm, ℓ)
             Ylm = grid.Ylm[ℓ]
             # f_phys(r, θ) += f_ℓm(r) × Y_ℓm(θ)
             for j in 1:Nθ
-                f_phys[:, j] .+= f_lm .* Ylm[j]
+                y = CT(Ylm[j])
+                @views @. f_phys[:, j] += f_lm * y
             end
         end
     end
 
     return f_phys
+end
+
+function _coefficient_eltype(coeffs::AbstractDict)
+    for coeff in values(coeffs)
+        return eltype(coeff)
+    end
+    return ComplexF64
 end
 
 
@@ -547,7 +562,7 @@ function eigenvector_to_velocity(eigenvector::AbstractVector{<:Complex}, op;
     # Build or use provided grid
     if grid === nothing
         Nθ_use = Nθ === nothing ? 2 * lmax : Nθ
-        grid = build_meridional_grid(Nθ_use, m, lmax)
+        grid = build_meridional_grid(Nθ_use, m, lmax; T=typeof(op.params.E))
     end
 
     # Extract spectral coefficients
@@ -659,14 +674,15 @@ function _triglobal_velocity_slice(eigenvector::AbstractVector{<:Complex},
     Dr = cd.D1
 
     # Initialize velocity accumulators
-    ur_total = zeros(ComplexF64, Nr, Nθ)
-    uθ_total = zeros(ComplexF64, Nr, Nθ)
-    uφ_total = zeros(ComplexF64, Nr, Nθ)
+    CT = eltype(eigenvector)
+    ur_total = zeros(CT, Nr, Nθ)
+    uθ_total = zeros(CT, Nr, Nθ)
+    uφ_total = zeros(CT, Nr, Nθ)
 
     # Process each azimuthal mode
     for m in m_range
         # Build grid for this m
-        grid_m = build_meridional_grid(Nθ, abs(m), lmax)
+        grid_m = build_meridional_grid(Nθ, abs(m), lmax; T=typeof(params.E))
 
         # Extract coefficients for this m
         P_m, T_m = _extract_mode_coefficients(eigenvector, problem, m)
@@ -679,7 +695,7 @@ function _triglobal_velocity_slice(eigenvector::AbstractVector{<:Complex},
         T_phys = spectral_to_physical(T_m, grid_m, Nr)
 
         if m < 0
-            phase_lat = isodd(abs(m)) ? -one(ComplexF64) : one(ComplexF64)
+            phase_lat = isodd(abs(m)) ? -one(CT) : one(CT)
             P_phys .*= phase_lat
             T_phys .*= phase_lat
         end
@@ -694,10 +710,10 @@ function _triglobal_velocity_slice(eigenvector::AbstractVector{<:Complex},
                                                    m=abs(m))
 
         # Add contribution with e^{imφ} phase factor
-        phase = exp(im * m * φ)
-        ur_total .+= ur_m .* phase
-        uθ_total .+= uθ_m .* phase
-        uφ_total .+= uφ_m .* phase
+        phase = CT(exp(im * m * φ))
+        @. ur_total += ur_m * phase
+        @. uθ_total += uθ_m * phase
+        @. uφ_total += uφ_m * phase
     end
 
     return ur_total, uθ_total, uφ_total
@@ -726,14 +742,15 @@ function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
     φ = range(0, 2π, length=Nφ+1)[1:Nφ]
 
     # Initialize 3D velocity arrays
-    ur = zeros(ComplexF64, Nr, Nθ, Nφ)
-    uθ = zeros(ComplexF64, Nr, Nθ, Nφ)
-    uφ = zeros(ComplexF64, Nr, Nθ, Nφ)
+    CT = eltype(eigenvector)
+    ur = zeros(CT, Nr, Nθ, Nφ)
+    uθ = zeros(CT, Nr, Nθ, Nφ)
+    uφ = zeros(CT, Nr, Nθ, Nφ)
 
     # Process each azimuthal mode
     for m in m_range
         # Build grid for this m
-        grid_m = build_meridional_grid(Nθ, abs(m), lmax)
+        grid_m = build_meridional_grid(Nθ, abs(m), lmax; T=typeof(params.E))
 
         # Extract coefficients for this m
         P_m, T_m = _extract_mode_coefficients(eigenvector, problem, m)
@@ -746,7 +763,7 @@ function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
         T_phys = spectral_to_physical(T_m, grid_m, Nr)
 
         if m < 0
-            phase_lat = isodd(abs(m)) ? -one(ComplexF64) : one(ComplexF64)
+            phase_lat = isodd(abs(m)) ? -one(CT) : one(CT)
             P_phys .*= phase_lat
             T_phys .*= phase_lat
         end
@@ -762,10 +779,10 @@ function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
 
         # Add to 3D field with e^{imφ} phase
         for k in 1:Nφ
-            phase = exp(im * m * φ[k])
-            ur[:, :, k] .+= ur_m .* phase
-            uθ[:, :, k] .+= uθ_m .* phase
-            uφ[:, :, k] .+= uφ_m .* phase
+            phase = CT(exp(im * m * φ[k]))
+            @views @. ur[:, :, k] += ur_m * phase
+            @views @. uθ[:, :, k] += uθ_m * phase
+            @views @. uφ[:, :, k] += uφ_m * phase
         end
     end
 
@@ -773,13 +790,12 @@ function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
 end
 
 
-const _mode_layout_cache = IdDict{UInt64, Dict{Int, NamedTuple{(:P, :T, :Θ),
+const _mode_layout_cache = WeakKeyDict{Any, Dict{Int, NamedTuple{(:P, :T, :Θ),
     Tuple{Vector{Int}, Vector{Int}, Vector{Int}}}}}()
-const _mode_reconstruction_cache = IdDict{UInt64, Any}()
+const _mode_reconstruction_cache = WeakKeyDict{Any, Any}()
 
 function _mode_layout(problem, m_abs::Int)
-    prob_key = objectid(problem)
-    cache = get!(_mode_layout_cache, prob_key) do
+    cache = get!(_mode_layout_cache, problem) do
         Dict{Int, NamedTuple{(:P, :T, :Θ), Tuple{Vector{Int}, Vector{Int}, Vector{Int}}}}()
     end
 
@@ -804,11 +820,10 @@ function _mode_layout(problem, m_abs::Int)
 end
 
 function _mode_reconstruction(problem, m_abs::Int)
-    prob_key = objectid(problem)
     T = typeof(problem.params.E)
     CacheType = Dict{Int, NamedTuple{(:op, :reduction),
         Tuple{LinearStabilityOperator{T, Nothing}, ConstraintReduction{T}}}}
-    cache = get!(_mode_reconstruction_cache, prob_key) do
+    cache = get!(_mode_reconstruction_cache, problem) do
         CacheType()
     end::CacheType
 
@@ -845,7 +860,8 @@ function _extract_mode_coefficients(eigenvector::AbstractVector{<:Complex},
     Nr = problem.params.Nr
 
     if !haskey(problem.block_indices, m)
-        return Dict{Int, Vector{ComplexF64}}(), Dict{Int, Vector{ComplexF64}}()
+        CT = eltype(eigenvector)
+        return Dict{Int, Vector{CT}}(), Dict{Int, Vector{CT}}()
     end
 
     block_range = problem.block_indices[m]
@@ -854,15 +870,16 @@ function _extract_mode_coefficients(eigenvector::AbstractVector{<:Complex},
     op = reconstruction.op
     full_vec = _reconstruct_full_vector(reconstruction.reduction, block_vec)
 
-    P_coeffs = Dict{Int, Vector{ComplexF64}}()
-    T_coeffs = Dict{Int, Vector{ComplexF64}}()
+    CT = eltype(full_vec)
+    P_coeffs = Dict{Int, Vector{CT}}()
+    T_coeffs = Dict{Int, Vector{CT}}()
 
     for ℓ in op.l_sets[:P]
-        P_coeffs[ℓ] = ComplexF64.(full_vec[op.index_map[(ℓ, :P)]])
+        P_coeffs[ℓ] = full_vec[op.index_map[(ℓ, :P)]]
     end
 
     for ℓ in op.l_sets[:T]
-        T_coeffs[ℓ] = ComplexF64.(full_vec[op.index_map[(ℓ, :T)]])
+        T_coeffs[ℓ] = full_vec[op.index_map[(ℓ, :T)]]
     end
 
     return P_coeffs, T_coeffs

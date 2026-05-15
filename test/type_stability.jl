@@ -302,6 +302,33 @@ end
     @test eltype(uφ) === ComplexF32
     @test grid isa Cross.MeridionalGrid{T}
 
+    @inferred Cross.eigenvector_to_velocity(eigenvector, op)
+    @inferred Cross.eigenvector_to_velocity(eigenvector, op; grid=grid)
+
+    Nr_alloc = 64
+    Nθ_alloc = 128
+    cd_alloc = ChebyshevDiffn(Nr_alloc, Float64[0.35, 1.0], 1)
+    grid_alloc = Cross.build_meridional_grid(Nθ_alloc, 2, 16; T=Float64)
+    P_alloc = randn(ComplexF64, Nr_alloc, Nθ_alloc)
+    T_alloc = randn(ComplexF64, Nr_alloc, Nθ_alloc)
+    Cross.potentials_to_velocity(P_alloc, T_alloc;
+                                 Dr=cd_alloc.D1,
+                                 Dθ=grid_alloc.Dθ,
+                                 Lθ=grid_alloc.Lθ,
+                                 r=cd_alloc.x,
+                                 sintheta=grid_alloc.sinθ,
+                                 m=2)
+    GC.gc()
+    velocity_bytes = @allocated Cross.potentials_to_velocity(
+        P_alloc, T_alloc;
+        Dr=cd_alloc.D1,
+        Dθ=grid_alloc.Dθ,
+        Lθ=grid_alloc.Lθ,
+        r=cd_alloc.x,
+        sintheta=grid_alloc.sinθ,
+        m=2)
+    @test velocity_bytes < 700_000
+
     P_coeffs = Dict(ℓ => randn(ComplexF32, params.Nr) for ℓ in op.l_sets[:P])
     Cross.spectral_to_physical(P_coeffs, grid, params.Nr)
     GC.gc()

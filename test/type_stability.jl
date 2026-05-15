@@ -1,6 +1,7 @@
 using Test
 using LinearAlgebra
 using SparseArrays
+using Logging
 using Cross
 
 @testset "Public wrapper type stability" begin
@@ -433,6 +434,31 @@ end
     @test bytes < 1_000_000
 end
 
+@testset "Coupled thermal wind assembly avoids dense block temporaries" begin
+    T = Float64
+    Nr = 24
+    cd = ChebyshevDiffn(Nr, T[0.35, 1.0], 4)
+    theta_coeffs = Dict{Int, Vector{T}}(
+        ℓ => fill(T(0.02) / T(ℓ + 1), Nr) for ℓ in 1:3)
+
+    uphi_coeffs = Dict{Int, Vector{T}}()
+    duphi_dr_coeffs = Dict{Int, Vector{T}}()
+    Cross.solve_thermal_wind_coupled!(
+        uphi_coeffs, duphi_dr_coeffs, theta_coeffs, 1, cd,
+        T(0.35), one(T), T(100), one(T);
+        E = T(1e-3), lmax = 4)
+
+    GC.gc()
+    uphi_coeffs = Dict{Int, Vector{T}}()
+    duphi_dr_coeffs = Dict{Int, Vector{T}}()
+    bytes = @allocated Cross.solve_thermal_wind_coupled!(
+        uphi_coeffs, duphi_dr_coeffs, theta_coeffs, 1, cd,
+        T(0.35), one(T), T(100), one(T);
+        E = T(1e-3), lmax = 4)
+
+    @test bytes < 170_000
+end
+
 @testset "Triglobal unweighted coupling avoids quadrature node allocation" begin
     Cross.compute_sh_coupling_unweighted(3, 1, 2, 0, 3, 1)
     GC.gc()
@@ -563,6 +589,57 @@ end
     bytes = @allocated Cross.multiplication_matrix(a0, Float32(1), 32)
 
     @test bytes < 80_000
+end
+
+@testset "Ultraspherical multiplication streams Gegenbauer indices" begin
+    a0 = zeros(Float32, 128)
+    a0[1] = 1
+    a0[3] = 0.25f0
+    Cross.multiplication_matrix(a0, Float32(1), 128)
+    GC.gc()
+    bytes = @allocated Cross.multiplication_matrix(a0, Float32(1), 128)
+
+    @test bytes < 290_000
+end
+
+@testset "Basic state operator assembly avoids dense diagonal temporaries" begin
+    T = Float64
+    Nr = 24
+    cd = ChebyshevDiffn(Nr, T[0.35, 1.0], 4)
+    r = cd.x
+    theta_coeffs = Dict{Int, Vector{T}}(
+        ℓ => fill(T(0.02) / T(ℓ + 1), Nr) for ℓ in 0:4)
+    uphi_coeffs = Dict{Int, Vector{T}}(
+        ℓ => fill(T(0.03) / T(ℓ + 1), Nr) for ℓ in 0:4)
+    bs = BasicState{T}(
+        lmax_bs = 4,
+        Nr = Nr,
+        r = r,
+        theta_coeffs = theta_coeffs,
+        uphi_coeffs = uphi_coeffs,
+        dtheta_dr_coeffs = Dict(ℓ => cd.D1 * v for (ℓ, v) in theta_coeffs),
+        duphi_dr_coeffs = Dict(ℓ => cd.D1 * v for (ℓ, v) in uphi_coeffs)
+    )
+    params = OnsetParams(
+        E = T(1e-3),
+        Pr = one(T),
+        Ra = T(100),
+        χ = T(0.35),
+        m = 1,
+        lmax = 5,
+        Nr = Nr,
+        basic_state = bs
+    )
+    op = LinearStabilityOperator(params)
+    run_build() = with_logger(NullLogger()) do
+        Cross.build_basic_state_operators(bs, op, params.m)
+    end
+
+    run_build()
+    GC.gc()
+    bytes = @allocated run_build()
+
+    @test bytes < 4_000_000
 end
 
 @testset "Self-consistent basic state avoids avoidable vector temporaries" begin

@@ -373,16 +373,20 @@ function csl(svec::AbstractVector{Int}, λ::Real, j::Int, k::Int)
     k_running = k
     for i in 2:length(svec)
         s = svec[i-1]
-        tmp1 = (T(j + k_running - s) + λT) * (λT + T(s)) * T(j - s) *
-               (T(2)*λT + T(j + k_running - s)) * (T(k_running - s) + λT)
-        tmp2 = (T(j + k_running - s + 1) + λT) * T(s + 1) *
-               (λT + T(j - s - 1)) * (λT + T(j + k_running - s)) *
-               T(k_running - s + 1)
-        out[i] = out[i-1] * tmp1 / tmp2
+        out[i] = _csl_next(out[i-1], λT, j, k_running, s)
         k_running += 2
     end
 
     return out
+end
+
+function _csl_next(prev::T, λT::T, j::Int, k_running::Int, s::Int) where {T<:Real}
+    tmp1 = (T(j + k_running - s) + λT) * (λT + T(s)) * T(j - s) *
+           (T(2)*λT + T(j + k_running - s)) * (T(k_running - s) + λT)
+    tmp2 = (T(j + k_running - s + 1) + λT) * T(s + 1) *
+           (λT + T(j - s - 1)) * (λT + T(j + k_running - s)) *
+           T(k_running - s + 1)
+    return prev * tmp1 / tmp2
 end
 
 """
@@ -457,12 +461,20 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
                 s = s0:k
                 isempty(s) && continue
 
-                idx = 2 .* s .+ j .- k .+ 1  # Convert to 1-indexed
-                a = view(a1, idx)
-
-                cvec = s0 == 0 ? csl(s, λ, k, j - k) : csl(s, λ, k, k - j)
-
-                val = T(dot(a, cvec))
+                c_j = k
+                c_k = s0 == 0 ? j - k : k - j
+                cval = csl0(s0, λT, c_j, c_k)
+                k_running = c_k
+                val = zero(T)
+                @inbounds for sval in s
+                    idx = 2 * sval + j - k + 1  # Convert to 1-indexed
+                    val += a1[idx] * cval
+                    if sval != k
+                        cval = _csl_next(cval, λT, c_j, k_running, sval)
+                        k_running += 2
+                    end
+                end
+                val = T(val)
                 if abs(val) > T(1e-14)
                     push!(rows, j + 1)  # Convert to 1-indexed
                     push!(cols, k + 1)

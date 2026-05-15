@@ -1146,7 +1146,7 @@ function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::
         end
 
         # Skip if no temperature modes for this m
-        if isempty(theta_m) || all(maximum(abs.(v)) < 1e-15 for v in values(theta_m))
+        if isempty(theta_m) || all(maximum(abs, v) < 1e-15 for v in values(theta_m))
             continue
         end
 
@@ -1171,7 +1171,7 @@ function nonaxisymmetric_basic_state(cd::ChebyshevDiffn, χ::Real, E::Real, Ra::
 
         # Copy results to 3D storage
         for ℓ in 0:lmax_bs
-            if haskey(uphi_m, ℓ) && maximum(abs.(uphi_m[ℓ])) > 1e-15
+            if haskey(uphi_m, ℓ) && maximum(abs, uphi_m[ℓ]) > 1e-15
                 uphi_coeffs[(ℓ, m_bs)] = uphi_m[ℓ]
                 duphi_dr_coeffs[(ℓ, m_bs)] = duphi_dr_m[ℓ]
             end
@@ -1723,7 +1723,7 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
             continue  # Invalid: ℓ must be ≥ m
         end
 
-        if maximum(abs.(θ_coeff)) < 1e-15
+        if maximum(abs, θ_coeff) < 1e-15
             continue  # Skip negligible modes
         end
 
@@ -1983,7 +1983,7 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     F = zeros(T, n_modes, Nr)  # F[k, i] = F_{mode_idx[k]}(r[i])
 
     for (ℓ, θ_coeff) in theta_coeffs
-        if ℓ < m_bs || maximum(abs.(θ_coeff)) < 1e-15
+        if ℓ < m_bs || maximum(abs, θ_coeff) < 1e-15
             continue
         end
 
@@ -2034,7 +2034,13 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
 
             if abs(A[k1, k2]) > 1e-15
                 # A_{k1,k2} × D1 contribution
-                L_op[row_start:row_end, col_start:col_end] .+= A[k1, k2] .* D1
+                coeff = A[k1, k2]
+                @inbounds for j in 1:Nr
+                    col = col_start + j - 1
+                    for i in 1:Nr
+                        L_op[row_start + i - 1, col] += coeff * D1[i, j]
+                    end
+                end
             end
 
             if abs(B[k1, k2]) > 1e-15

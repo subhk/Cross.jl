@@ -59,6 +59,45 @@ struct BasicStateOperators{T<:Real}
     coupling_structure::Vector{Tuple{Int,Int}}
 end
 
+function _operator_block!(blocks::Dict{Tuple{Int,Int}, Matrix{CT}},
+                          key::Tuple{Int,Int}, Nr::Int,
+                          ::Type{CT}) where {CT}
+    return get!(blocks, key) do
+        zeros(CT, Nr, Nr)
+    end
+end
+
+function _add_diagonal_block!(block::AbstractMatrix{CT},
+                              scale,
+                              diagonal::AbstractVector) where {CT}
+    @inbounds for i in eachindex(diagonal)
+        block[i, i] += CT(scale * diagonal[i])
+    end
+    return block
+end
+
+function _add_diagonal_product_block!(block::AbstractMatrix{CT},
+                                      scale,
+                                      a::AbstractVector,
+                                      b::AbstractVector) where {CT}
+    @inbounds for i in eachindex(a, b)
+        block[i, i] += CT(scale * a[i] * b[i])
+    end
+    return block
+end
+
+function _add_left_diagonal_matrix_block!(block::AbstractMatrix{CT},
+                                          scale,
+                                          diagonal::AbstractVector,
+                                          matrix::AbstractMatrix) where {CT}
+    @inbounds for j in axes(matrix, 2)
+        for i in eachindex(diagonal)
+            block[i, j] += CT(scale * diagonal[i] * matrix[i, j])
+        end
+    end
+    return block
+end
+
 
 """
     compute_spherical_harmonic_coupling(ℓ_pert::Int, ℓ_bs::Int, m::Int)
@@ -377,14 +416,9 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # 2. Radial shear: -u'_r × ∂ū_φ/∂r
                 # =====================================================================
                 if uphi_max > 1e-14
-                    shear_op = -L_input * coupling * Diagonal(duphi_dr)
-                    shear_block = Matrix{CT}(shear_op)
-
-                    if !haskey(shear_radial_blocks, (ℓ_output, ℓ_input))
-                        shear_radial_blocks[(ℓ_output, ℓ_input)] = shear_block
-                    else
-                        shear_radial_blocks[(ℓ_output, ℓ_input)] .+= shear_block
-                    end
+                    block = _operator_block!(
+                        shear_radial_blocks, (ℓ_output, ℓ_input), Nr, CT)
+                    _add_diagonal_block!(block, -L_input * coupling, duphi_dr)
                 end
 
                 # =====================================================================
@@ -393,15 +427,11 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 # Use the same radial equation weighting as the built-in
                 # conduction term in assemble_matrices.
                 if theta_max > 1e-14
-                    temp_grad_op = -L_input * coupling *
-                                   Diagonal(temperature_radial_weight .* dtheta_dr)
-                    temp_grad_block = Matrix{CT}(temp_grad_op)
-
-                    if !haskey(temp_grad_radial_blocks, (ℓ_output, ℓ_input))
-                        temp_grad_radial_blocks[(ℓ_output, ℓ_input)] = temp_grad_block
-                    else
-                        temp_grad_radial_blocks[(ℓ_output, ℓ_input)] .+= temp_grad_block
-                    end
+                    block = _operator_block!(
+                        temp_grad_radial_blocks, (ℓ_output, ℓ_input), Nr, CT)
+                    _add_diagonal_product_block!(
+                        block, -L_input * coupling,
+                        temperature_radial_weight, dtheta_dr)
                 end
 
             end
@@ -424,14 +454,10 @@ function build_basic_state_operators(basic_state::BasicState{T},
                         push!(coupling_structure, (ℓ_output, ℓ_input))
                     end
 
-                    adv_operator = im * m * T(adv_coupling) * Diagonal(uphi_coeff .* inv_r)
-                    adv_block = Matrix{CT}(adv_operator)
-
-                    if !haskey(advection_blocks, (ℓ_output, ℓ_input))
-                        advection_blocks[(ℓ_output, ℓ_input)] = adv_block
-                    else
-                        advection_blocks[(ℓ_output, ℓ_input)] .+= adv_block
-                    end
+                    block = _operator_block!(
+                        advection_blocks, (ℓ_output, ℓ_input), Nr, CT)
+                    _add_diagonal_product_block!(
+                        block, im * m * T(adv_coupling), uphi_coeff, inv_r)
                 end
             end
 
@@ -463,14 +489,10 @@ function build_basic_state_operators(basic_state::BasicState{T},
 
                         # Metric term: -ū_φ / r × u'_φ
                         # This couples T (source of u'_φ) to P (poloidal equation)
-                        metric_operator = -T(metric_coupling) * Diagonal(uphi_coeff .* inv_r)
-                        metric_block = Matrix{CT}(metric_operator)
-
-                        if !haskey(metric_poloidal_blocks, (ℓ_output, ℓ_input))
-                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] = metric_block
-                        else
-                            metric_poloidal_blocks[(ℓ_output, ℓ_input)] .+= metric_block
-                        end
+                        block = _operator_block!(
+                            metric_poloidal_blocks, (ℓ_output, ℓ_input), Nr, CT)
+                        _add_diagonal_product_block!(
+                            block, -T(metric_coupling), uphi_coeff, inv_r)
                     end
                 end
             end
@@ -499,44 +521,32 @@ function build_basic_state_operators(basic_state::BasicState{T},
                     end
 
                     if uphi_max > coupling_tol
-                        shear_theta_op = -meridional * (Diagonal(uphi_coeff) * Dr)
-                        shear_theta_block = Matrix{CT}(shear_theta_op)
-                        if !haskey(shear_theta_blocks, (ℓ_output, ℓ_input))
-                            shear_theta_blocks[(ℓ_output, ℓ_input)] = shear_theta_block
-                        else
-                            shear_theta_blocks[(ℓ_output, ℓ_input)] .+= shear_theta_block
-                        end
+                        block = _operator_block!(
+                            shear_theta_blocks, (ℓ_output, ℓ_input), Nr, CT)
+                        _add_left_diagonal_matrix_block!(
+                            block, -meridional, uphi_coeff, Dr)
 
                         if m != 0
-                            tor_factor = (im * m) .* (uphi_coeff .* inv_r)
-                            shear_theta_t_op = -meridional * Diagonal(tor_factor)
-                            shear_theta_t_block = Matrix{CT}(shear_theta_t_op)
-                            if !haskey(shear_theta_toroidal_blocks, (ℓ_output, ℓ_input))
-                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = shear_theta_t_block
-                            else
-                                shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= shear_theta_t_block
-                            end
+                            block = _operator_block!(
+                                shear_theta_toroidal_blocks,
+                                (ℓ_output, ℓ_input), Nr, CT)
+                            _add_diagonal_product_block!(
+                                block, -meridional * im * m, uphi_coeff, inv_r)
                         end
                     end
 
                     if theta_max > coupling_tol
-                        temp_grad_theta_op = -meridional * (Diagonal(theta_coeff) * Dr)
-                        temp_grad_theta_block = Matrix{CT}(temp_grad_theta_op)
-                        if !haskey(temp_grad_theta_blocks, (ℓ_output, ℓ_input))
-                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] = temp_grad_theta_block
-                        else
-                            temp_grad_theta_blocks[(ℓ_output, ℓ_input)] .+= temp_grad_theta_block
-                        end
+                        block = _operator_block!(
+                            temp_grad_theta_blocks, (ℓ_output, ℓ_input), Nr, CT)
+                        _add_left_diagonal_matrix_block!(
+                            block, -meridional, theta_coeff, Dr)
 
                         if m != 0
-                            tor_factor = (im * m) .* (theta_coeff .* inv_r)
-                            temp_grad_theta_t_op = -meridional * Diagonal(tor_factor)
-                            temp_grad_theta_t_block = Matrix{CT}(temp_grad_theta_t_op)
-                            if !haskey(temp_grad_theta_toroidal_blocks, (ℓ_output, ℓ_input))
-                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] = temp_grad_theta_t_block
-                            else
-                                temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)] .+= temp_grad_theta_t_block
-                            end
+                            block = _operator_block!(
+                                temp_grad_theta_toroidal_blocks,
+                                (ℓ_output, ℓ_input), Nr, CT)
+                            _add_diagonal_product_block!(
+                                block, -meridional * im * m, theta_coeff, inv_r)
                         end
                     end
                 end

@@ -39,6 +39,22 @@ end
     @test bytes < 4_800_000
 end
 
+@testset "Cached radial matrix avoids dense diagonal temporaries" begin
+    params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=2, lmax=8, Nr=256)
+
+    warm_op = LinearStabilityOperator(params)
+    Cross.radial_matrix(warm_op, 2, 2)
+
+    op = LinearStabilityOperator(params)
+    GC.gc()
+    miss_bytes = @allocated Cross.radial_matrix(op, 2, 2)
+    GC.gc()
+    hit_bytes = @allocated Cross.radial_matrix(op, 2, 2)
+
+    @test miss_bytes < 700_000
+    @test hit_bytes == 0
+end
+
 @testset "Constraint reduction avoids dense subblock copies" begin
     params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=2, lmax=10, Nr=24)
     op = LinearStabilityOperator(params)

@@ -205,24 +205,48 @@ function radial_matrix(op::LinearStabilityOperator{T}, power::Int, order::Int) w
         return cache[key]
     end
 
-    diag = Diagonal(op.r .^ power)
     mat = if order == 0
-        Matrix(diag)
+        _radial_diagonal_matrix(op.r, power)
     elseif order == 1
-        Matrix(diag * op.cd.D1)
+        _scaled_radial_rows(op.r, op.cd.D1, power)
     elseif order == 2
-        Matrix(diag * op.cd.D2)
+        _scaled_radial_rows(op.r, op.cd.D2, power)
     elseif order == 3
         @assert op.cd.D3 !== nothing "Third-order derivative matrix required; increase Chebyshev order."
-        Matrix(diag * op.cd.D3)
+        _scaled_radial_rows(op.r, op.cd.D3, power)
     elseif order == 4
         @assert op.cd.D4 !== nothing "Fourth-order derivative matrix required; increase Chebyshev order."
-        Matrix(diag * op.cd.D4)
+        _scaled_radial_rows(op.r, op.cd.D4, power)
     else
         throw(ArgumentError("Unsupported derivative order $order"))
     end
 
     cache[key] = mat
+    return mat
+end
+
+@inline function _integer_power(x::T, power::Int) where {T}
+    return x ^ power
+end
+
+function _radial_diagonal_matrix(r::Vector{T}, power::Int) where {T}
+    n = length(r)
+    mat = zeros(T, n, n)
+    @inbounds for i in 1:n
+        mat[i, i] = _integer_power(r[i], power)
+    end
+    return mat
+end
+
+function _scaled_radial_rows(r::Vector{T}, D::Matrix{T}, power::Int) where {T}
+    mat = Matrix{T}(undef, size(D, 1), size(D, 2))
+    # Fill the cached matrix directly; `Diagonal(r.^power) * D` doubles memory
+    # traffic during operator setup.
+    @inbounds for j in axes(D, 2)
+        for i in axes(D, 1)
+            mat[i, j] = _integer_power(r[i], power) * D[i, j]
+        end
+    end
     return mat
 end
 

@@ -706,3 +706,20 @@ end
 
     @test bytes < 1_200_000
 end
+
+@testset "Poisson mode solve avoids dense diagonal temporaries" begin
+    T = Float64
+    Nr = 128
+    cd = ChebyshevDiffn(Nr, T[0.35, 1.0], 2)
+    r = cd.x
+    D1 = Matrix(cd.D1)
+    D2 = Matrix(cd.D2)
+    forcing = fill(T(0.01), Nr)
+
+    Cross.solve_poisson_mode(4, 2, r, D2, D1, T(0.35), one(T), forcing)
+
+    GC.gc()
+    bytes = @allocated Cross.solve_poisson_mode(4, 2, r, D2, D1, T(0.35), one(T), forcing)
+
+    @test bytes < 400_000
+end

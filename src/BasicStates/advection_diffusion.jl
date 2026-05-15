@@ -210,11 +210,19 @@ function solve_poisson_mode(
 
     Nr = length(r)
 
-    # Build the radial Laplacian operator for mode ℓ:
-    # L_ℓ = D2 + (2/r) D1 - ℓ(ℓ+1)/r²
-    L_op = D2 + Diagonal(T(2) ./ r) * D1 - Diagonal(T(ℓ * (ℓ + 1)) ./ (r.^2))
+    # Build the dense radial Laplacian directly.  The equivalent Diagonal-based
+    # expression materializes several Nr-by-Nr temporaries inside the modal loop.
+    A_mat = copy(D2)
+    ℓ_factor = T(ℓ * (ℓ + 1))
+    @inbounds for i in 1:Nr
+        inv_r = inv(r[i])
+        d1_scale = T(2) * inv_r
+        for j in 1:Nr
+            A_mat[i, j] += d1_scale * D1[i, j]
+        end
+        A_mat[i, i] -= ℓ_factor * inv_r * inv_r
+    end
 
-    A_mat = copy(L_op)
     f_rhs = copy(forcing)
 
     # Determine boundary indices (Chebyshev nodes can be ascending or descending)
@@ -227,7 +235,9 @@ function solve_poisson_mode(
         A_mat[idx_inner, idx_inner] = one(T)
         f_rhs[idx_inner] = inner_value
     else  # fixed_flux
-        A_mat[idx_inner, :] = D1[idx_inner, :]
+        @inbounds for j in 1:Nr
+            A_mat[idx_inner, j] = D1[idx_inner, j]
+        end
         f_rhs[idx_inner] = inner_value  # This is the flux value
     end
 
@@ -237,7 +247,9 @@ function solve_poisson_mode(
         A_mat[idx_outer, idx_outer] = one(T)
         f_rhs[idx_outer] = outer_value
     else  # fixed_flux
-        A_mat[idx_outer, :] = D1[idx_outer, :]
+        @inbounds for j in 1:Nr
+            A_mat[idx_outer, j] = D1[idx_outer, j]
+        end
         f_rhs[idx_outer] = outer_value  # This is the flux value
     end
 

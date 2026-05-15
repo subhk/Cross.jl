@@ -57,6 +57,8 @@ end
 @inline _empty_terms_output_eltype(::Type) = Float64
 @inline function _empty_terms_output_eltype(
     ::Type{<:Tuple{C, <:SparseMatrixCSC{T, Int}}}) where {C, T}
+    # Empty term lists still need a concrete sparse eltype so callers do not
+    # silently fall back to Float64 in Float32 or complex assembly paths.
     return (T <: Complex || !(C <: Real)) ? _complex_eltype(T) : T
 end
 

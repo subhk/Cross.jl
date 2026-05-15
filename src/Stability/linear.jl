@@ -469,6 +469,9 @@ function _constraint_basis_block(A::Matrix{Complex{T}},
                                  idx::UnitRange{Int},
                                  constraint_rows::Vector{Int},
                                  label::String) where {T<:Real}
+    # Slice only the rows that impose tau constraints for this field.  Its
+    # nullspace maps reduced coefficients into full coefficients satisfying the
+    # boundary equations exactly.
     constraints = Matrix(A[constraint_rows, idx])
     basis = nullspace(constraints)
     expected_cols = length(idx) - length(constraint_rows)
@@ -532,6 +535,8 @@ function _constrained_reduced_matrices(A_full::Matrix{Complex{T}},
     B = zeros(Complex{T}, reduction.n_reduced, reduction.n_reduced)
 
     for block in reduction.blocks
+        # Project one physical field at a time. This avoids forming a full dense
+        # block-diagonal basis matrix for all poloidal/toroidal/thermal modes.
         mul!(view(A, :, block.reduced_indices),
              view(A_full, interior_dofs, block.full_indices),
              block.basis)
@@ -548,6 +553,8 @@ function _reconstruct_full_vector(reduction::ConstraintReduction{T},
                                   reduced_vec::AbstractVector{Complex{T}}) where {T<:Real}
     full_vec = zeros(Complex{T}, reduction.n_full)
     for block in reduction.blocks
+        # Boundary coefficients are recovered from the same nullspace basis used
+        # during matrix projection, keeping eigenvector reconstruction consistent.
         full_vec[block.full_indices] .= block.basis * reduced_vec[block.reduced_indices]
     end
     return full_vec

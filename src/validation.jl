@@ -1,7 +1,16 @@
 # ============================================================================
 # Input validation for Cross.jl parameter types
+#
+# These checks run during public problem construction, so they should keep error
+# messages explicit while avoiding avoidable work in common successful paths.
 # ============================================================================
 
+"""
+    _grid_mismatch(r, expected)
+
+Return the maximum absolute mismatch between two radial grids without
+materializing `r .- expected` or `abs.(...)` temporaries.
+"""
 function _grid_mismatch(r::AbstractVector{T}, expected::AbstractVector{S}) where {T,S}
     length(r) == length(expected) || throw(DimensionMismatch(
         "grid vectors must have same length, got $(length(r)) and $(length(expected))"))

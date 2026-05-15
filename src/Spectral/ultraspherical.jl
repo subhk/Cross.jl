@@ -380,6 +380,13 @@ function csl(svec::AbstractVector{Int}, λ::Real, j::Int, k::Int)
     return out
 end
 
+"""
+    _csl_next(prev, λT, j, k_running, s)
+
+Advance the `c_s^λ` recurrence by one step.  `multiplication_matrix` calls this
+directly so it can stream recurrence values instead of allocating a `csl` vector
+inside the `(j, k)` loop.
+"""
 function _csl_next(prev::T, λT::T, j::Int, k_running::Int, s::Int) where {T<:Real}
     tmp1 = (T(j + k_running - s) + λT) * (λT + T(s)) * T(j - s) *
            (T(2)*λT + T(j + k_running - s)) * (T(k_running - s) + λT)
@@ -466,6 +473,8 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
                 cval = csl0(s0, λT, c_j, c_k)
                 k_running = c_k
                 val = zero(T)
+                # Stream the recurrence alongside the sparse coefficient lookup;
+                # allocating `idx` and `cvec` here dominates large operator builds.
                 @inbounds for sval in s
                     idx = 2 * sval + j - k + 1  # Convert to 1-indexed
                     val += a1[idx] * cval

@@ -86,7 +86,9 @@ function potentials_to_velocity(P::AbstractMatrix,
     uφ = similar(P, CT, Nr, Nθ)
     dP_dr = similar(P, CT, Nr, Nθ)
 
-    # Compute only the full-size derivatives that cannot be streamed directly.
+    # Use the three return arrays plus one scratch array as workspace.  The
+    # final radius/sinθ scaling is streamed below to avoid allocating another
+    # full-size matrix for each broadcasted factor.
     mul!(ur, P, transpose(Lθ))       # L² P (angular Laplacian of P)
     mul!(dP_dr, Dr, P)               # ∂P/∂r
     mul!(uθ, dP_dr, transpose(Dθ))   # ∂²P/∂r∂θ
@@ -566,6 +568,9 @@ heatmap(grid.θ, op.r, real.(ur), xlabel="θ", ylabel="r", title="u_r")
 function eigenvector_to_velocity(eigenvector::AbstractVector{<:Complex}, op;
                                   Nθ::Union{Int, Nothing}=nothing,
                                   grid::Union{MeridionalGrid, Nothing}=nothing)
+    # Keep the public keyword API convenient while dispatching into typed helper
+    # methods.  That function barrier preserves concrete return inference for
+    # callers that reconstruct many modes.
     if grid === nothing
         return _eigenvector_to_velocity_default_grid(eigenvector, op, Nθ)
     else
@@ -580,6 +585,7 @@ function _eigenvector_to_velocity_default_grid(eigenvector::AbstractVector{<:Com
     lmax = op.params.lmax
     Nθ_use = 2 * lmax
     GT = typeof(op.params.E)
+    # The assertion fixes the grid parameter for inference after construction.
     grid = build_meridional_grid(Nθ_use, m, lmax; T=GT)::MeridionalGrid{GT}
     return _eigenvector_to_velocity(eigenvector, op, grid)
 end
@@ -591,6 +597,7 @@ function _eigenvector_to_velocity_default_grid(eigenvector::AbstractVector{<:Com
     lmax = op.params.lmax
     Nθ_use = Nθ
     GT = typeof(op.params.E)
+    # Mirror the default-grid path so explicit Nθ calls stay type-stable too.
     grid = build_meridional_grid(Nθ_use, m, lmax; T=GT)::MeridionalGrid{GT}
     return _eigenvector_to_velocity(eigenvector, op, grid)
 end
@@ -833,6 +840,8 @@ const _mode_layout_cache = WeakKeyDict{Any, Dict{Int, NamedTuple{(:P, :T, :Θ),
 const _mode_reconstruction_cache = WeakKeyDict{Any, Any}()
 
 function _mode_layout(problem, m_abs::Int)
+    # Key caches by problem object so repeated triglobal reconstructions do not
+    # rebuild equivalent single-mode layouts for every eigenvector.
     cache = get!(_mode_layout_cache, problem) do
         Dict{Int, NamedTuple{(:P, :T, :Θ), Tuple{Vector{Int}, Vector{Int}, Vector{Int}}}}()
     end
@@ -861,6 +870,9 @@ function _mode_reconstruction(problem, m_abs::Int)
     T = typeof(problem.params.E)
     CacheType = Dict{Int, NamedTuple{(:op, :reduction),
         Tuple{LinearStabilityOperator{T, Nothing}, ConstraintReduction{T}}}}
+    # The outer cache is intentionally `Any` because `WeakKeyDict` stores many
+    # problem parameterizations; this assertion recovers the concrete cache type
+    # for the hot reconstruction path.
     cache = get!(_mode_reconstruction_cache, problem) do
         CacheType()
     end::CacheType

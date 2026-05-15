@@ -59,6 +59,7 @@ struct BasicStateOperators{T<:Real}
     coupling_structure::Vector{Tuple{Int,Int}}
 end
 
+"""Return the existing coupling block for `key`, or allocate a typed zero block."""
 function _operator_block!(blocks::Dict{Tuple{Int,Int}, Matrix{CT}},
                           key::Tuple{Int,Int}, Nr::Int,
                           ::Type{CT}) where {CT}
@@ -67,6 +68,7 @@ function _operator_block!(blocks::Dict{Tuple{Int,Int}, Matrix{CT}},
     end
 end
 
+"""Add `scale * Diagonal(diagonal)` into an already-allocated block."""
 function _add_diagonal_block!(block::AbstractMatrix{CT},
                               scale,
                               diagonal::AbstractVector) where {CT}
@@ -76,6 +78,7 @@ function _add_diagonal_block!(block::AbstractMatrix{CT},
     return block
 end
 
+"""Add `scale * Diagonal(a .* b)` without allocating the product vector."""
 function _add_diagonal_product_block!(block::AbstractMatrix{CT},
                                       scale,
                                       a::AbstractVector,
@@ -86,6 +89,7 @@ function _add_diagonal_product_block!(block::AbstractMatrix{CT},
     return block
 end
 
+"""Add `scale * Diagonal(diagonal) * matrix` without constructing `Diagonal`."""
 function _add_left_diagonal_matrix_block!(block::AbstractMatrix{CT},
                                           scale,
                                           diagonal::AbstractVector,

@@ -331,30 +331,32 @@ Computes:
 Returns: p1 * p2 * p3 * p4 * (j+k+λ-2s)/(j+k+λ-s)
 """
 function csl0(s::Int, λ::Real, j::Int, k::Int)
+    T = float(typeof(λ))
+    λT = T(λ)
     if s > min(j, k)
-        return 0.0
+        return zero(T)
     end
 
     # Initialize products
-    p1 = 1.0
-    p3 = 1.0
+    p1 = one(T)
+    p3 = one(T)
 
     # First loop: t from 0 to s-1
     for t in 0:(s-1)
-        p1 *= (λ + t) / (1 + t)
-        p3 *= (2*λ + j + k - 2*s + t) / (λ + j + k - 2*s + t)
+        p1 *= (λT + T(t)) / T(1 + t)
+        p3 *= (T(2)*λT + T(j + k - 2*s + t)) / (λT + T(j + k - 2*s + t))
     end
 
     # Second loop: t from 0 to j-s-1
-    p2 = 1.0
-    p4 = 1.0
+    p2 = one(T)
+    p4 = one(T)
     for t in 0:(j-s-1)
-        p2 *= (λ + t) / (1 + t)
-        p4 *= (k - s + 1 + t) / (k - s + λ + t)
+        p2 *= (λT + T(t)) / T(1 + t)
+        p4 *= T(k - s + 1 + t) / (T(k - s + t) + λT)
     end
 
     # Final multiplication
-    return p1 * p2 * p3 * p4 * (j + k + λ - 2*s) / (j + k + λ - s)
+    return p1 * p2 * p3 * p4 * (T(j + k - 2*s) + λT) / (T(j + k - s) + λT)
 end
 
 """
@@ -363,16 +365,19 @@ end
 Recursion for c_s^λ starting from c_svec[1]^λ(j,k).
 """
 function csl(svec::AbstractVector{Int}, λ::Real, j::Int, k::Int)
-    out = zeros(length(svec))
+    T = float(typeof(λ))
+    λT = T(λ)
+    out = zeros(T, length(svec))
     out[1] = csl0(svec[1], λ, j, k)
 
     k_running = k
     for i in 2:length(svec)
         s = svec[i-1]
-        tmp1 = (j + k_running + λ - s) * (λ + s) * (j - s) *
-               (2λ + j + k_running - s) * (k_running - s + λ)
-        tmp2 = (j + k_running + λ - s + 1) * (s + 1) * (λ + j - s - 1) *
-               (λ + j + k_running - s) * (k_running - s + 1)
+        tmp1 = (T(j + k_running - s) + λT) * (λT + T(s)) * T(j - s) *
+               (T(2)*λT + T(j + k_running - s)) * (T(k_running - s) + λT)
+        tmp2 = (T(j + k_running - s + 1) + λT) * T(s + 1) *
+               (λT + T(j - s - 1)) * (λT + T(j + k_running - s)) *
+               T(k_running - s + 1)
         out[i] = out[i-1] * tmp1 / tmp2
         k_running += 2
     end
@@ -440,9 +445,12 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
         for j in jrange
             k1 = max(0, j - bw - 1)
             k2 = min(N - 1, j + bw + 1)
-            ka = k1:k2
-
-            krange = vector_parity != 0 ? [k for k in ka if k % 2 == idk] : collect(ka)
+            krange = if vector_parity != 0
+                k_start = k1 + mod(idk - k1, 2)
+                k_start:2:k2
+            else
+                k1:k2
+            end
 
             for k in krange
                 s0 = max(0, k - j)
@@ -452,7 +460,7 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
                 idx = 2 .* s .+ j .- k .+ 1  # Convert to 1-indexed
                 a = view(a1, idx)
 
-                cvec = s0 == 0 ? csl(collect(s), λ, k, j - k) : csl(collect(s), λ, k, k - j)
+                cvec = s0 == 0 ? csl(s, λ, k, j - k) : csl(s, λ, k, k - j)
 
                 val = T(dot(a, cvec))
                 if abs(val) > T(1e-14)
@@ -525,14 +533,21 @@ function _boundary_radius(ri::Real, ro::Real, boundary::Symbol)
     return iszero(ri) ? -ro : ri
 end
 
+_real_scalar_type(::Type{T}) where {T<:Real} = T
+_real_scalar_type(::Type{Complex{T}}) where {T<:Real} = T
+
 """Evaluate all Chebyshev basis functions at one boundary."""
 function _chebyshev_boundary_values(N::Int, boundary::Symbol)
-    row = zeros(Float64, N + 1)
+    return _chebyshev_boundary_values(N, boundary, Float64)
+end
+
+function _chebyshev_boundary_values(N::Int, boundary::Symbol, ::Type{T}) where {T<:Real}
+    row = zeros(T, N + 1)
     if boundary === :outer
-        fill!(row, 1.0)
+        fill!(row, one(T))
     else
         @inbounds for n in 0:N
-            row[n + 1] = isodd(n) ? -1.0 : 1.0
+            row[n + 1] = isodd(n) ? -one(T) : one(T)
         end
     end
     return row
@@ -540,14 +555,18 @@ end
 
 """Evaluate first radial Chebyshev derivatives at one boundary before scaling."""
 function _chebyshev_boundary_derivative(N::Int, boundary::Symbol)
-    row = zeros(Float64, N + 1)
+    return _chebyshev_boundary_derivative(N, boundary, Float64)
+end
+
+function _chebyshev_boundary_derivative(N::Int, boundary::Symbol, ::Type{T}) where {T<:Real}
+    row = zeros(T, N + 1)
     if boundary === :outer
         @inbounds for n in 1:N
-            row[n + 1] = n^2
+            row[n + 1] = T(n)^2
         end
     else
         @inbounds for n in 1:N
-            row[n + 1] = (isodd(n) ? 1.0 : -1.0) * n^2
+            row[n + 1] = (isodd(n) ? one(T) : -one(T)) * T(n)^2
         end
     end
     return row
@@ -555,9 +574,15 @@ end
 
 """Evaluate second radial Chebyshev derivatives at one boundary before scaling."""
 function _chebyshev_boundary_second_derivative(N::Int, boundary::Symbol)
-    row = zeros(Float64, N + 1)
+    return _chebyshev_boundary_second_derivative(N, boundary, Float64)
+end
+
+function _chebyshev_boundary_second_derivative(N::Int, boundary::Symbol,
+                                               ::Type{T}) where {T<:Real}
+    row = zeros(T, N + 1)
     @inbounds for n in 2:N
-        coeff = n^2 * (n^2 - 1) / 3
+        n2 = T(n)^2
+        coeff = n2 * (n2 - one(T)) / T(3)
         if boundary === :inner && isodd(n)
             coeff = -coeff
         end
@@ -784,6 +809,7 @@ function apply_boundary_conditions!(A::SparseMatrixCSC{T}, B::SparseMatrixCSC{T}
                                    N::Int, ri::Real, ro::Real) where {T}
     # Tau method: replace rows corresponding to boundary conditions
     scale = _radial_scale(ri, ro)
+    RT = _real_scalar_type(T)
 
     for row in bc_rows
         # Zero out the row (using element type of matrix for type consistency)
@@ -799,19 +825,19 @@ function apply_boundary_conditions!(A::SparseMatrixCSC{T}, B::SparseMatrixCSC{T}
         if bc_type == :dirichlet
             # u(r_boundary) = 0
             # Set row to evaluation at boundary point
-            row_vals = _chebyshev_boundary_values(N, boundary)
-            A[row, block_range] = T.(row_vals)
+            row_vals = _chebyshev_boundary_values(N, boundary, RT)
+            A[row, block_range] = row_vals
 
         elseif bc_type == :neumann
             # du/dr(r_boundary) = 0
-            row_vals = scale * _chebyshev_boundary_derivative(N, boundary)
-            A[row, block_range] = T.(row_vals)
+            row_vals = scale * _chebyshev_boundary_derivative(N, boundary, RT)
+            A[row, block_range] = row_vals
 
         elseif bc_type == :neumann2
             # r · d²u/dr²(r_boundary) = 0
             r_boundary = _boundary_radius(ri, ro, boundary)
-            row_vals = r_boundary * scale^2 * _chebyshev_boundary_second_derivative(N, boundary)
-            A[row, block_range] = T.(row_vals)
+            row_vals = r_boundary * scale^2 * _chebyshev_boundary_second_derivative(N, boundary, RT)
+            A[row, block_range] = row_vals
 
         else
             throw(ArgumentError("Unsupported boundary condition type: $(bc_type)"))

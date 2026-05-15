@@ -255,57 +255,57 @@ Create a spherical harmonic boundary condition for mode (ℓ, m).
 bc = Ylm(3, 2, 0.1)  # Y₃₂ mode with amplitude 0.1
 ```
 """
-Ylm(ℓ::Int, m::Int, amplitude::Real=1.0) = SphericalHarmonicBC(ℓ, m, Float64(amplitude))
+Ylm(ℓ::Int, m::Int, amplitude::Real=1.0) = SphericalHarmonicBC(ℓ, m, amplitude)
 
 # ℓ = 0: Monopole (uniform)
 """Y00(amplitude=1.0) - Uniform (monopole) spherical harmonic"""
-Y00(amplitude::Real=1.0) = SphericalHarmonicBC(0, 0, Float64(amplitude))
+Y00(amplitude::Real=1.0) = SphericalHarmonicBC(0, 0, amplitude)
 
 # ℓ = 1: Dipole
 """Y10(amplitude=1.0) - Axial dipole: cos(θ) pattern (north-south asymmetry)"""
-Y10(amplitude::Real=1.0) = SphericalHarmonicBC(1, 0, Float64(amplitude))
+Y10(amplitude::Real=1.0) = SphericalHarmonicBC(1, 0, amplitude)
 
 """Y11(amplitude=1.0) - Equatorial dipole: sin(θ)cos(φ) pattern"""
-Y11(amplitude::Real=1.0) = SphericalHarmonicBC(1, 1, Float64(amplitude))
+Y11(amplitude::Real=1.0) = SphericalHarmonicBC(1, 1, amplitude)
 
 # ℓ = 2: Quadrupole
 """Y20(amplitude=1.0) - Axisymmetric quadrupole: (3cos²θ - 1) pattern (equator-pole contrast)"""
-Y20(amplitude::Real=1.0) = SphericalHarmonicBC(2, 0, Float64(amplitude))
+Y20(amplitude::Real=1.0) = SphericalHarmonicBC(2, 0, amplitude)
 
 """Y21(amplitude=1.0) - Tesseral quadrupole: sin(θ)cos(θ)cos(φ) pattern"""
-Y21(amplitude::Real=1.0) = SphericalHarmonicBC(2, 1, Float64(amplitude))
+Y21(amplitude::Real=1.0) = SphericalHarmonicBC(2, 1, amplitude)
 
 """Y22(amplitude=1.0) - Sectoral quadrupole: sin²(θ)cos(2φ) pattern (four-fold longitudinal)"""
-Y22(amplitude::Real=1.0) = SphericalHarmonicBC(2, 2, Float64(amplitude))
+Y22(amplitude::Real=1.0) = SphericalHarmonicBC(2, 2, amplitude)
 
 # ℓ = 3: Octupole
 """Y30(amplitude=1.0) - Axisymmetric octupole"""
-Y30(amplitude::Real=1.0) = SphericalHarmonicBC(3, 0, Float64(amplitude))
+Y30(amplitude::Real=1.0) = SphericalHarmonicBC(3, 0, amplitude)
 
 """Y31(amplitude=1.0) - Tesseral octupole m=1"""
-Y31(amplitude::Real=1.0) = SphericalHarmonicBC(3, 1, Float64(amplitude))
+Y31(amplitude::Real=1.0) = SphericalHarmonicBC(3, 1, amplitude)
 
 """Y32(amplitude=1.0) - Tesseral octupole m=2"""
-Y32(amplitude::Real=1.0) = SphericalHarmonicBC(3, 2, Float64(amplitude))
+Y32(amplitude::Real=1.0) = SphericalHarmonicBC(3, 2, amplitude)
 
 """Y33(amplitude=1.0) - Sectoral octupole"""
-Y33(amplitude::Real=1.0) = SphericalHarmonicBC(3, 3, Float64(amplitude))
+Y33(amplitude::Real=1.0) = SphericalHarmonicBC(3, 3, amplitude)
 
 # ℓ = 4: Hexadecapole
 """Y40(amplitude=1.0) - Axisymmetric hexadecapole"""
-Y40(amplitude::Real=1.0) = SphericalHarmonicBC(4, 0, Float64(amplitude))
+Y40(amplitude::Real=1.0) = SphericalHarmonicBC(4, 0, amplitude)
 
 """Y41(amplitude=1.0) - Tesseral hexadecapole m=1"""
-Y41(amplitude::Real=1.0) = SphericalHarmonicBC(4, 1, Float64(amplitude))
+Y41(amplitude::Real=1.0) = SphericalHarmonicBC(4, 1, amplitude)
 
 """Y42(amplitude=1.0) - Tesseral hexadecapole m=2"""
-Y42(amplitude::Real=1.0) = SphericalHarmonicBC(4, 2, Float64(amplitude))
+Y42(amplitude::Real=1.0) = SphericalHarmonicBC(4, 2, amplitude)
 
 """Y43(amplitude=1.0) - Tesseral hexadecapole m=3"""
-Y43(amplitude::Real=1.0) = SphericalHarmonicBC(4, 3, Float64(amplitude))
+Y43(amplitude::Real=1.0) = SphericalHarmonicBC(4, 3, amplitude)
 
 """Y44(amplitude=1.0) - Sectoral hexadecapole"""
-Y44(amplitude::Real=1.0) = SphericalHarmonicBC(4, 4, Float64(amplitude))
+Y44(amplitude::Real=1.0) = SphericalHarmonicBC(4, 4, amplitude)
 
 # =============================================================================
 #  Utility Functions for SphericalHarmonicBC
@@ -1403,6 +1403,29 @@ end
 #  5. Full stress-free boundary condition support
 # =============================================================================
 
+function _thermal_wind_operator_lu(r::AbstractVector{T}, D1::AbstractMatrix{T},
+                                   idx_inner::Int, mechanical_bc::Symbol) where {T<:Real}
+    Nr = length(r)
+    A_mat = Matrix{T}(undef, Nr, Nr)
+
+    @inbounds for j in 1:Nr, i in 1:Nr
+        A_mat[i, j] = r[i] * D1[i, j]
+    end
+    @inbounds for i in 1:Nr
+        A_mat[i, i] += one(T)
+    end
+
+    if mechanical_bc == :no_slip
+        A_mat[idx_inner, :] .= zero(T)
+        A_mat[idx_inner, idx_inner] = one(T)
+    else
+        A_mat[idx_inner, :] .= D1[idx_inner, :]
+        A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
+    end
+
+    return lu(A_mat)
+end
+
 """
     solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                 cd, r_i, r_o, Ra, Pr;
@@ -1569,36 +1592,16 @@ function solve_thermal_wind_balance!(uphi_coeffs::Dict{Int,Vector{T}},
     # Chebyshev grids typically have r[1] at one boundary, r[Nr] at the other
     # We need to identify which is inner (r_i) and which is outer (r_o)
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
-    idx_outer = idx_inner == 1 ? Nr : 1
+    r2 = r .^ 2
+    tw_lu = _thermal_wind_operator_lu(r, D1, idx_inner, mechanical_bc)
 
     for (L, F_L) in forcing
         # RHS for the ODE: r dŪ/dr + Ū = f(r)
-        f_rhs = prefactor .* (r.^2) .* F_L
-
-        # Build the system matrix: A = diag(r) @ D1 + I
-        A = Diagonal(r) * D1 + I
-        A_mat = Matrix(A)  # Convert to dense for modification
-
-        # Apply boundary conditions
-        # NOTE: The thermal wind ODE is first-order, so we can only satisfy ONE BC.
-        # We enforce the inner boundary condition (ū(r_i) = 0) to match the
-        # analytical solution. The outer BC will have a small non-zero value
-        # consistent with the diagonal approximation.
-        if mechanical_bc == :no_slip
-            # Dirichlet: Ū = 0 at inner boundary only
-            A_mat[idx_inner, :] .= zero(T)
-            A_mat[idx_inner, idx_inner] = one(T)
-            f_rhs[idx_inner] = zero(T)
-
-        else  # stress_free
-            # Robin BC: dŪ/dr - Ū/r = 0 at inner boundary only
-            A_mat[idx_inner, :] = D1[idx_inner, :]
-            A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
-            f_rhs[idx_inner] = zero(T)
-        end
+        f_rhs = prefactor .* r2 .* F_L
+        f_rhs[idx_inner] = zero(T)
 
         # Solve the linear system
-        uphi_L = A_mat \ f_rhs
+        uphi_L = tw_lu \ f_rhs
 
         # Store results
         uphi_coeffs[L] = uphi_L
@@ -1782,7 +1785,8 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
 
     # Determine boundary indices
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
-    idx_outer = idx_inner == 1 ? Nr : 1
+    r2 = r .^ 2
+    tw_lu = _thermal_wind_operator_lu(r, D1, idx_inner, mechanical_bc)
 
     for (L, F_L) in forcing
         if L < m_bs
@@ -1790,28 +1794,11 @@ function solve_thermal_wind_balance_3d!(uphi_coeffs::Dict{Int,Vector{T}},
         end
 
         # RHS for the ODE: r dŪ/dr + Ū = f(r)
-        f_rhs = prefactor .* (r.^2) .* F_L
-
-        # Build the system matrix: A = diag(r) @ D1 + I
-        A = Diagonal(r) * D1 + I
-        A_mat = Matrix(A)  # Convert to dense for modification
-
-        # Apply boundary conditions (inner BC only - first-order ODE)
-        if mechanical_bc == :no_slip
-            # Dirichlet: Ū = 0 at inner boundary only
-            A_mat[idx_inner, :] .= zero(T)
-            A_mat[idx_inner, idx_inner] = one(T)
-            f_rhs[idx_inner] = zero(T)
-
-        else  # stress_free
-            # Robin BC: dŪ/dr - Ū/r = 0 at inner boundary only
-            A_mat[idx_inner, :] = D1[idx_inner, :]
-            A_mat[idx_inner, idx_inner] -= one(T) / r[idx_inner]
-            f_rhs[idx_inner] = zero(T)
-        end
+        f_rhs = prefactor .* r2 .* F_L
+        f_rhs[idx_inner] = zero(T)
 
         # Solve the linear system
-        uphi_L = A_mat \ f_rhs
+        uphi_L = tw_lu \ f_rhs
 
         # Store results
         uphi_coeffs[L] = uphi_L

@@ -1,4 +1,5 @@
 using Test
+using LinearAlgebra
 using SparseArrays
 using Cross
 
@@ -255,6 +256,31 @@ end
     @test eltype(eigenvectors) === ComplexF32
 end
 
+@testset "Dense hydrodynamic solver accepts Float32 operators" begin
+    T = Float32
+    params = OnsetParams(
+        E = T(1e-3),
+        Pr = one(T),
+        Ra = T(100),
+        χ = T(0.35),
+        m = 1,
+        lmax = 3,
+        Nr = 8
+    )
+
+    result_or_error = try
+        solve(OnsetProblem(params); nev=1, sigma=zero(T), maxiter=20)
+    catch err
+        err
+    end
+
+    @test !(result_or_error isa Exception)
+    if !(result_or_error isa Exception)
+        @test eltype(result_or_error.eigenvalues) === ComplexF32
+        @test eltype(result_or_error.eigenvectors) === ComplexF32
+    end
+end
+
 @testset "Velocity reconstruction preserves Float32 precision and avoids synthesis temporaries" begin
     T = Float32
     params = OnsetParams(
@@ -294,6 +320,31 @@ end
     @test eltype(ψ) === ComplexF32
 end
 
+@testset "Triglobal reconstruction helpers preserve Float32 grids" begin
+    T = Float32
+    typed_grid = try
+        Cross._build_chebyshev_grid(8, T(0.35), one(T))
+    catch err
+        err
+    end
+    mixed_grid = try
+        Cross._build_chebyshev_grid(8, T(0.35), 1.0)
+    catch err
+        err
+    end
+
+    @test !(typed_grid isa Exception)
+    @test !(mixed_grid isa Exception)
+    if !(typed_grid isa Exception)
+        @test eltype(typed_grid.x) === T
+        @test eltype(typed_grid.D1) === T
+    end
+    if !(mixed_grid isa Exception)
+        @test eltype(mixed_grid.x) === T
+        @test eltype(mixed_grid.D1) === T
+    end
+end
+
 @testset "Axisymmetric basic-state extraction avoids eager zero defaults" begin
     T = Float64
     Nr = 48
@@ -322,4 +373,218 @@ end
     bytes = @allocated Cross.axisymmetric_basic_state(bs3d)
 
     @test bytes < 80_000
+end
+
+@testset "Typed sparse helpers avoid Float64 empty and boundary temporaries" begin
+    T = Float32
+    empty_terms = Tuple{T, SparseMatrixCSC{T, Int}}[]
+    empty_block = Cross.combine_terms(empty_terms)
+
+    @test eltype(empty_block) === T
+
+    boundary_values = try
+        Cross._chebyshev_boundary_values(8, :outer, T)
+    catch err
+        err
+    end
+    boundary_derivative = try
+        Cross._chebyshev_boundary_derivative(8, :inner, T)
+    catch err
+        err
+    end
+    boundary_second = try
+        Cross._chebyshev_boundary_second_derivative(8, :inner, T)
+    catch err
+        err
+    end
+
+    @test !(boundary_values isa Exception)
+    @test !(boundary_derivative isa Exception)
+    @test !(boundary_second isa Exception)
+    if !(boundary_values isa Exception)
+        @test eltype(boundary_values) === T
+    end
+    if !(boundary_derivative isa Exception)
+        @test eltype(boundary_derivative) === T
+    end
+    if !(boundary_second isa Exception)
+        @test eltype(boundary_second) === T
+    end
+end
+
+@testset "Thermal wind balance reuses mode-independent dense operator" begin
+    T = Float64
+    Nr = 48
+    cd = ChebyshevDiffn(Nr, T[0.35, 1.0], 2)
+    theta_coeffs = Dict{Int, Vector{T}}(
+        ℓ => fill(T(0.05) / T(ℓ + 1), Nr) for ℓ in 1:18)
+
+    uphi_coeffs = Dict{Int, Vector{T}}()
+    duphi_dr_coeffs = Dict{Int, Vector{T}}()
+    Cross.solve_thermal_wind_balance!(
+        uphi_coeffs, duphi_dr_coeffs, theta_coeffs, cd, T(0.35), one(T), T(100), one(T))
+
+    GC.gc()
+    uphi_coeffs = Dict{Int, Vector{T}}()
+    duphi_dr_coeffs = Dict{Int, Vector{T}}()
+    bytes = @allocated Cross.solve_thermal_wind_balance!(
+        uphi_coeffs, duphi_dr_coeffs, theta_coeffs, cd, T(0.35), one(T), T(100), one(T))
+
+    @test bytes < 1_000_000
+end
+
+@testset "Triglobal unweighted coupling avoids quadrature node allocation" begin
+    Cross.compute_sh_coupling_unweighted(3, 1, 2, 0, 3, 1)
+    GC.gc()
+    bytes = @allocated Cross.compute_sh_coupling_unweighted(3, 1, 2, 0, 3, 1)
+
+    @test bytes < 256
+end
+
+@testset "Triglobal shift-invert map reuses Krylov buffers" begin
+    A = spdiagm(0 => ComplexF64[2, 3, 4, 5])
+    B = spdiagm(0 => ComplexF64[1, 1, 1, 1])
+    F = lu(A - (0.1 + 1e-6im) * B)
+    shift_map = Cross._triglobal_shift_invert_map(F, B)
+    x = ComplexF64[1, 2, 3, 4]
+    y = similar(x)
+
+    mul!(y, shift_map, x)
+    @test y ≈ F \ (B * x)
+
+    GC.gc()
+    bytes = @allocated mul!(y, shift_map, x)
+    @test bytes < 1_000
+end
+
+@testset "Full meridional coupled solve reuses mode-independent radial work" begin
+    T = Float64
+    Nr = 32
+    lmax = 8
+    m = 1
+    cd = ChebyshevDiffn(Nr, T[0.35, 1.0], 2)
+    theta_coeffs = Dict{Tuple{Int,Int}, Vector{T}}(
+        (ℓ, m) => fill(T(0.05) / T(ℓ + 1), Nr) for ℓ in m:lmax)
+    uphi_coeffs = Dict{Tuple{Int,Int}, Vector{T}}()
+
+    function run_meridional(theta_coeffs, uphi_coeffs, cd)
+        ur_coeffs = Dict{Tuple{Int,Int}, Vector{T}}()
+        utheta_coeffs = Dict{Tuple{Int,Int}, Vector{T}}()
+        dur_dr_coeffs = Dict{Tuple{Int,Int}, Vector{T}}()
+        dutheta_dr_coeffs = Dict{Tuple{Int,Int}, Vector{T}}()
+        Cross.solve_meridional_coupled!(
+            ur_coeffs, utheta_coeffs, dur_dr_coeffs, dutheta_dr_coeffs,
+            theta_coeffs, uphi_coeffs, cd.x, cd.D1, cd.D2,
+            T(0.35), one(T), T(100), T(1e-3), one(T), m, lmax)
+        return ur_coeffs, utheta_coeffs
+    end
+
+    run_meridional(theta_coeffs, uphi_coeffs, cd)
+    GC.gc()
+    bytes = @allocated run_meridional(theta_coeffs, uphi_coeffs, cd)
+
+    @test bytes < 1_300_000
+end
+
+@testset "Triglobal shift-invert handles Float32 sparse LU promotion" begin
+    A = spdiagm(0 => ComplexF32[2, 3, 4, 5])
+    B = spdiagm(0 => ComplexF32[1, 1, 1, 1])
+    F = lu(A - (0.1f0 + 1f-6im) * B)
+    shift_map = Cross._triglobal_shift_invert_map(F, B)
+    x = ComplexF32[1, 2, 3, 4]
+    y = similar(x)
+
+    result_or_error = try
+        mul!(y, shift_map, x)
+        nothing
+    catch err
+        err
+    end
+
+    @test result_or_error === nothing
+    @test y ≈ ComplexF32.(F \ (B * x))
+end
+
+@testset "Public triglobal solve preserves Float32 result storage" begin
+    T = Float32
+    params = OnsetParams(
+        E = T(1e-3),
+        Pr = one(T),
+        Ra = T(100),
+        χ = T(0.35),
+        m = 0,
+        lmax = 3,
+        Nr = 8
+    )
+    cd = ChebyshevDiffn(params.Nr, T[params.χ, one(T)], 1)
+    empty = Dict{Tuple{Int,Int}, Vector{T}}()
+    bs3d = BasicState3D{T}(
+        lmax_bs = 0,
+        mmax_bs = 0,
+        Nr = params.Nr,
+        r = cd.x,
+        theta_coeffs = empty,
+        dtheta_dr_coeffs = copy(empty),
+        ur_coeffs = copy(empty),
+        utheta_coeffs = copy(empty),
+        uphi_coeffs = copy(empty),
+        dur_dr_coeffs = copy(empty),
+        dutheta_dr_coeffs = copy(empty),
+        duphi_dr_coeffs = copy(empty)
+    )
+
+    result_or_error = try
+        solve(TriglobalProblem(params, bs3d, 0:1); nev=1, sigma=zero(T), verbose=false)
+    catch err
+        err
+    end
+
+    @test !(result_or_error isa Exception)
+    if !(result_or_error isa Exception)
+        @test eltype(result_or_error.eigenvalues) === ComplexF32
+        @test eltype(result_or_error.eigenvectors) === ComplexF32
+    end
+end
+
+@testset "Symbolic spherical harmonic constructors preserve amplitude precision" begin
+    @test typeof(Y10(1.0f0)) === SphericalHarmonicBC{Float32}
+    @test typeof(Ylm(2, 1, 1.0f0)) === SphericalHarmonicBC{Float32}
+end
+
+@testset "Ultraspherical multiplication helpers preserve Float32 intermediates" begin
+    c = Cross.csl([0, 1, 2], Float32(1), 3, 2)
+    @test eltype(c) === Float32
+
+    a0 = zeros(Float32, 32)
+    a0[1] = 1
+    a0[3] = 0.25f0
+    Cross.multiplication_matrix(a0, Float32(1), 32)
+    GC.gc()
+    bytes = @allocated Cross.multiplication_matrix(a0, Float32(1), 32)
+
+    @test bytes < 80_000
+end
+
+@testset "Self-consistent basic state avoids avoidable vector temporaries" begin
+    T = Float64
+    cd = ChebyshevDiffn(24, T[0.35, 1.0], 4)
+    bc = Y22(T(0.02))
+    Cross.basic_state_selfconsistent(
+        cd, T(0.35), T(1e-3), T(100), one(T);
+        temperature_bc = bc,
+        lmax_bs = 4,
+        max_iterations = 1,
+        verbose = false
+    )
+
+    GC.gc()
+    bytes = @allocated Cross.basic_state_selfconsistent(
+        cd, T(0.35), T(1e-3), T(100), one(T);
+        temperature_bc = bc,
+        lmax_bs = 4,
+        max_iterations = 1,
+        verbose = false
+    )
+
+    @test bytes < 1_200_000
 end

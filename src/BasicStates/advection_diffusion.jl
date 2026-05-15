@@ -45,6 +45,21 @@ Fields:
     tolerance::T = T(1e-8)
 end
 
+_value_real_type(::Type{T}) where {T<:Real} = T
+_value_real_type(::Type{Complex{T}}) where {T<:Real} = T
+
+@inline _maxabs(v) = maximum(abs, v)
+
+function _maxabsdiff(a, b)
+    R = promote_type(_value_real_type(eltype(a)), _value_real_type(eltype(b)))
+    out = zero(R)
+    @inbounds for i in eachindex(a, b)
+        diff = abs(a[i] - b[i])
+        out = max(out, R(diff))
+    end
+    return out
+end
+
 
 """
     compute_phi_advection_spectral(theta_coeffs, uphi_coeffs, lmax_bs, mmax_bs, r)
@@ -89,7 +104,7 @@ function compute_phi_advection_spectral(
             end
             T_lm = theta_coeffs[(ℓ_T, m_bs)]
 
-            if maximum(abs.(T_lm)) < eps(T) * 100
+            if _maxabs(T_lm) < eps(T) * 100
                 continue
             end
 
@@ -100,7 +115,7 @@ function compute_phi_advection_spectral(
                 end
                 u_Lm = uphi_coeffs[(ℓ_u, m_bs)]
 
-                if maximum(abs.(u_Lm)) < eps(T) * 100
+                if _maxabs(u_Lm) < eps(T) * 100
                     continue
                 end
 
@@ -530,6 +545,7 @@ function solve_meridional_coupled!(
     total_size = n_ell * Nr
     A_full = zeros(T, total_size, total_size)
     RHS_full = zeros(T, total_size)
+    r2 = r .* r
 
     for (i_L, L) in enumerate(m_bs:lmax_bs)
         # Row indices for mode L
@@ -595,15 +611,22 @@ function solve_meridional_coupled!(
             # Build the operator block
             if abs(C_Lell) > eps(T) || abs(A_Lell) > eps(T)
                 # Operator: 2Ω × [C_Lell × D1 - (A_Lell/r)]
-                op_block = two_omega .* (C_Lell .* D1 .- Diagonal(A_Lell ./ r))
-                A_full[row_start:row_end, col_start:col_end] .= op_block
+                @views block = A_full[row_start:row_end, col_start:col_end]
+                @inbounds for j in 1:Nr
+                    for i in 1:Nr
+                        block[i, j] = two_omega * C_Lell * D1[i, j]
+                    end
+                    block[j, j] -= two_omega * A_Lell / r[j]
+                end
             end
 
             # Diagonal regularization (small term to ensure solvability)
             if L == ℓ
                 # Add small diagonal term for numerical stability
                 reg_coeff = two_omega * T(0.01) / T(max(L, 1))
-                A_full[row_start:row_end, col_start:col_end] .+= reg_coeff .* Matrix{T}(I, Nr, Nr)
+                @inbounds for i in row_start:row_end
+                    A_full[i, i] += reg_coeff
+                end
             end
         end
 
@@ -644,8 +667,9 @@ function solve_meridional_coupled!(
     for (i_ell, ℓ) in enumerate(m_bs:lmax_bs)
         idx_start = (i_ell - 1) * Nr + 1
         idx_end = i_ell * Nr
-        utheta_coeffs[(ℓ, m_bs)] = u_theta_vec[idx_start:idx_end]
-        dutheta_dr_coeffs[(ℓ, m_bs)] = D1 * u_theta_vec[idx_start:idx_end]
+        utheta_ℓ = u_theta_vec[idx_start:idx_end]
+        utheta_coeffs[(ℓ, m_bs)] = utheta_ℓ
+        dutheta_dr_coeffs[(ℓ, m_bs)] = D1 * utheta_ℓ
     end
 
     # =========================================================================
@@ -660,9 +684,20 @@ function solve_meridional_coupled!(
     #   ∂(sinθ Y_ℓm)/∂θ = d⁺_ℓm Y_{ℓ+1,m} + d⁻_ℓm Y_{ℓ-1,m}
     # =========================================================================
 
+    A_ur = copy(D1)
+    A_ur[idx_inner, :] .= zero(T)
+    A_ur[idx_inner, idx_inner] = one(T)
+    A_ur[idx_outer, :] .= zero(T)
+    A_ur[idx_outer, idx_outer] = one(T)
+    A_ur_lu = lu(A_ur)
+
+    source_ur = zeros(T, Nr)
+    rhs_ur = similar(r)
+    r2_ur = similar(r)
+
     for (i_L, L) in enumerate(m_bs:lmax_bs)
         # Source term for u_r at mode L
-        source_ur = zeros(T, Nr)
+        fill!(source_ur, zero(T))
 
         # Contribution from ∂(sinθ u_θ)/∂θ projected onto Y_Lm
         # sinθ u_θ Y_ℓm has ∂/∂θ that couples via d±
@@ -705,25 +740,15 @@ function solve_meridional_coupled!(
         # → D1 × (r² u_r) = r² × source_ur
         # With BC: u_r = 0 at boundaries
 
-        rhs_ur = (r.^2) .* source_ur
-
-        # Build operator for r² u_r
-        A_ur = copy(D1)
-
-        # Apply BC: r² u_r = 0 at boundaries (which means u_r = 0)
-        A_ur[idx_inner, :] .= zero(T)
-        A_ur[idx_inner, idx_inner] = one(T)
+        @. rhs_ur = r2 * source_ur
         rhs_ur[idx_inner] = zero(T)
-
-        A_ur[idx_outer, :] .= zero(T)
-        A_ur[idx_outer, idx_outer] = one(T)
         rhs_ur[idx_outer] = zero(T)
 
         # Solve for r² u_r
-        r2_ur = A_ur \ rhs_ur
+        ldiv!(r2_ur, A_ur_lu, rhs_ur)
 
         # Extract u_r
-        ur_L = r2_ur ./ (r.^2)
+        ur_L = r2_ur ./ r2
         ur_L[idx_inner] = zero(T)  # Enforce BC exactly
         ur_L[idx_outer] = zero(T)
 
@@ -800,7 +825,7 @@ function solve_meridional_simple!(
             end
 
             T_lm = theta_coeffs[(ℓ, m_bs)]
-            if maximum(abs.(T_lm)) < eps(T) * 100
+            if _maxabs(T_lm) < eps(T) * 100
                 ur_coeffs[(ℓ, m_bs)] = zeros(T, Nr)
                 utheta_coeffs[(ℓ, m_bs)] = zeros(T, Nr)
                 dur_dr_coeffs[(ℓ, m_bs)] = zeros(T, Nr)
@@ -1018,7 +1043,7 @@ function compute_full_advection_spectral(
             ur_lm = ur_coeffs[(ℓ, m_bs)]
             dT_dr_lm = dtheta_dr_coeffs[(ℓ, m_bs)]
 
-            if maximum(abs.(ur_lm)) < eps(T) * 100 || maximum(abs.(dT_dr_lm)) < eps(T) * 100
+            if _maxabs(ur_lm) < eps(T) * 100 || _maxabs(dT_dr_lm) < eps(T) * 100
                 continue
             end
 
@@ -1043,7 +1068,7 @@ function compute_full_advection_spectral(
             end
             T_lm = theta_coeffs[(ℓ_T, m_bs)]
 
-            if maximum(abs.(T_lm)) < eps(T) * 100
+            if _maxabs(T_lm) < eps(T) * 100
                 continue
             end
 
@@ -1055,7 +1080,7 @@ function compute_full_advection_spectral(
                 L_out = ℓ_T - 1
                 if haskey(utheta_coeffs, (L_out, m_bs))
                     utheta_L = utheta_coeffs[(L_out, m_bs)]
-                    if maximum(abs.(utheta_L)) > eps(T) * 100
+                    if _maxabs(utheta_L) > eps(T) * 100
                         if !haskey(forcing, (L_out, m_bs))
                             forcing[(L_out, m_bs)] = zeros(T, Nr)
                         end
@@ -1069,7 +1094,7 @@ function compute_full_advection_spectral(
                 L_out = ℓ_T + 1
                 if haskey(utheta_coeffs, (L_out, m_bs))
                     utheta_L = utheta_coeffs[(L_out, m_bs)]
-                    if maximum(abs.(utheta_L)) > eps(T) * 100
+                    if _maxabs(utheta_L) > eps(T) * 100
                         if !haskey(forcing, (L_out, m_bs))
                             forcing[(L_out, m_bs)] = zeros(T, Nr)
                         end
@@ -1095,7 +1120,7 @@ function compute_full_advection_spectral(
             end
             T_lm = theta_coeffs[(ℓ_T, m_bs)]
 
-            if maximum(abs.(T_lm)) < eps(T) * 100
+            if _maxabs(T_lm) < eps(T) * 100
                 continue
             end
 
@@ -1105,7 +1130,7 @@ function compute_full_advection_spectral(
                 end
                 u_Lm = uphi_coeffs[(ℓ_u, m_bs)]
 
-                if maximum(abs.(u_Lm)) < eps(T) * 100
+                if _maxabs(u_Lm) < eps(T) * 100
                     continue
                 end
 
@@ -1360,7 +1385,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
 
         # Scale by 1/κ
         for (key, val) in advection_source
-            advection_source[key] = val ./ κ_eff
+            val ./= κ_eff
         end
 
         # ---------------------------------------------------------------------
@@ -1377,7 +1402,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
 
                 # Only solve if there's forcing OR this mode has BC amplitude
                 has_bc = abs(outer_val) > eps(T) * 100 || (ℓ == 0 && m == 0)
-                has_forcing = maximum(abs.(forcing)) > eps(T) * 100
+                has_forcing = _maxabs(forcing) > eps(T) * 100
 
                 if has_bc || has_forcing
                     T_lm, dT_lm = solve_poisson_mode(
@@ -1406,7 +1431,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
                 end
             end
 
-            if isempty(theta_m) || all(maximum(abs.(v)) < eps(T) * 100 for v in values(theta_m))
+            if isempty(theta_m) || all(_maxabs(v) < eps(T) * 100 for v in values(theta_m))
                 continue
             end
 
@@ -1431,7 +1456,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
 
             # Copy results to storage
             for ℓ in 0:lmax_bs
-                if haskey(uphi_m, ℓ) && maximum(abs.(uphi_m[ℓ])) > eps(T) * 100
+                if haskey(uphi_m, ℓ) && _maxabs(uphi_m[ℓ]) > eps(T) * 100
                     uphi_coeffs[(ℓ, m_bs)] = uphi_m[ℓ]
                     duphi_dr_coeffs[(ℓ, m_bs)] = duphi_dr_m[ℓ]
                 end
@@ -1445,7 +1470,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
         for (key, theta_new) in theta_coeffs
             if haskey(theta_prev, key)
                 theta_old = theta_prev[key]
-                change = maximum(abs.(theta_new .- theta_old))
+                change = _maxabsdiff(theta_new, theta_old)
                 max_change = max(max_change, change)
             end
         end

@@ -901,38 +901,43 @@ end
 
 Build simple Chebyshev grid and differentiation matrix.
 """
-function _build_chebyshev_grid(Nr::Int, ri::T, ro::T) where T<:Real
+function _build_chebyshev_grid(Nr::Int, ri::T, ro::Real) where {T<:Real}
+    roT = T(ro)
+
     # Chebyshev nodes on [-1, 1]
-    k = collect(0:Nr-1)
-    x_cheb = -cos.(π .* k ./ (Nr - 1))
+    x_cheb = [-cos(T(pi) * T(k) / T(Nr - 1)) for k in 0:(Nr - 1)]
 
     # Map to [ri, ro]
-    x = ri .+ (ro - ri) .* (x_cheb .+ 1) ./ 2
+    x = ri .+ (roT - ri) .* (x_cheb .+ one(T)) ./ T(2)
 
     # Differentiation matrix
-    D1 = _chebyshev_diff_matrix(Nr) .* (2 / (ro - ri))
+    D1 = _chebyshev_diff_matrix(Nr, T) .* (T(2) / (roT - ri))
 
     return (x=x, D1=D1)
 end
 
 
-function _chebyshev_diff_matrix(N::Int)
-    D = zeros(Float64, N, N)
-    x = -cos.(π .* (0:N-1) ./ (N - 1))
+_chebyshev_diff_matrix(N::Int) = _chebyshev_diff_matrix(N, Float64)
 
-    c = [2.0; ones(N - 2); 2.0]
-    c[1:2:end] .*= -1
+function _chebyshev_diff_matrix(N::Int, ::Type{T}) where {T<:Real}
+    D = zeros(T, N, N)
+    x = [-cos(T(pi) * T(k) / T(N - 1)) for k in 0:(N - 1)]
+
+    c = ones(T, N)
+    c[1] = T(2)
+    c[end] = T(2)
+    c[1:2:end] .*= -one(T)
 
     for i in 1:N
+        row_sum = zero(T)
         for j in 1:N
             if i != j
-                D[i, j] = c[i] / (c[j] * (x[i] - x[j]))
+                val = c[i] / (c[j] * (x[i] - x[j]))
+                D[i, j] = val
+                row_sum += val
             end
         end
-    end
-
-    for i in 1:N
-        D[i, i] = -sum(D[i, :])
+        D[i, i] = -row_sum
     end
 
     return D

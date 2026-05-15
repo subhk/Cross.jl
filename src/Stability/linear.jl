@@ -577,7 +577,7 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   tol::Float64=1e-10,
                                   maxiter::Int=1000,
                                   which::Symbol=:LR,
-                                  sigma::Union{Nothing,Number}=nothing) where {T<:Float64}
+                                  sigma::Union{Nothing,Number}=nothing) where {T<:Real}
 
     A_full, B_full, interior_dofs, boundary_dofs = assemble_matrices(op)
 
@@ -609,7 +609,7 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
                                        tol::Float64,
                                        maxiter::Int,
                                        which::Symbol,
-                                       sigma::Union{Nothing,Number}=nothing) where {T<:Float64}
+                                       sigma::Union{Nothing,Number}=nothing) where {T<:Real}
     """
     OPTIMIZED shift-invert solver using KrylovKit.
     Automatically selects shift based on 'which' parameter for onset problems.

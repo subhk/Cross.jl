@@ -47,11 +47,17 @@ end
 
 """Combine `(coefficient, sparse_matrix)` terms into one sparse radial block."""
 function combine_terms(terms::AbstractVector{<:Tuple})
-    isempty(terms) && return spzeros(Float64, 0, 0)
+    isempty(terms) && return spzeros(_empty_terms_output_eltype(eltype(terms)), 0, 0)
     Tmat = eltype(terms[1][2])
     Tout = (Tmat <: Complex || any(term -> !(term[1] isa Real), terms)) ?
            _complex_eltype(Tmat) : Tmat
     return _combine_terms(Tout, terms)
+end
+
+@inline _empty_terms_output_eltype(::Type) = Float64
+@inline function _empty_terms_output_eltype(
+    ::Type{<:Tuple{C, <:SparseMatrixCSC{T, Int}}}) where {C, T}
+    return (T <: Complex || !(C <: Real)) ? _complex_eltype(T) : T
 end
 
 """Shared implementation for `combine_terms` with a chosen output scalar type."""

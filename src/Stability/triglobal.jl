@@ -162,7 +162,7 @@ function _nonzero_basic_state_modes_3d(basic_state::BasicState3D; tol=1e-14)
 
     for coefficient_dict in coefficient_dicts
         for ((ℓ, m_bs), coeff) in coefficient_dict
-            if m_bs != 0 && maximum(abs.(coeff)) > tol
+            if m_bs != 0 && _maxabs(coeff) > tol
                 push!(modes, (ℓ, m_bs))
             end
         end
@@ -358,10 +358,10 @@ end
 """Return true when an axisymmetric basic state has any active temperature or flow."""
 function _has_nonzero_basic_state(basic_state::BasicState{T}; tol=1e-14) where T
     for coeff in values(basic_state.theta_coeffs)
-        maximum(abs.(coeff)) > tol && return true
+        _maxabs(coeff) > tol && return true
     end
     for coeff in values(basic_state.uphi_coeffs)
-        maximum(abs.(coeff)) > tol && return true
+        _maxabs(coeff) > tol && return true
     end
     return false
 end
@@ -597,7 +597,7 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
     r_bs = basic_state.r
 
     # Pre-interpolate basic state coefficients to operator grid if grids differ
-    needs_interpolation = (length(r_bs) != length(r)) || (maximum(abs.(r_bs .- r)) > 1e-10)
+    needs_interpolation = (length(r_bs) != length(r)) || (_maxabsdiff(r_bs, r) > 1e-10)
 
     # Cache interpolated coefficients
     theta_interp = Dict{Tuple{Int,Int}, Vector{T}}()
@@ -793,7 +793,7 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
             C = _project_coupling_block(C, single_mode_ops[m_to], single_mode_ops[m_from])
 
             # Store if non-zero
-            if maximum(abs.(C)) > 1e-16
+            if _maxabs(C) > 1e-16
                 coupling_ops[(m_from, m_to)] = C
                 n_nonzero_couplings += 1
             end
@@ -850,7 +850,7 @@ function add_advection_coupling!(C::Matrix{Complex{T}},
     end
     uphi_bs = uphi_coeffs[key_bs]
 
-    if maximum(abs.(uphi_bs)) < 1e-14
+    if _maxabs(uphi_bs) < 1e-14
         return  # Negligible basic state flow
     end
 
@@ -913,7 +913,7 @@ function add_metric_coupling!(C::Matrix{Complex{T}},
         return
     end
     uphi_bs = uphi_coeffs[key_bs]
-    if maximum(abs.(uphi_bs)) < 1e-14
+    if _maxabs(uphi_bs) < 1e-14
         return
     end
 
@@ -983,7 +983,7 @@ function add_temperature_gradient_coupling!(C::Matrix{Complex{T}},
     end
     dtheta_dr_bs = dtheta_dr_coeffs[key_bs]
 
-    if maximum(abs.(dtheta_dr_bs)) < 1e-14
+    if _maxabs(dtheta_dr_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1069,7 +1069,7 @@ function add_shear_coupling!(C::Matrix{Complex{T}},
     end
     duphi_dr_bs = duphi_dr_coeffs[key_bs]
 
-    if maximum(abs.(duphi_dr_bs)) < 1e-14
+    if _maxabs(duphi_dr_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1139,7 +1139,7 @@ function add_temperature_gradient_theta_coupling!(C::Matrix{Complex{T}},
         return
     end
     theta_bs = theta_coeffs[key_bs]
-    if maximum(abs.(theta_bs)) < 1e-14
+    if _maxabs(theta_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1219,7 +1219,7 @@ function add_temperature_gradient_phi_coupling!(C::Matrix{Complex{T}},
         return
     end
     theta_bs = theta_coeffs[key_bs]
-    if maximum(abs.(theta_bs)) < 1e-14
+    if _maxabs(theta_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1294,7 +1294,7 @@ function add_shear_theta_coupling!(C::Matrix{Complex{T}},
         return
     end
     uphi_bs = uphi_coeffs[key_bs]
-    if maximum(abs.(uphi_bs)) < 1e-14
+    if _maxabs(uphi_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1356,7 +1356,7 @@ function add_radial_advection_coupling!(C::Matrix{Complex{T}},
     ur_coeffs_bs = get(ur_coeffs, key_bs, nothing)
     ur_coeffs_bs === nothing && return
 
-    if maximum(abs.(ur_coeffs_bs)) < 1e-14
+    if _maxabs(ur_coeffs_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1416,7 +1416,7 @@ function add_meridional_advection_coupling!(C::Matrix{Complex{T}},
     utheta_bs = get(utheta_coeffs, key_bs, nothing)
     utheta_bs === nothing && return
 
-    if maximum(abs.(utheta_bs)) < 1e-14
+    if _maxabs(utheta_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1473,7 +1473,7 @@ function add_radial_velocity_shear!(C::Matrix{Complex{T}},
     dur_dr_bs = get(dur_dr_coeffs, key_bs, nothing)
     dur_dr_bs === nothing && return
 
-    if maximum(abs.(dur_dr_bs)) < 1e-14
+    if _maxabs(dur_dr_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1530,7 +1530,7 @@ function add_meridional_velocity_shear!(C::Matrix{Complex{T}},
     dutheta_dr_bs = get(dutheta_dr_coeffs, key_bs, nothing)
     dutheta_dr_bs === nothing && return
 
-    if maximum(abs.(dutheta_dr_bs)) < 1e-14
+    if _maxabs(dutheta_dr_bs) < 1e-14
         return
     end
     bs_scale = _basic_state_mode_scale(m_bs, T)
@@ -1690,7 +1690,6 @@ function compute_sh_coupling_unweighted(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
     # Use Gauss-Chebyshev quadrature of the first kind
     # Nodes: x_i = cos((2i-1)π/(2n))
     # Weights: w_i = π/n
-    nodes = [cos((2*i - 1) * π / (2 * n_quad)) for i in 1:n_quad]
     weight = π / n_quad
 
     # Compute the integral using quadrature
@@ -1699,7 +1698,9 @@ function compute_sh_coupling_unweighted(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
 
     integral = 0.0
 
-    for x in nodes
+    for i in 1:n_quad
+        x = cos((2*i - 1) * π / (2 * n_quad))
+
         # Compute normalized associated Legendre functions at x
         # Y_ℓm = N_ℓm P_ℓ^m(x) e^{imφ}
         # The φ integral gives 2π δ_{m1+m2, m3}, already checked above
@@ -1733,6 +1734,16 @@ function compute_sh_coupling_unweighted(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
     integral *= 2.0 * π
 
     return integral
+end
+
+"""Build a mutating triglobal shift-invert map `(A - σB) \\ (B*x)`."""
+function _triglobal_shift_invert_map(F, B::SparseMatrixCSC{Complex{T},Int}) where {T<:Real}
+    C = Complex{T}
+    tmp = Vector{C}(undef, size(B, 1))
+    solve_rhs = Vector{eltype(F)}(undef, size(B, 1))
+    solve_sol = similar(solve_rhs)
+    return LinearMap{C}(ShiftInvertLinearMap(F, B, tmp, solve_rhs, solve_sol),
+                        size(B, 1); ismutating=true)
 end
 
 
@@ -1948,12 +1959,8 @@ function solve_block_eigenvalue_problem(A::SparseMatrixCSC{Complex{T},Int},
         println("  Running Krylov iteration...")
     end
 
-    # Define the linear map for shift-invert
-    tmp_rhs = zeros(Complex{T}, n)
-    function shift_invert_map(x)
-        mul!(tmp_rhs, B, x)
-        return F \ tmp_rhs
-    end
+    # Define the mutating linear map for shift-invert
+    shift_invert_map = _triglobal_shift_invert_map(F, B)
 
     # Create a random initial vector
     x0 = randn(Complex{T}, n)
@@ -1964,7 +1971,7 @@ function solve_block_eigenvalue_problem(A::SparseMatrixCSC{Complex{T},Int},
         shift_invert_map,
         x0, nev, :LM;
         krylovdim = max(2*nev + 10, 30),
-        tol = 1e-8,
+        tol = T(1e-8),
         maxiter = 200
     )
 

@@ -220,11 +220,11 @@ function _meridional_coupling(l_input::Int, l_bs::Int, l_output::Int, m::Int)
 end
 
 """Quadrature cache for repeated azimuthal coupling integrals at fixed m."""
-struct AzimuthalCouplingCache
+struct AzimuthalCouplingCache{T<:Real}
     m::Int
-    weight::Float64
-    y_m::Matrix{Float64}
-    y_0::Matrix{Float64}
+    weight::T
+    y_m::Matrix{T}
+    y_0::Matrix{T}
 end
 
 # Note: _double_factorial, _associated_legendre_table, and _normalization_table
@@ -232,15 +232,20 @@ end
 
 """Precompute normalized Legendre tables used by azimuthal coupling matrices."""
 function _build_azimuthal_coupling_cache(m::Int, lmax_m::Int, lmax_0::Int)
+    return _build_azimuthal_coupling_cache(m, lmax_m, lmax_0, Float64)
+end
+
+function _build_azimuthal_coupling_cache(m::Int, lmax_m::Int, lmax_0::Int,
+                                         ::Type{T}) where {T<:Real}
     ntheta = max(64, 4 * max(lmax_m, lmax_0) + 1)
-    k = collect(1:ntheta)
-    mu = cos.((2 .* k .- 1) .* (pi / (2 * ntheta)))
-    weight = pi / ntheta
+    inv_denominator = one(T) / (T(2) * T(ntheta))
+    mu = [cos(T(2k - 1) * T(pi) * inv_denominator) for k in 1:ntheta]
+    weight = T(pi) / T(ntheta)
 
     Pm = _associated_legendre_table(m, lmax_m, mu)
     P0 = _associated_legendre_table(0, lmax_0, mu)
-    Nm = _normalization_table(m, lmax_m)
-    N0 = _normalization_table(0, lmax_0)
+    Nm = _normalization_table(T, m, lmax_m)
+    N0 = _normalization_table(T, 0, lmax_0)
 
     y_m = similar(Pm)
     for i in axes(Pm, 1)
@@ -256,10 +261,10 @@ function _build_azimuthal_coupling_cache(m::Int, lmax_m::Int, lmax_0::Int)
 end
 
 """Compute the quadrature coupling matrix for multiplication by one l_bs mode."""
-function _azimuthal_coupling_matrix(cache::AzimuthalCouplingCache, l_bs::Int)
+function _azimuthal_coupling_matrix(cache::AzimuthalCouplingCache{T}, l_bs::Int) where {T<:Real}
     y_bs = view(cache.y_0, l_bs + 1, :)
     weighted = cache.y_m .* y_bs'
-    return (cache.y_m * weighted') .* (2 * pi * cache.weight)
+    return (cache.y_m * weighted') .* (T(2) * T(pi) * cache.weight)
 end
 
 """
@@ -315,9 +320,9 @@ function build_basic_state_operators(basic_state::BasicState{T},
     ℓ_pert_set = Set(ℓ_pert_modes)
     lmax_pert = maximum(ℓ_pert_modes)
     lmax_bs = maximum(ℓ_bs_modes)
-    coupling_tol = 1e-14
+    coupling_tol = T(1e-14)
 
-    azimuthal_cache = _build_azimuthal_coupling_cache(m, lmax_pert, lmax_bs)
+    azimuthal_cache = _build_azimuthal_coupling_cache(m, lmax_pert, lmax_bs, T)
 
     @info "Building basic state operators" ℓ_bs_modes=ℓ_bs_modes ℓ_pert_modes=ℓ_pert_modes m=m
 

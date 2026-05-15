@@ -486,7 +486,7 @@ function spectral_to_physical(coeffs::AbstractDict{Int, <:AbstractVector{<:Compl
                                grid::MeridionalGrid,
                                Nr::Int)
     Nθ = length(grid.θ)
-    CT = _coefficient_eltype(coeffs)
+    CT = _coefficient_eltype(coeffs, grid)
     f_phys = zeros(CT, Nr, Nθ)
 
     for (ℓ, f_lm) in coeffs
@@ -509,6 +509,16 @@ function _coefficient_eltype(coeffs::AbstractDict)
     end
     return ComplexF64
 end
+
+function _coefficient_eltype(coeffs::AbstractDict, grid::MeridionalGrid{T}) where {T<:Real}
+    for coeff in values(coeffs)
+        return eltype(coeff)
+    end
+    return _coefficient_eltype_from_valtype(valtype(typeof(coeffs)), Complex{T})
+end
+
+_coefficient_eltype_from_valtype(::Type{<:AbstractVector{CT}}, default) where {CT<:Complex} = CT
+_coefficient_eltype_from_valtype(::Type, default) = default
 
 
 # =============================================================================

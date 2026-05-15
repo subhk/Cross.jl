@@ -233,10 +233,10 @@ function solve(problem::MHDProblem{T, BS};
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(
         A, B; nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma)
 
-    evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, Float64)
+    evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
 
     return StabilityResult(
-        Vector{ComplexF64}(eigenvalues),
+        Vector{Complex{T}}(eigenvalues),
         evec_matrix,
         problem;
         extra=(operator=op, interior_dofs=interior_dofs, assembly_info=info_assembly)

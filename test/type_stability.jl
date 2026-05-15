@@ -117,6 +117,11 @@ end
     @test !isempty(blocks)
     @test all(eltype(block) == ComplexF32 for block in blocks)
 
+    cache = Cross._build_azimuthal_coupling_cache(1, 4, 4, T)
+    @test typeof(cache.weight) === T
+    @test eltype(cache.y_m) === T
+    @test eltype(cache.y_0) === T
+
     summary = analyze_basic_state(bs; verbose=false)
     @test valtype(typeof(summary)) === NamedTuple{(:θ_max, :uphi_max), Tuple{T, T}}
 end
@@ -126,6 +131,22 @@ end
 
     _, _, _, results = Cross.find_onset_parameters(
         failing_factory, 1e-3, 0.35, 1.0, [1, 2])
+
+    @test keytype(typeof(results)) === Int
+    @test valtype(typeof(results)) !== Any
+end
+
+@testset "Critical-Rayleigh helpers accept Float32 inputs" begin
+    T = Float32
+    failing_builder = Ra -> error("synthetic failure")
+    failing_factory = (E, χ, Pr, m) -> error("synthetic failure")
+
+    @test_throws ErrorException Cross.find_critical_rayleigh(
+        failing_builder, T(1e-3), T(0.35), 1;
+        Ra_min = T(1), Ra_max = T(2), tol = T(1e-3), growth_tol = T(1e-3))
+
+    _, _, _, results = Cross.find_onset_parameters(
+        failing_factory, T(1e-3), T(0.35), one(T), [1])
 
     @test keytype(typeof(results)) === Int
     @test valtype(typeof(results)) !== Any
@@ -201,6 +222,28 @@ end
     @test eltype(axial_bpol_block) === ComplexF32
 end
 
+@testset "Public MHD solve preserves Float32 result storage" begin
+    T = Float32
+    params = MHDParams(
+        E = T(1e-3),
+        Pr = one(T),
+        Pm = one(T),
+        Ra = T(100),
+        Le = one(T),
+        ricb = T(0.35),
+        m = 1,
+        lmax = 3,
+        N = 8,
+        B0_type = dipole,
+        B0_amplitude = one(T)
+    )
+
+    result = solve(MHDProblem(params); nev=1, sigma=zero(T), maxiter=20)
+
+    @test eltype(result.eigenvalues) === ComplexF32
+    @test eltype(result.eigenvectors) === ComplexF32
+end
+
 @testset "Sparse eigensolver preserves Float32 storage" begin
     A = spdiagm(0 => ComplexF32[1, 2, 3, 4, 5, 6])
     B = spdiagm(0 => ComplexF32[1, 1, 1, 1, 1, 1])
@@ -238,6 +281,10 @@ end
     bytes = @allocated Cross.spectral_to_physical(P_coeffs, grid, params.Nr)
 
     @test bytes < 100_000
+
+    empty_coeffs = Dict{Int, Vector{ComplexF32}}()
+    empty_field = Cross.spectral_to_physical(empty_coeffs, grid, params.Nr)
+    @test eltype(empty_field) === ComplexF32
 
     r = Float32.(range(0.35, 1; length=8))
     θ = Float32.(range(0.1, 3.0; length=10))

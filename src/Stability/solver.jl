@@ -263,10 +263,18 @@ bisection fallback) to mirror the strategy used in Kore.
 - `σ_c::ComplexF64`: Full eigenvalue at onset
 - `iterations::Int`: Number of iterations required
 """
-function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Float64, m::Int;
-                               Ra_min::Float64=1e4, Ra_max::Float64=1e10,
-                               tol::Float64=1e-6, growth_tol::Float64=1e-6,
-                               max_iter::Int=50, nev::Int=1)
+function find_critical_rayleigh(operator_builder::Function, E::TE, χ::Tχ, m::Int;
+                               Ra_min=1e4, Ra_max=1e10,
+                               tol=1e-6, growth_tol=1e-6,
+                               max_iter::Int=50, nev::Int=1) where {TE<:Real, Tχ<:Real}
+
+    T = promote_type(TE, Tχ)
+    E = T(E)
+    χ = T(χ)
+    Ra_min = T(Ra_min)
+    Ra_max = T(Ra_max)
+    tol = T(tol)
+    growth_tol = T(growth_tol)
 
     @info "Finding critical Rayleigh number" E=E χ=χ m=m bracket="[$Ra_min, $Ra_max]" tol=tol growth_tol=growth_tol
 
@@ -278,27 +286,27 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         eigenvalues, _, info = solve_eigenvalue_problem(
             A, B;
             nev = solver_nev,
-            sigma = 0.0,
+            sigma = zero(T),
             which = :LR,
             selection = :closest_real
         )
 
-        σ = eigenvalues[1]
-        σ_r = real(σ)
+        σ = Complex{T}(eigenvalues[1])
+        σ_r = T(real(σ))
 
         @debug "Growth rate evaluated" Ra=Ra σ_r=σ_r
         return σ_r, σ
     end
 
     # Cache evaluations to avoid redundant solves when scanning
-    known_values = Dict{Float64, Tuple{Float64, ComplexF64}}()
+    known_values = Dict{T, Tuple{T, Complex{T}}}()
 
     function growth_rate_cached(Ra)
-        Ra_key = Float64(Ra)
+        Ra_key = T(Ra)
         if haskey(known_values, Ra_key)
             return known_values[Ra_key]
         end
-        σ_r, σ = _eval_growth_rate(Ra)
+        σ_r, σ = _eval_growth_rate(Ra_key)
         known_values[Ra_key] = (σ_r, σ)
         return σ_r, σ
     end
@@ -324,14 +332,14 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         while σ_r_min * σ_r_max > 0 && expansion_iter < max_bracket_expansions
             expansion_iter += 1
             if σ_r_min > 0 && σ_r_max > 0
-                Ra_min /= 2.0
+                Ra_min /= T(2)
                 @debug "Bracket expansion: lowering Ra_min" iter=expansion_iter Ra_min=Ra_min
                 if Ra_min <= 0
                     error("Lower Rayleigh bound reached non-positive value while trying to bracket root.")
                 end
                 σ_r_min, σ_min = growth_rate_cached(Ra_min)
             elseif σ_r_min < 0 && σ_r_max < 0
-                Ra_max *= 2.0
+                Ra_max *= T(2)
                 @debug "Bracket expansion: raising Ra_max" iter=expansion_iter Ra_max=Ra_max
                 σ_r_max, σ_max = growth_rate_cached(Ra_max)
             else
@@ -340,8 +348,8 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         end
         if σ_r_min * σ_r_max > 0
             @debug "Expansion exhausted, performing logarithmic scan..."
-            min_scan = max(Ra_min, 10.0) / 10.0
-            max_scan = Ra_max * 10.0
+            min_scan = max(Ra_min, T(10)) / T(10)
+            max_scan = Ra_max * T(10)
             if min_scan <= 0
                 min_scan = tol
             end
@@ -351,8 +359,8 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
 
             bracket_found = false
             last_ra = nothing
-            lastσ_r = 0.0
-            lastσ = 0.0 + 0.0im
+            lastσ_r = zero(T)
+            lastσ = zero(Complex{T})
 
             for Ra in scan_values
                 σ_r, σ = growth_rate_cached(Ra)
@@ -385,7 +393,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         error("Brent search requires opposite signs at the bracket endpoints.")
     end
 
-    abs_tol = tol * max(abs(Ra_a), abs(Ra_b), 1.0)
+    abs_tol = tol * max(abs(Ra_a), abs(Ra_b), one(T))
     d = Ra_b - Ra_a
     e = d
 
@@ -404,8 +412,8 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             σ_a, σ_b, σ_c = σ_b, σ_c, σ_b
         end
 
-        tol_act = 2 * eps(abs(Ra_b)) + abs_tol
-        m = 0.5 * (Ra_c - Ra_b)
+        tol_act = T(2) * eps(abs(Ra_b)) + abs_tol
+        half_width = T(0.5) * (Ra_c - Ra_b)
 
         @debug "Brent iteration" iter=iter bracket="[$(Ra_a), $(Ra_c)]" Ra=Ra_b σ_r_a=σ_r_a σ_r_b=σ_r_b σ_r_c=σ_r_c
 
@@ -414,40 +422,41 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
             ω_c = imag(σ_b)
             @info "Critical Ra converged" Ra_c=Ra_c_final ω_c=ω_c σ_r=σ_r_b iterations=iter
             return Ra_c_final, ω_c, σ_b, iter
-        elseif abs(m) <= tol_act
+        elseif abs(half_width) <= tol_act
             @debug "Bracket tolerance met but growth rate exceeds growth_tol" abs_σ_r=abs(σ_r_b) growth_tol=growth_tol
         end
 
         if abs(e) < tol_act || abs(σ_r_a) <= abs(σ_r_b)
-            d = m
-            e = m
+            d = half_width
+            e = half_width
             @debug "Using bisection step"
         else
             s = σ_r_b / σ_r_a
             if Ra_a == Ra_c
                 # Secant method
-                p = 2 * m * s
-                q = 1 - s
+                p = T(2) * half_width * s
+                q = one(T) - s
             else
                 q = σ_r_a / σ_r_c
                 r = σ_r_b / σ_r_c
-                p = s * (2 * m * q * (q - r) - (Ra_b - Ra_a) * (r - 1))
-                q = (q - 1) * (r - 1) * (s - 1)
+                p = s * (T(2) * half_width * q * (q - r) - (Ra_b - Ra_a) * (r - one(T)))
+                q = (q - one(T)) * (r - one(T)) * (s - one(T))
             end
 
-            if p > 0
+            if p > zero(T)
                 q = -q
             else
                 p = -p
             end
 
-            if (2p < 3m * q - abs(tol_act * q)) && (p < abs(0.5 * e * q))
+            if (T(2) * p < T(3) * half_width * q - abs(tol_act * q)) &&
+                    (p < abs(T(0.5) * e * q))
                 e = d
                 d = p / q
                 @debug "Using inverse interpolation step"
             else
-                d = m
-                e = m
+                d = half_width
+                e = half_width
                 @debug "Interpolation rejected, falling back to bisection"
             end
         end
@@ -459,7 +468,7 @@ function find_critical_rayleigh(operator_builder::Function, E::Float64, χ::Floa
         if abs(d) > tol_act
             Ra_b += d
         else
-            Ra_b += m >= 0 ? tol_act : -tol_act
+            Ra_b += half_width >= 0 ? tol_act : -tol_act
         end
 
         σ_r_b, σ_b = growth_rate_cached(Ra_b)
@@ -493,20 +502,25 @@ Find onset parameters (Ra_c, m_c, ω_c) by scanning over azimuthal wavenumbers.
 - `results::Dict`: Full results for all m values tested
 """
 function find_onset_parameters(operator_builder_factory::Function,
-                               E::Float64, χ::Float64, Pr::Float64,
+                               E::TE, χ::Tχ, Pr::TP,
                                m_range::AbstractVector{Int};
-                               kwargs...)
+                               kwargs...) where {TE<:Real, Tχ<:Real, TP<:Real}
+
+    T = promote_type(TE, Tχ, TP)
+    E = T(E)
+    χ = T(χ)
+    Pr = T(Pr)
 
     @info "Scanning for onset parameters" E=E χ=χ Pr=Pr m_range=m_range
 
     SuccessResult = NamedTuple{(:Ra_c, :ω_c, :σ_c, :iters),
-        Tuple{Float64, Float64, ComplexF64, Int}}
+        Tuple{T, T, Complex{T}, Int}}
     ErrorResult = NamedTuple{(:error,), Tuple{Exception}}
     Result = Union{SuccessResult, ErrorResult}
     results = Dict{Int, Result}()
-    Ra_c_min = Inf
+    Ra_c_min = T(Inf)
     m_c = 0
-    ω_c_best = 0.0
+    ω_c_best = zero(T)
 
     for m in m_range
         @info "Testing mode" m=m
@@ -518,12 +532,12 @@ function find_onset_parameters(operator_builder_factory::Function,
                 operator_builder, E, χ, m; kwargs...
             )
 
-            results[m] = SuccessResult((Ra_c, ω_c, σ_c, iters))
+            results[m] = SuccessResult((T(Ra_c), T(ω_c), Complex{T}(σ_c), iters))
 
             if Ra_c < Ra_c_min
-                Ra_c_min = Ra_c
+                Ra_c_min = T(Ra_c)
                 m_c = m
-                ω_c_best = ω_c
+                ω_c_best = T(ω_c)
             end
 
             @info "Mode result" m=m Ra_c=Ra_c ω_c=ω_c

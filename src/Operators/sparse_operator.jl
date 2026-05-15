@@ -126,37 +126,37 @@ struct SparseStabilityOperator{T<:Real}
 
     # Radial operators for poloidal velocity (section u, 2curl)
     # Naming: r{power}_D{deriv}_u
-    r0_D0_u::SparseMatrixCSC{Float64,Int}
-    r2_D0_u::SparseMatrixCSC{Float64,Int}
-    r2_D2_u::SparseMatrixCSC{Float64,Int}  # For viscous diffusion
-    r3_D0_u::SparseMatrixCSC{Float64,Int}  # For Coriolis coupling
-    r3_D1_u::SparseMatrixCSC{Float64,Int}
-    r4_D0_u::SparseMatrixCSC{Float64,Int}  # For buoyancy coupling
-    r4_D1_u::SparseMatrixCSC{Float64,Int}  # For Coriolis coupling
-    r4_D2_u::SparseMatrixCSC{Float64,Int}
-    r3_D3_u::SparseMatrixCSC{Float64,Int}
-    r4_D4_u::SparseMatrixCSC{Float64,Int}
+    r0_D0_u::SparseMatrixCSC{T,Int}
+    r2_D0_u::SparseMatrixCSC{T,Int}
+    r2_D2_u::SparseMatrixCSC{T,Int}  # For viscous diffusion
+    r3_D0_u::SparseMatrixCSC{T,Int}  # For Coriolis coupling
+    r3_D1_u::SparseMatrixCSC{T,Int}
+    r4_D0_u::SparseMatrixCSC{T,Int}  # For buoyancy coupling
+    r4_D1_u::SparseMatrixCSC{T,Int}  # For Coriolis coupling
+    r4_D2_u::SparseMatrixCSC{T,Int}
+    r3_D3_u::SparseMatrixCSC{T,Int}
+    r4_D4_u::SparseMatrixCSC{T,Int}
 
     # Radial operators for toroidal velocity (section v, 1curl)
-    r0_D0_v::SparseMatrixCSC{Float64,Int}
-    r1_D0_v::SparseMatrixCSC{Float64,Int}  # For toroidal-poloidal coupling
-    r1_D1_v::SparseMatrixCSC{Float64,Int}
-    r2_D0_v::SparseMatrixCSC{Float64,Int}  # For Coriolis (toroidal diagonal)
-    r2_D1_v::SparseMatrixCSC{Float64,Int}  # For toroidal-poloidal coupling
-    r2_D2_v::SparseMatrixCSC{Float64,Int}
-    r3_D0_v::SparseMatrixCSC{Float64,Int}  # Extra weighting for coupling terms
-    r4_D1_v::SparseMatrixCSC{Float64,Int}
+    r0_D0_v::SparseMatrixCSC{T,Int}
+    r1_D0_v::SparseMatrixCSC{T,Int}  # For toroidal-poloidal coupling
+    r1_D1_v::SparseMatrixCSC{T,Int}
+    r2_D0_v::SparseMatrixCSC{T,Int}  # For Coriolis (toroidal diagonal)
+    r2_D1_v::SparseMatrixCSC{T,Int}  # For toroidal-poloidal coupling
+    r2_D2_v::SparseMatrixCSC{T,Int}
+    r3_D0_v::SparseMatrixCSC{T,Int}  # Extra weighting for coupling terms
+    r4_D1_v::SparseMatrixCSC{T,Int}
 
     # Radial operators for temperature (section h)
-    r0_D0_h::SparseMatrixCSC{Float64,Int}
-    r1_D0_h::SparseMatrixCSC{Float64,Int}  # For differential heating
-    r1_D1_h::SparseMatrixCSC{Float64,Int}
-    r2_D0_h::SparseMatrixCSC{Float64,Int}
-    r2_D1_h::SparseMatrixCSC{Float64,Int}  # For differential heating
-    r2_D2_h::SparseMatrixCSC{Float64,Int}
-    r3_D0_h::SparseMatrixCSC{Float64,Int}  # For differential heating
-    r3_D2_h::SparseMatrixCSC{Float64,Int}  # For differential heating
-    r4_D0_h::SparseMatrixCSC{Float64,Int}
+    r0_D0_h::SparseMatrixCSC{T,Int}
+    r1_D0_h::SparseMatrixCSC{T,Int}  # For differential heating
+    r1_D1_h::SparseMatrixCSC{T,Int}
+    r2_D0_h::SparseMatrixCSC{T,Int}
+    r2_D1_h::SparseMatrixCSC{T,Int}  # For differential heating
+    r2_D2_h::SparseMatrixCSC{T,Int}
+    r3_D0_h::SparseMatrixCSC{T,Int}  # For differential heating
+    r3_D2_h::SparseMatrixCSC{T,Int}  # For differential heating
+    r4_D0_h::SparseMatrixCSC{T,Int}
 
     # l-mode information
     ll_top::Vector{Int}  # l values for poloidal (equatorially symmetric)

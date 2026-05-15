@@ -1,4 +1,5 @@
 using Test
+using SparseArrays
 using Cross
 
 @testset "Public wrapper type stability" begin
@@ -142,6 +143,8 @@ end
         N = 16
     )
     sparse_op = SparseStabilityOperator(sparse_params)
+    @test eltype(sparse_op.r0_D0_u) === T
+    @test eltype(sparse_op.r2_D2_u) === T
     A_sparse, B_sparse, _, _ = assemble_sparse_matrices(sparse_op)
 
     @test eltype(A_sparse) === ComplexF32
@@ -161,10 +164,52 @@ end
         B0_amplitude = one(T)
     )
     mhd_op = MHDStabilityOperator(mhd_params)
+    @test eltype(mhd_op.r0_D0_u) === T
+    @test eltype(mhd_op.r0_D0_f) === T
+    @test valtype(typeof(mhd_op.background_ops)) === SparseMatrixCSC{T, Int}
+    @test eltype(Cross.sparse_background_operator(4, 0, 4, mhd_params)) === T
+
+    induction_block = Cross.operator_induction_poloidal_from_v(mhd_op, 2, 1, -1)
+    lorentz_block = Cross.operator_lorentz_poloidal_offdiag(mhd_op, 2, 1, -1, mhd_params.Le)
+    @test eltype(induction_block) === ComplexF32
+    @test eltype(lorentz_block) === ComplexF32
+
     A_mhd, B_mhd, _, _ = assemble_mhd_matrices(mhd_op)
 
     @test eltype(A_mhd) === ComplexF32
     @test eltype(B_mhd) === ComplexF32
+
+    axial_params = MHDParams(
+        E = T(1e-3),
+        Pr = one(T),
+        Pm = one(T),
+        Ra = T(100),
+        Le = one(T),
+        ricb = T(0.35),
+        m = 1,
+        lmax = 3,
+        N = 8,
+        B0_type = axial,
+        B0_amplitude = one(T)
+    )
+    axial_op = MHDStabilityOperator(axial_params)
+    axial_btor_block = Cross.operator_lorentz_poloidal_offdiag(
+        axial_op, 2, 1, -1, axial_params.Le)
+    axial_bpol_block = Cross.operator_lorentz_poloidal_from_bpol(
+        axial_op, 3, 1, -2, axial_params.Le)
+    @test eltype(axial_btor_block) === ComplexF32
+    @test eltype(axial_bpol_block) === ComplexF32
+end
+
+@testset "Sparse eigensolver preserves Float32 storage" begin
+    A = spdiagm(0 => ComplexF32[1, 2, 3, 4, 5, 6])
+    B = spdiagm(0 => ComplexF32[1, 1, 1, 1, 1, 1])
+
+    eigenvalues, eigenvectors, _ = Cross.solve_eigenvalue_problem(
+        A, B; nev=1, sigma=0.0f0, krylovdim=4, maxiter=20, verbosity=0)
+
+    @test eltype(eigenvalues) === ComplexF32
+    @test eltype(eigenvectors) === ComplexF32
 end
 
 @testset "Velocity reconstruction preserves Float32 precision and avoids synthesis temporaries" begin
@@ -193,6 +238,13 @@ end
     bytes = @allocated Cross.spectral_to_physical(P_coeffs, grid, params.Nr)
 
     @test bytes < 100_000
+
+    r = Float32.(range(0.35, 1; length=8))
+    θ = Float32.(range(0.1, 3.0; length=10))
+    ur_grid = randn(ComplexF32, length(r), length(θ))
+    uθ_grid = randn(ComplexF32, length(r), length(θ))
+    ψ = Cross.meridional_streamfunction(ur_grid, uθ_grid, r, θ, 0)
+    @test eltype(ψ) === ComplexF32
 end
 
 @testset "Axisymmetric basic-state extraction avoids eager zero defaults" begin

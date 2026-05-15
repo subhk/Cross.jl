@@ -16,24 +16,42 @@
 using Logging
 
 
-struct ShiftInvertLinearMap{LUType,MatType,VecType}
+struct ShiftInvertLinearMap{LUType,MatType,VecType,SolveVecType}
     lu::LUType
     B::MatType
     temp::VecType
+    solve_rhs::SolveVecType
+    solve_sol::SolveVecType
 end
 
 function (M::ShiftInvertLinearMap)(y, x)
     mul!(M.temp, M.B, x)
-    ldiv!(y, M.lu, M.temp)
+    copyto!(M.solve_rhs, M.temp)
+    ldiv!(M.solve_sol, M.lu, M.solve_rhs)
+    copyto!(y, M.solve_sol)
     return y
 end
 
-function construct_linear_map(A_shifted::SparseMatrixCSC{ComplexF64,Int},
-                              B::SparseMatrixCSC{ComplexF64,Int})
+function _solver_real_eltype(::Type{T}) where {T<:Real}
+    return float(T)
+end
+function _solver_real_eltype(::Type{Complex{T}}) where {T<:Real}
+    return T
+end
+
+function construct_linear_map(A_shifted::SparseMatrixCSC{T,Int},
+                              B::SparseMatrixCSC{T,Int}) where {T<:Complex}
     lu_factor = lu(A_shifted)
-    tmp = Vector{ComplexF64}(undef, size(B, 1))
-    return LinearMap{ComplexF64}(ShiftInvertLinearMap(lu_factor, B, tmp),
-                                 size(B, 1); ismutating=true)
+    tmp = Vector{T}(undef, size(B, 1))
+    solve_tmp = Vector{eltype(lu_factor)}(undef, size(B, 1))
+    solve_sol = similar(solve_tmp)
+    return LinearMap{T}(ShiftInvertLinearMap(lu_factor, B, tmp, solve_tmp, solve_sol),
+                        size(B, 1); ismutating=true)
+end
+
+function _is_krylov_convergence_error(err)
+    return isdefined(KrylovKit, :ConvergenceError) &&
+           err isa getfield(KrylovKit, :ConvergenceError)
 end
 
 """
@@ -59,8 +77,8 @@ with shift-invert method.
 - `verbosity::Int=0`: Verbosity level for KrylovKit
 
 # Returns
-- `eigenvalues::Vector{ComplexF64}`: Computed eigenvalues σ = σ_r + iω
-- `eigenvectors::Matrix{ComplexF64}`: Corresponding eigenvectors
+- `eigenvalues::Vector{Complex}`: Computed eigenvalues σ = σ_r + iω
+- `eigenvectors::Matrix{Complex}`: Corresponding eigenvectors
 - `info::Dict`: Information about the solve
 
 # Notes
@@ -132,28 +150,30 @@ function _krylov_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
                             _allow_retry::Bool=true)
 
     n = size(A, 1)
+    T = promote_type(_solver_real_eltype(eltype(A)), _solver_real_eltype(eltype(B)))
+    C = Complex{T}
 
     # Smart shift selection for onset problems (matching linear_stability.jl)
     if sigma === nothing
         if which == :LR
-            σ_eff = ComplexF64(10.0, 0.0)
+            σ_eff = C(T(10), zero(T))
         elseif which == :LI
-            σ_eff = ComplexF64(0.0, 10.0)
+            σ_eff = C(zero(T), T(10))
         else
-            σ_eff = ComplexF64(1.0, 0.0)
+            σ_eff = C(one(T), zero(T))
         end
         @debug "Auto-selected shift" σ=σ_eff which=which
     else
-        σ_eff = ComplexF64(sigma)
+        σ_eff = C(sigma)
         @debug "User-specified shift" σ=σ_eff
     end
 
-    A_complex = SparseMatrixCSC{ComplexF64, Int}(A)
-    B_complex = SparseMatrixCSC{ComplexF64, Int}(B)
+    A_complex = SparseMatrixCSC{C, Int}(A)
+    B_complex = SparseMatrixCSC{C, Int}(B)
     shift_matrix = A_complex - σ_eff * B_complex
 
     linmap = construct_linear_map(shift_matrix, B_complex)
-    x0 = randn(ComplexF64, n)
+    x0 = randn(C, n)
 
     kdim = krylovdim === nothing ? 300 : krylovdim
 
@@ -169,13 +189,13 @@ function _krylov_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
             verbosity = verbosity
         )
 
-        keep = [abs(val) > eps(Float64) for val in values]
+        keep = [abs(val) > eps(T) for val in values]
         any(keep) || error("No finite eigenvalues returned by Krylov solver")
         values = values[keep]
         vectors = vectors[keep]
 
-        eigenvalues = ComplexF64.(σ_eff .+ inv.(values))
-        eigenvectors = hcat(map(v -> ComplexF64.(v), vectors)...)
+        eigenvalues = C.(σ_eff .+ inv.(values))
+        eigenvectors = hcat(map(v -> C.(v), vectors)...)
 
         perm = _sort_indices(eigenvalues, selection)
         eigenvalues = eigenvalues[perm]
@@ -197,7 +217,7 @@ function _krylov_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
 
         return eigenvalues, eigenvectors, info
     catch err
-        if sigma !== nothing && _allow_retry && err isa KrylovKit.ConvergenceError
+        if sigma !== nothing && _allow_retry && _is_krylov_convergence_error(err)
             @warn "Shift-invert Krylov solver failed to converge; retrying without shift" exception=(err, catch_backtrace())
             return _krylov_eigensolve(A, B;
                                       nev = nev,

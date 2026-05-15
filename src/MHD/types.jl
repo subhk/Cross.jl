@@ -343,84 +343,84 @@ struct MHDStabilityOperator{T<:Real}
     params::MHDParams{T}
 
     # Velocity operators (same as hydrodynamic case)
-    r0_D0_u::SparseMatrixCSC{Float64,Int}
-    r2_D0_u::SparseMatrixCSC{Float64,Int}
-    r2_D2_u::SparseMatrixCSC{Float64,Int}
-    r3_D0_u::SparseMatrixCSC{Float64,Int}
-    r3_D1_u::SparseMatrixCSC{Float64,Int}
-    r4_D0_u::SparseMatrixCSC{Float64,Int}
-    r4_D1_u::SparseMatrixCSC{Float64,Int}
-    r4_D2_u::SparseMatrixCSC{Float64,Int}
-    r3_D3_u::SparseMatrixCSC{Float64,Int}
-    r4_D4_u::SparseMatrixCSC{Float64,Int}
+    r0_D0_u::SparseMatrixCSC{T,Int}
+    r2_D0_u::SparseMatrixCSC{T,Int}
+    r2_D2_u::SparseMatrixCSC{T,Int}
+    r3_D0_u::SparseMatrixCSC{T,Int}
+    r3_D1_u::SparseMatrixCSC{T,Int}
+    r4_D0_u::SparseMatrixCSC{T,Int}
+    r4_D1_u::SparseMatrixCSC{T,Int}
+    r4_D2_u::SparseMatrixCSC{T,Int}
+    r3_D3_u::SparseMatrixCSC{T,Int}
+    r4_D4_u::SparseMatrixCSC{T,Int}
 
-    r0_D0_v::SparseMatrixCSC{Float64,Int}
-    r1_D0_v::SparseMatrixCSC{Float64,Int}
-    r1_D1_v::SparseMatrixCSC{Float64,Int}
-    r2_D0_v::SparseMatrixCSC{Float64,Int}
-    r2_D1_v::SparseMatrixCSC{Float64,Int}
-    r2_D2_v::SparseMatrixCSC{Float64,Int}
+    r0_D0_v::SparseMatrixCSC{T,Int}
+    r1_D0_v::SparseMatrixCSC{T,Int}
+    r1_D1_v::SparseMatrixCSC{T,Int}
+    r2_D0_v::SparseMatrixCSC{T,Int}
+    r2_D1_v::SparseMatrixCSC{T,Int}
+    r2_D2_v::SparseMatrixCSC{T,Int}
 
     # Dipole field operators for poloidal velocity (u) - shift +2
     # These are conditionally populated when B0_type == dipole && ricb > 0
-    r5_D0_u::SparseMatrixCSC{Float64,Int}  # Replaces r³D⁰ → r⁵D⁰ (Coriolis offdiag)
-    r5_D1_u::SparseMatrixCSC{Float64,Int}  # Replaces r³D¹ → r⁵D¹
-    r6_D0_u::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D⁰ → r⁶D⁰ (buoyancy)
-    r6_D1_u::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D¹ → r⁶D¹ (Coriolis offdiag)
-    r6_D2_u::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D² → r⁶D²
-    r5_D3_u::SparseMatrixCSC{Float64,Int}  # Replaces r³D³ → r⁵D³
-    r6_D4_u::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D⁴ → r⁶D⁴
+    r5_D0_u::SparseMatrixCSC{T,Int}  # Replaces r³D⁰ → r⁵D⁰ (Coriolis offdiag)
+    r5_D1_u::SparseMatrixCSC{T,Int}  # Replaces r³D¹ → r⁵D¹
+    r6_D0_u::SparseMatrixCSC{T,Int}  # Replaces r⁴D⁰ → r⁶D⁰ (buoyancy)
+    r6_D1_u::SparseMatrixCSC{T,Int}  # Replaces r⁴D¹ → r⁶D¹ (Coriolis offdiag)
+    r6_D2_u::SparseMatrixCSC{T,Int}  # Replaces r⁴D² → r⁶D²
+    r5_D3_u::SparseMatrixCSC{T,Int}  # Replaces r³D³ → r⁵D³
+    r6_D4_u::SparseMatrixCSC{T,Int}  # Replaces r⁴D⁴ → r⁶D⁴
 
     # Dipole field operators for toroidal velocity (v) - shift +3
-    r3_D0_v::SparseMatrixCSC{Float64,Int}  # Replaces r⁰D⁰ → r³D⁰ (viscous)
-    r4_D0_v::SparseMatrixCSC{Float64,Int}  # Replaces r¹D⁰ → r⁴D⁰ (Coriolis coupling)
-    r4_D1_v::SparseMatrixCSC{Float64,Int}  # Replaces r¹D¹ → r⁴D¹ (viscous)
-    r5_D0_v::SparseMatrixCSC{Float64,Int}  # Replaces r²D⁰ → r⁵D⁰ (time deriv, Coriolis)
-    r5_D1_v::SparseMatrixCSC{Float64,Int}  # Replaces r²D¹ → r⁵D¹ (Coriolis coupling)
-    r5_D2_v::SparseMatrixCSC{Float64,Int}  # Replaces r²D² → r⁵D² (viscous)
+    r3_D0_v::SparseMatrixCSC{T,Int}  # Replaces r⁰D⁰ → r³D⁰ (viscous)
+    r4_D0_v::SparseMatrixCSC{T,Int}  # Replaces r¹D⁰ → r⁴D⁰ (Coriolis coupling)
+    r4_D1_v::SparseMatrixCSC{T,Int}  # Replaces r¹D¹ → r⁴D¹ (viscous)
+    r5_D0_v::SparseMatrixCSC{T,Int}  # Replaces r²D⁰ → r⁵D⁰ (time deriv, Coriolis)
+    r5_D1_v::SparseMatrixCSC{T,Int}  # Replaces r²D¹ → r⁵D¹ (Coriolis coupling)
+    r5_D2_v::SparseMatrixCSC{T,Int}  # Replaces r²D² → r⁵D² (viscous)
 
     # Magnetic field operators for poloidal field (f)
-    r0_D0_f::SparseMatrixCSC{Float64,Int}
-    r1_D0_f::SparseMatrixCSC{Float64,Int}
-    r1_D1_f::SparseMatrixCSC{Float64,Int}
-    r2_D0_f::SparseMatrixCSC{Float64,Int}
-    r2_D1_f::SparseMatrixCSC{Float64,Int}
-    r2_D2_f::SparseMatrixCSC{Float64,Int}
-    r3_D1_f::SparseMatrixCSC{Float64,Int}
+    r0_D0_f::SparseMatrixCSC{T,Int}
+    r1_D0_f::SparseMatrixCSC{T,Int}
+    r1_D1_f::SparseMatrixCSC{T,Int}
+    r2_D0_f::SparseMatrixCSC{T,Int}
+    r2_D1_f::SparseMatrixCSC{T,Int}
+    r2_D2_f::SparseMatrixCSC{T,Int}
+    r3_D1_f::SparseMatrixCSC{T,Int}
 
     # Dipole field operators for magnetic poloidal (f) - shift +2
-    r4_D0_f::SparseMatrixCSC{Float64,Int}  # Replaces r²D⁰ → r⁴D⁰ (time deriv)
-    r4_D2_f::SparseMatrixCSC{Float64,Int}  # Replaces r²D² → r⁴D² (diffusion)
-    r5_D3_f::SparseMatrixCSC{Float64,Int}  # Replaces r³D³ → r⁵D³ (diffusion)
-    r6_D4_f::SparseMatrixCSC{Float64,Int}  # Replaces r⁴D⁴ → r⁶D⁴ (diffusion)
+    r4_D0_f::SparseMatrixCSC{T,Int}  # Replaces r²D⁰ → r⁴D⁰ (time deriv)
+    r4_D2_f::SparseMatrixCSC{T,Int}  # Replaces r²D² → r⁴D² (diffusion)
+    r5_D3_f::SparseMatrixCSC{T,Int}  # Replaces r³D³ → r⁵D³ (diffusion)
+    r6_D4_f::SparseMatrixCSC{T,Int}  # Replaces r⁴D⁴ → r⁶D⁴ (diffusion)
 
     # Magnetic field operators for toroidal field (g)
-    r0_D0_g::SparseMatrixCSC{Float64,Int}
-    r1_D0_g::SparseMatrixCSC{Float64,Int}
-    r1_D1_g::SparseMatrixCSC{Float64,Int}
-    r2_D0_g::SparseMatrixCSC{Float64,Int}
-    r2_D1_g::SparseMatrixCSC{Float64,Int}
-    r2_D2_g::SparseMatrixCSC{Float64,Int}
+    r0_D0_g::SparseMatrixCSC{T,Int}
+    r1_D0_g::SparseMatrixCSC{T,Int}
+    r1_D1_g::SparseMatrixCSC{T,Int}
+    r2_D0_g::SparseMatrixCSC{T,Int}
+    r2_D1_g::SparseMatrixCSC{T,Int}
+    r2_D2_g::SparseMatrixCSC{T,Int}
 
     # Dipole field operators for magnetic toroidal (g) - shift +3
-    r3_D0_g::SparseMatrixCSC{Float64,Int}  # Replaces r⁰D⁰ → r³D⁰ (diffusion)
-    r4_D0_g::SparseMatrixCSC{Float64,Int}  # Replaces r¹D⁰ → r⁴D⁰ (coupling)
-    r4_D1_g::SparseMatrixCSC{Float64,Int}  # Replaces r¹D¹ → r⁴D¹ (diffusion)
-    r5_D0_g::SparseMatrixCSC{Float64,Int}  # Replaces r²D⁰ → r⁵D⁰ (time deriv)
-    r5_D2_g::SparseMatrixCSC{Float64,Int}  # Replaces r²D² → r⁵D² (diffusion)
+    r3_D0_g::SparseMatrixCSC{T,Int}  # Replaces r⁰D⁰ → r³D⁰ (diffusion)
+    r4_D0_g::SparseMatrixCSC{T,Int}  # Replaces r¹D⁰ → r⁴D⁰ (coupling)
+    r4_D1_g::SparseMatrixCSC{T,Int}  # Replaces r¹D¹ → r⁴D¹ (diffusion)
+    r5_D0_g::SparseMatrixCSC{T,Int}  # Replaces r²D⁰ → r⁵D⁰ (time deriv)
+    r5_D2_g::SparseMatrixCSC{T,Int}  # Replaces r²D² → r⁵D² (diffusion)
 
     # Temperature operators
-    r0_D0_h::SparseMatrixCSC{Float64,Int}
-    r1_D0_h::SparseMatrixCSC{Float64,Int}
-    r1_D1_h::SparseMatrixCSC{Float64,Int}
-    r2_D0_h::SparseMatrixCSC{Float64,Int}
-    r2_D1_h::SparseMatrixCSC{Float64,Int}
-    r2_D2_h::SparseMatrixCSC{Float64,Int}
-    r3_D0_h::SparseMatrixCSC{Float64,Int}
-    r3_D2_h::SparseMatrixCSC{Float64,Int}
+    r0_D0_h::SparseMatrixCSC{T,Int}
+    r1_D0_h::SparseMatrixCSC{T,Int}
+    r1_D1_h::SparseMatrixCSC{T,Int}
+    r2_D0_h::SparseMatrixCSC{T,Int}
+    r2_D1_h::SparseMatrixCSC{T,Int}
+    r2_D2_h::SparseMatrixCSC{T,Int}
+    r3_D0_h::SparseMatrixCSC{T,Int}
+    r3_D2_h::SparseMatrixCSC{T,Int}
 
     # Background field operators cache (r_power, h_order, derivative)
-    background_ops::Dict{Tuple{Int,Int,Int}, SparseMatrixCSC{Float64,Int}}
+    background_ops::Dict{Tuple{Int,Int,Int}, SparseMatrixCSC{T,Int}}
 
     # Mode structure
     ll_u::Vector{Int}  # l-modes for poloidal velocity
@@ -541,7 +541,7 @@ function MHDStabilityOperator(params::MHDParams{T}) where {T}
         r3_D0_g = dummy; r4_D0_g = dummy; r4_D1_g = dummy; r5_D0_g = dummy; r5_D2_g = dummy
     end
 
-    background_ops = Dict{Tuple{Int,Int,Int}, SparseMatrixCSC{Float64,Int}}()
+    background_ops = Dict{Tuple{Int,Int,Int}, SparseMatrixCSC{T,Int}}()
 
     # Determine l-mode structure
     ll_u, ll_v = compute_mhd_l_modes(params.m, params.lmax, params.symm, params.B0_type)
@@ -665,7 +665,7 @@ function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int
     ro = one(T)
 
     if B0_type == no_field
-        return spzeros(Float64, N + 1, N + 1)
+        return spzeros(T, N + 1, N + 1)
     end
 
     if B0_type == dipole && ri == 0
@@ -677,31 +677,31 @@ function sparse_background_operator(r_power::Int, h_order::Int, deriv_order::Int
     end
 
     if B0_type == axial && h_order ≥ 2
-        return spzeros(Float64, N + 1, N + 1)
+        return spzeros(T, N + 1, N + 1)
     end
 
     scale = _radial_scale(ri, ro)
 
-    D = sparse(1.0I, N + 1, N + 1)
+    D = sparse(one(T)I, N + 1, N + 1)
     λ = 0
     for _ in 1:deriv_order
-        Dλ = ultraspherical_derivative(λ, N)
+        Dλ = ultraspherical_derivative(T, λ, N)
         D = (scale * Dλ) * D
         λ += 1
     end
 
     if deriv_order > 0
-        S_chain = sparse(1.0I, N + 1, N + 1)
+        S_chain = sparse(one(T)I, N + 1, N + 1)
         for lam in 0:(deriv_order - 1)
-            S_chain = ultraspherical_conversion(lam, N) * S_chain
+            S_chain = ultraspherical_conversion(T, lam, N) * S_chain
         end
         D = sparse(S_chain \ D)
     end
 
-    coeffs = chebyshev_coefficients(r -> background_profile_value(r, B0_type, h_order, r_power),
+    coeffs = chebyshev_coefficients(T, r -> background_profile_value(r, B0_type, h_order, r_power),
                                     N + 1, ri, ro)
 
-    M = multiplication_matrix(coeffs, 0.0, N + 1; vector_parity=0)
+    M = multiplication_matrix(coeffs, zero(T), N + 1; vector_parity=0)
     return sparse(M * D)
 end
 

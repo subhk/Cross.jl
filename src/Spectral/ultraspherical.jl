@@ -58,33 +58,36 @@ end
 
 Sparse conversion matrix S^(λ) that maps C^(λ) coefficients to C^(λ+1).
 """
-function ultraspherical_conversion(λ::Real, N::Int)
+ultraspherical_conversion(λ::Real, N::Int) = ultraspherical_conversion(Float64, λ, N)
+
+function ultraspherical_conversion(::Type{T}, λ::Real, N::Int) where {T<:Real}
     rows = Int[]
     cols = Int[]
-    vals = Float64[]
+    vals = T[]
+    λT = T(λ)
 
-    if λ == 0.0
+    if iszero(λ)
         # Special Chebyshev → C^(1) conversion (Kore Slam with λ=0)
         for n in 0:N
             push!(rows, n + 1)
             push!(cols, n + 1)
-            push!(vals, n == 0 ? 1.0 : 0.5)
+            push!(vals, n == 0 ? one(T) : T(0.5))
         end
         for n in 0:(N - 2)
             push!(rows, n + 1)
             push!(cols, n + 3)
-            push!(vals, -0.5)
+            push!(vals, T(-0.5))
         end
     else
         for n in 0:N
             push!(rows, n + 1)
             push!(cols, n + 1)
-            push!(vals, λ / (λ + n))
+            push!(vals, λT / (λT + T(n)))
         end
         for n in 0:(N - 2)
             push!(rows, n + 1)
             push!(cols, n + 3)
-            push!(vals, -λ / (λ + n + 2))
+            push!(vals, -λT / (λT + T(n + 2)))
         end
     end
 
@@ -201,18 +204,21 @@ Entry D[n,n+1] = n+1 for λ=0, and D[n,n+1] = 2λ for λ>0
 - [`ultraspherical_conversion`](@ref): Convert between C^(λ) bases
 - [`sparse_radial_operator`](@ref): Combines conversion + differentiation
 """
-function ultraspherical_derivative(λ::Real, N::Int)
+ultraspherical_derivative(λ::Real, N::Int) = ultraspherical_derivative(Float64, λ, N)
+
+function ultraspherical_derivative(::Type{T}, λ::Real, N::Int) where {T<:Real}
     rows = Int[]
     cols = Int[]
-    vals = Float64[]
+    vals = T[]
+    λT = T(λ)
 
     for n in 0:(N-1)
         push!(rows, n+1)
         push!(cols, n+2)  # b_n comes from a_{n+1}
-        if λ == 0.0
-            push!(vals, n + 1)
+        if iszero(λ)
+            push!(vals, T(n + 1))
         else
-            push!(vals, 2.0 * (λ + n))
+            push!(vals, T(2) * (λT + T(n)))
         end
     end
 
@@ -236,62 +242,77 @@ For ricb>0, the Chebyshev domain [-1,1] is mapped to [ricb, rcmb].
 """
 function chebyshev_coefficients(power::Int, N::Int, ri::Real, ro::Real;
                                 tol::Real=1e-9)
-    x = [cos(π * (i + 0.5) / N) for i in 0:N-1]
+    T = float(promote_type(typeof(ri), typeof(ro)))
+    return chebyshev_coefficients(T, power, N, ri, ro; tol=tol)
+end
 
-    if ri == 0
-        r = ro .* x
+function chebyshev_coefficients(::Type{T}, power::Int, N::Int, ri::Real, ro::Real;
+                                tol::Real=1e-9) where {T<:Real}
+    x = [T(cos(π * (i + 0.5) / N)) for i in 0:N-1]
+    riT = T(ri)
+    roT = T(ro)
+
+    if iszero(ri)
+        r = roT .* x
     else
-        r = @. ri + (ro - ri) * (x + 1) / 2
+        r = @. riT + (roT - riT) * (x + one(T)) / T(2)
     end
 
     f_vals = r .^ power
 
-    coeffs = zeros(N)
+    coeffs = zeros(T, N)
     for k in 0:N-1
-        s = zero(eltype(f_vals))
-        for (i, xi) in enumerate(x)
-            s += f_vals[i] * cos(π * k * (i - 0.5) / N)
+        s = zero(T)
+        for i in eachindex(x)
+            s += f_vals[i] * T(cos(π * k * (i - 0.5) / N))
         end
-        coeffs[k+1] = (2.0 / N) * s
+        coeffs[k+1] = (T(2) / T(N)) * s
     end
 
-    coeffs[1] /= 2.0
-    coeffs[abs.(coeffs) .<= tol] .= 0.0
+    coeffs[1] /= T(2)
+    coeffs[abs.(coeffs) .<= T(tol)] .= zero(T)
     return coeffs
 end
 
 function chebyshev_coefficients(f::Function, N::Int, ri::Real, ro::Real;
                                 tol::Real=1e-9)
+    T = float(promote_type(typeof(ri), typeof(ro)))
+    return chebyshev_coefficients(T, f, N, ri, ro; tol=tol)
+end
+
+function chebyshev_coefficients(::Type{T}, f::Function, N::Int, ri::Real, ro::Real;
+                                tol::Real=1e-9) where {T<:Real}
     # Evaluate function at Chebyshev-Gauss points
-    x = [cos(π * (i + 0.5) / N) for i in 0:N-1]
+    x = [T(cos(π * (i + 0.5) / N)) for i in 0:N-1]
+    riT = T(ri)
+    roT = T(ro)
 
     r = similar(x)
-    if ri == 0
+    if iszero(ri)
         @inbounds for i in eachindex(x)
-            r[i] = ro * x[i]
+            r[i] = roT * x[i]
         end
     else
-        scale = (ro - ri) / 2
-        shift = (ro + ri) / 2
+        scale = (roT - riT) / T(2)
+        shift = (roT + riT) / T(2)
         @inbounds for i in eachindex(x)
             r[i] = scale * x[i] + shift
         end
     end
 
-    f_vals = map(f, r)
-    T = eltype(f_vals)
+    f_vals = T.(map(f, r))
     coeffs = zeros(T, N)
 
     for k in 0:N-1
         s = zero(T)
-        for (i, xi) in enumerate(x)
-            s += f_vals[i] * cos(π * k * (i - 0.5) / N)
+        for i in eachindex(x)
+            s += f_vals[i] * T(cos(π * k * (i - 0.5) / N))
         end
-        coeffs[k+1] = (2 / N) * s
+        coeffs[k+1] = (T(2) / T(N)) * s
     end
 
-    coeffs[1] /= 2
-    coeffs[abs.(coeffs) .<= tol] .= zero(T)
+    coeffs[1] /= T(2)
+    coeffs[abs.(coeffs) .<= T(tol)] .= zero(T)
     return coeffs
 end
 
@@ -374,19 +395,20 @@ Parameters:
 - vector_parity: 0 for inner core (no parity optimization),
                  ±1 for no inner core (parity optimization)
 """
-function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
-                              vector_parity::Int=0)
+function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
+                              vector_parity::Int=0) where {T<:Real}
     # Check if coefficients are non-zero
-    if sum(abs.(a0)) == 0
-        return sparse(zeros(N, N))
+    if all(iszero, a0)
+        return spzeros(T, N, N)
     end
+    λT = T(λ)
 
     # Find bandwidth
     nonzero_idx = findall(x -> x != 0, a0)
     bw = maximum(nonzero_idx) - 1  # 0-indexed
 
     # Extend coefficient vector
-    a1 = zeros(2 * N)
+    a1 = zeros(T, 2 * N)
     copyto!(a1, a0)
 
     # Determine row and column ranges based on parity
@@ -413,7 +435,7 @@ function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
         # Gegenbauer case: use recurrence relations
         rows = Int[]
         cols = Int[]
-        vals = Float64[]
+        vals = T[]
 
         for j in jrange
             k1 = max(0, j - bw - 1)
@@ -432,8 +454,8 @@ function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
 
                 cvec = s0 == 0 ? csl(collect(s), λ, k, j - k) : csl(collect(s), λ, k, k - j)
 
-                val = dot(a, cvec)
-                if abs(val) > 1e-14
+                val = T(dot(a, cvec))
+                if abs(val) > T(1e-14)
                     push!(rows, j + 1)  # Convert to 1-indexed
                     push!(cols, k + 1)
                     push!(vals, val)
@@ -447,23 +469,23 @@ function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
         # Chebyshev case (λ = 0): use Toeplitz + Hankel
         # Following Kore utils.py lines 1036-1052
         a2 = copy(a0)
-        a2[1] *= 2  # Double the first coefficient
+        a2[1] *= T(2)  # Double the first coefficient
 
         # Build Toeplitz matrix: T[i,j] = a2[|i-j|]
         # In 0-indexed: T[i,j] = a2[abs(i-j)]
-        T = zeros(N, N)
+        Toeplitz = zeros(T, N, N)
         for i in 0:N-1
             for j in 0:N-1
                 idx = abs(i - j) + 1  # Convert to 1-indexed
                 if idx <= N
-                    T[i+1, j+1] = a2[idx]
+                    Toeplitz[i+1, j+1] = a2[idx]
                 end
             end
         end
 
         # Build Hankel matrix: H[i,j] = a2[i+j]
         # In 0-indexed: H[i,j] = a2[i+j]
-        H = zeros(N, N)
+        H = zeros(T, N, N)
         for i in 0:N-1
             for j in 0:N-1
                 idx = i + j + 1  # Convert to 1-indexed
@@ -474,10 +496,10 @@ function multiplication_matrix(a0::Vector{Float64}, λ::Real, N::Int;
         end
 
         # Set first row of Hankel to zero (Kore line 1040)
-        H[1, :] .= 0.0
+        H[1, :] .= zero(T)
 
         # Combine: out = 0.5 * (Toeplitz + Hankel)
-        tmp = 0.5 * (T + H)
+        tmp = T(0.5) * (Toeplitz + H)
 
         return sparse(tmp)
     end
@@ -489,7 +511,10 @@ end
 
 """Return the affine derivative scaling from physical radius to Chebyshev x."""
 function _radial_scale(ri::Real, ro::Real)
-    return iszero(ri) ? 1.0 / ro : 2.0 / (ro - ri)
+    T = float(promote_type(typeof(ri), typeof(ro)))
+    riT = T(ri)
+    roT = T(ro)
+    return iszero(ri) ? one(T) / roT : T(2) / (roT - riT)
 end
 
 """Return the physical radius represented by a Chebyshev boundary symbol."""
@@ -710,32 +735,33 @@ r(x) = r_o \\cdot x
 """
 function sparse_radial_operator(power::Int, deriv_order::Int, N::Int,
                                 ri::Real, ro::Real)
+    T = float(promote_type(typeof(ri), typeof(ro)))
     scale = _radial_scale(ri, ro)
 
     # Start with identity in Chebyshev basis
-    D = sparse(1.0I, N + 1, N + 1)
+    D = sparse(one(T)I, N + 1, N + 1)
 
     # Apply derivatives using ultraspherical chain
     λ = 0
     for _ in 1:deriv_order
-        Dλ = ultraspherical_derivative(λ, N)
+        Dλ = ultraspherical_derivative(T, λ, N)
         D = (scale * Dλ) * D
         λ += 1
     end
 
     # Convert derivative back to Chebyshev basis if needed
     if deriv_order > 0
-        S_chain = sparse(1.0I, N + 1, N + 1)
+        S_chain = sparse(one(T)I, N + 1, N + 1)
         for lam in 0:(deriv_order - 1)
-            S_chain = ultraspherical_conversion(lam, N) * S_chain
+            S_chain = ultraspherical_conversion(T, lam, N) * S_chain
         end
         D = sparse(S_chain \ D)
     end
 
     # Apply r^power multiplication in Chebyshev basis
     if power != 0
-        r_coeffs = chebyshev_coefficients(power, N + 1, ri, ro)
-        M = multiplication_matrix(r_coeffs, 0.0, N + 1; vector_parity=0)
+        r_coeffs = chebyshev_coefficients(T, power, N + 1, ri, ro)
+        M = multiplication_matrix(r_coeffs, zero(T), N + 1; vector_parity=0)
         D = M * D
     end
 

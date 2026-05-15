@@ -569,6 +569,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                                             B::SparseMatrixCSC,
                                             op,
                                             section::Symbol)
+    AT = eltype(A)
+    RT = typeof(real(zero(AT)))
     params = op.params
     N = params.N
     n_per_mode = N + 1
@@ -580,13 +582,13 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
     nb_f = length(op.ll_f)
     nb_g = length(op.ll_g)
     scale = _radial_scale(ri, ro)
-    r_outer = _boundary_radius(ri, ro, :outer)
-    r_inner = _boundary_radius(ri, ro, :inner)
-    outer_vals = _chebyshev_boundary_values(N, :outer)
-    inner_vals = _chebyshev_boundary_values(N, :inner)
-    outer_deriv = scale * _chebyshev_boundary_derivative(N, :outer)
-    inner_deriv = scale * _chebyshev_boundary_derivative(N, :inner)
-    inner_second = scale^2 * _chebyshev_boundary_second_derivative(N, :inner)
+    r_outer = RT(_boundary_radius(ri, ro, :outer))
+    r_inner = RT(_boundary_radius(ri, ro, :inner))
+    outer_vals = RT.(_chebyshev_boundary_values(N, :outer))
+    inner_vals = RT.(_chebyshev_boundary_values(N, :inner))
+    outer_deriv = RT(scale) .* RT.(_chebyshev_boundary_derivative(N, :outer))
+    inner_deriv = RT(scale) .* RT.(_chebyshev_boundary_derivative(N, :inner))
+    inner_second = RT(scale)^2 .* RT.(_chebyshev_boundary_second_derivative(N, :inner))
 
     if section == :f  # Poloidal magnetic field
         for (k, l) in enumerate(op.ll_f)
@@ -604,17 +606,17 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Following Kore: kore-main/bin/assemble.py:1494-1509
 
                 # Zero out row
-                A[row_cmb, :] .= zero(ComplexF64)
-                B[row_cmb, :] .= zero(ComplexF64)
+                A[row_cmb, :] .= zero(AT)
+                B[row_cmb, :] .= zero(AT)
 
                 # Build constraint: (l+1)·f + ro·f'
-                A[row_cmb, block_range] = ComplexF64.((l + 1) * outer_vals + r_outer * outer_deriv)
+                A[row_cmb, block_range] = AT.((l + 1) * outer_vals + r_outer * outer_deriv)
 
             else
                 # Perfectly conducting: f = 0 (no penetration)
-                A[row_cmb, :] .= zero(ComplexF64)
-                B[row_cmb, :] .= zero(ComplexF64)
-                A[row_cmb, block_range] = ComplexF64.(outer_vals)
+                A[row_cmb, :] .= zero(AT)
+                B[row_cmb, :] .= zero(AT)
+                A[row_cmb, block_range] = AT.(outer_vals)
             end
 
             # ----------------------------------------------------------------
@@ -627,11 +629,11 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Following Kore: kore-main/bin/assemble.py:1548-1572
 
                 # Zero out row
-                A[row_icb, :] .= zero(ComplexF64)
-                B[row_icb, :] .= zero(ComplexF64)
+                A[row_icb, :] .= zero(AT)
+                B[row_icb, :] .= zero(AT)
 
                 # Build constraint: l·f - ri·f'
-                A[row_icb, block_range] = ComplexF64.(l * inner_vals - r_inner * inner_deriv)
+                A[row_icb, block_range] = AT.(l * inner_vals - r_inner * inner_deriv)
 
             elseif params.bci_magnetic == 1
                 freq = params.forcing_frequency
@@ -643,17 +645,17 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Steady limit of f - k * (j_l' / j_l) * f' = 0:
                 # k * (j_l' / j_l) -> l / ri, so ri * f - l * f' = 0.
                 if iszero(freq)
-                    A[row_icb, :] .= zero(ComplexF64)
-                    B[row_icb, :] .= zero(ComplexF64)
-                    A[row_icb, block_range] = ComplexF64.(r_inner .* inner_vals .- l .* inner_deriv)
+                    A[row_icb, :] .= zero(AT)
+                    B[row_icb, :] .= zero(AT)
+                    A[row_icb, block_range] = AT.(r_inner .* inner_vals .- l .* inner_deriv)
                 else
                     k_wave = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, k_wave * ri)
 
-                    A[row_icb, :] .= zero(ComplexF64)
-                    B[row_icb, :] .= zero(ComplexF64)
-                    A[row_icb, block_range] = ComplexF64.(inner_vals) .-
-                                             k_wave * dlog .* ComplexF64.(inner_deriv)
+                    A[row_icb, :] .= zero(AT)
+                    B[row_icb, :] .= zero(AT)
+                    A[row_icb, block_range] = AT.(inner_vals) .-
+                                             AT(k_wave * dlog) .* AT.(inner_deriv)
                 end
 
             elseif params.bci_magnetic == 2
@@ -665,9 +667,9 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 L = l * (l + 1)
 
                 # Row 1: f(ri) = 0
-                A[row_icb, :] .= zero(ComplexF64)
-                B[row_icb, :] .= zero(ComplexF64)
-                A[row_icb, block_range] = ComplexF64.(inner_vals)
+                A[row_icb, :] .= zero(AT)
+                B[row_icb, :] .= zero(AT)
+                A[row_icb, block_range] = AT.(inner_vals)
 
                 # Row 2: Em·(-f'' - (2/ri)·f' + (L/ri²)·f) = 0
                 # We need to use the row BEFORE row_icb (row_icb-1) for the second BC
@@ -675,18 +677,18 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 row_icb2 = row_icb - 1
 
                 # Zero out row
-                A[row_icb2, :] .= zero(ComplexF64)
-                B[row_icb2, :] .= zero(ComplexF64)
+                A[row_icb2, :] .= zero(AT)
+                B[row_icb2, :] .= zero(AT)
                 value_term = (L / ri^2) .* inner_vals
-                deriv1_term = -(2.0 / ri) .* inner_deriv
+                deriv1_term = -(RT(2) / ri) .* inner_deriv
                 deriv2_term = -inner_second
-                A[row_icb2, block_range] = ComplexF64.(params.Em * (value_term + deriv1_term + deriv2_term))
+                A[row_icb2, block_range] = AT.(params.Em * (value_term + deriv1_term + deriv2_term))
 
             else
                 # Simple conducting: f = 0 (no penetration)
-                A[row_icb, :] .= zero(ComplexF64)
-                B[row_icb, :] .= zero(ComplexF64)
-                A[row_icb, block_range] = ComplexF64.(inner_vals)
+                A[row_icb, :] .= zero(AT)
+                B[row_icb, :] .= zero(AT)
+                A[row_icb, block_range] = AT.(inner_vals)
             end
         end
 
@@ -701,9 +703,9 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
             # ----------------------------------------------------------------
             # Following Kore: kore-main/bin/assemble.py:1511-1522
             row_cmb = row_base + 1
-            A[row_cmb, :] .= zero(ComplexF64)
-            B[row_cmb, :] .= zero(ComplexF64)
-            A[row_cmb, block_range] = ComplexF64.(outer_vals)
+            A[row_cmb, :] .= zero(AT)
+            B[row_cmb, :] .= zero(AT)
+            A[row_cmb, block_range] = AT.(outer_vals)
 
             # ----------------------------------------------------------------
             # Inner boundary (ICB)
@@ -712,33 +714,33 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
 
             if params.bci_magnetic == 0
                 # Insulating: g = 0
-                A[row_icb, :] .= zero(ComplexF64)
-                B[row_icb, :] .= zero(ComplexF64)
-                A[row_icb, block_range] = ComplexF64.(inner_vals)
+                A[row_icb, :] .= zero(AT)
+                B[row_icb, :] .= zero(AT)
+                A[row_icb, block_range] = AT.(inner_vals)
 
             elseif params.bci_magnetic == 1
                 # No toroidal field is supported outside an insulating or
                 # finitely conducting boundary in this formulation.
-                A[row_icb, :] .= zero(ComplexF64)
-                B[row_icb, :] .= zero(ComplexF64)
-                A[row_icb, block_range] = ComplexF64.(inner_vals)
+                A[row_icb, :] .= zero(AT)
+                B[row_icb, :] .= zero(AT)
+                A[row_icb, block_range] = AT.(inner_vals)
 
             elseif params.bci_magnetic == 2
                 # Perfect conductor: Em·(-g' - 1/ri·g) = 0
                 # Following Kore: kore-main/bin/assemble.py:1631-1641
 
                 # Zero out row
-                A[row_icb, :] .= zero(ComplexF64)
-                B[row_icb, :] .= zero(ComplexF64)
-                value_term = -(1.0 / ri) .* inner_vals
+                A[row_icb, :] .= zero(AT)
+                B[row_icb, :] .= zero(AT)
+                value_term = -(RT(1) / ri) .* inner_vals
                 deriv1_term = -inner_deriv
-                A[row_icb, block_range] = ComplexF64.(params.Em * (value_term + deriv1_term))
+                A[row_icb, block_range] = AT.(params.Em * (value_term + deriv1_term))
 
             else
                 # Default: g = 0
-                A[row_icb, :] .= zero(ComplexF64)
-                B[row_icb, :] .= zero(ComplexF64)
-                A[row_icb, block_range] = ComplexF64.(inner_vals)
+                A[row_icb, :] .= zero(AT)
+                B[row_icb, :] .= zero(AT)
+                A[row_icb, block_range] = AT.(inner_vals)
             end
         end
     end

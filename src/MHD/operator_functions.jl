@@ -21,21 +21,38 @@ Must be included after MHD/types.jl.
 # Bessel Function Utilities for Conducting Inner Core BCs
 # -----------------------------------------------------------------------------
 
-const SparseF64 = SparseMatrixCSC{Float64,Int}
-const SparseC64 = SparseMatrixCSC{ComplexF64,Int}
+@inline _complex_eltype(::Type{T}) where {T<:Real} = Complex{T}
+@inline _complex_eltype(::Type{Complex{T}}) where {T<:Real} = Complex{T}
+
+@inline function _typed_sparse(::Type{T}, mat) where {T}
+    return SparseMatrixCSC{T, Int}(mat)
+end
+
+@inline function _scale_sparse(::Type{T}, coef, mat) where {T<:Real}
+    Tout = (eltype(mat) <: Complex || !(coef isa Real)) ? Complex{T} : T
+    return Tout(coef) * _typed_sparse(Tout, mat)
+end
 
 """Return a correctly sized sparse complex zero block for one radial mode."""
-@inline function zero_block(op::MHDStabilityOperator)
+@inline function zero_block(op::MHDStabilityOperator{T}) where {T}
     n = op.params.N + 1
-    return spzeros(ComplexF64, n, n)
+    return spzeros(Complex{T}, n, n)
+end
+
+"""Return a correctly sized sparse real zero block for one radial mode."""
+@inline function real_zero_block(op::MHDStabilityOperator{T}) where {T}
+    n = op.params.N + 1
+    return spzeros(T, n, n)
 end
 
 """Combine `(coefficient, sparse_matrix)` terms into one sparse radial block."""
-combine_terms(terms::AbstractVector{<:Tuple}) = _combine_terms(Float64, terms)
-
-"""Combine complex sparse radial terms without dropping imaginary coefficients."""
-combine_terms(terms::AbstractVector{<:Tuple{ComplexF64,SparseC64}}) =
-    _combine_terms(ComplexF64, terms)
+function combine_terms(terms::AbstractVector{<:Tuple})
+    isempty(terms) && return spzeros(Float64, 0, 0)
+    Tmat = eltype(terms[1][2])
+    Tout = (Tmat <: Complex || any(term -> !(term[1] isa Real), terms)) ?
+           _complex_eltype(Tmat) : Tmat
+    return _combine_terms(Tout, terms)
+end
 
 """Shared implementation for `combine_terms` with a chosen output scalar type."""
 function _combine_terms(::Type{T}, terms) where {T}
@@ -45,11 +62,7 @@ function _combine_terms(::Type{T}, terms) where {T}
     for (coef, mat) in terms
         c = T(coef)
         c == zero(T) && continue
-        if T <: Complex
-            out = out + c * SparseC64(mat)
-        else
-            out = out + c * SparseF64(mat)
-        end
+        out = out + c * _typed_sparse(T, mat)
     end
     return out
 end
@@ -65,13 +78,13 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
     nblock = zero_block(op)
-    mat(p, h, d) = Matrix{ComplexF64}(background_operator(op, p, h, d))
+    mat(p, h, d) = Matrix{Complex{T}}(background_operator(op, p, h, d))
     L = l * (l + 1)
     Le2 = Le^2
 
     if offset == -2
         denom = 3 - 8l + 4l^2
-        if abs(denom) < eps(Float64)
+        if abs(denom) < eps(T)
             return nblock
         end
         sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
@@ -89,10 +102,10 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .+= 3 .* mat(3, 0, 3)
         out .+= (3 - l) .* mat(3, 1, 2)
         out .+= (-1 + l) .* mat(3, 3, 0)
-        return sparse(Le2 .* (C .* out))
+        return _scale_sparse(T, Le2 * C, sparse(out))
     elseif offset == -1
         denom = 2l - 1
-        if abs(denom) < eps(Float64)
+        if abs(denom) < eps(T)
             return nblock
         end
         sqrt_factor = sqrt(max(l^2 - m^2, 0))
@@ -109,10 +122,10 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .+= l .* mat(2, 2, 0)
         out .+= l .* mat(3, 3, 0)
         out .+= 2 .* mat(3, 0, 3)
-        return sparse(Le2 .* (C .* out))
+        return _scale_sparse(T, Le2 * C, sparse(out))
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
-        if abs(denom) < eps(Float64)
+        if abs(denom) < eps(T)
             return nblock
         end
         C = 3 * (l + l^2 - 3 * m^2) / denom
@@ -126,10 +139,10 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .+= L .* mat(3, 3, 0)
         out .+= 2 * (-3 + l + l^2) .* mat(3, 0, 3)
         out .+= 3 * (-2 + l + l^2) .* mat(3, 1, 2)
-        return sparse(Le2 .* (C .* out))
+        return _scale_sparse(T, Le2 * C, sparse(out))
     elseif offset == 1
         denom = 2l + 3
-        if abs(denom) < eps(Float64)
+        if abs(denom) < eps(T)
             return nblock
         end
         sqrt_factor = sqrt(max((l + 1 + m) * (l + 1 - m), 0))
@@ -146,10 +159,10 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .-= (l + 1) .* mat(2, 2, 0)
         out .-= (l + 1) .* mat(3, 3, 0)
         out .+= 2 .* mat(3, 0, 3)
-        return sparse(Le2 .* (C .* out))
+        return _scale_sparse(T, Le2 * C, sparse(out))
     elseif offset == 2
         denom = (3 + 2l) * (5 + 2l)
-        if abs(denom) < eps(Float64)
+        if abs(denom) < eps(T)
             return nblock
         end
         sqrt_factor = sqrt(max((1 + l - m) * (2 + l + m) * (1 + l + m) * (2 + l - m), 0))
@@ -167,7 +180,7 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
         out .+= 3 .* mat(3, 0, 3)
         out .+= (4 + l) .* mat(3, 1, 2)
         out .-= (2 + l) .* mat(3, 3, 0)
-        return sparse(Le2 .* (C .* out))
+        return _scale_sparse(T, Le2 * C, sparse(out))
     else
         return nblock
     end
@@ -178,12 +191,12 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
     nblock = zero_block(op)
-    mat(p, h, d) = Matrix{ComplexF64}(background_operator(op, p, h, d))
+    mat(p, h, d) = Matrix{Complex{T}}(background_operator(op, p, h, d))
     Le2 = Le^2
 
     if offset == -1
         denom = 2l - 1
-        if abs(denom) < eps(Float64)
+        if abs(denom) < eps(T)
             return nblock
         end
         sqrt_factor = sqrt(max(l^2 - m^2, 0))
@@ -197,17 +210,17 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
         out .+= 3 .* mat(3, 0, 2)
         out .-= (l - 3) .* mat(3, 1, 1)
         out .-= l .* mat(3, 2, 0)
-        return sparse(Le2 .* (C .* out))
+        return _scale_sparse(T, Le2 * C, sparse(out))
     elseif offset == 0
         out = -mat(1, 0, 0)
         out .-= (l^2 + l - 1) .* mat(2, 1, 0)
         out .+= mat(2, 0, 1)
         out .+= mat(3, 1, 1)
         out .+= mat(3, 0, 2)
-        return sparse(Le2 .* (2im * m) .* out)
+        return _scale_sparse(T, Le2 * (2im * m), sparse(out))
     elseif offset == 1
         denom = 2l + 3
-        if abs(denom) < eps(Float64)
+        if abs(denom) < eps(T)
             return nblock
         end
         sqrt_factor = sqrt(max((l + 1)^2 - m^2, 0))
@@ -221,7 +234,7 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
         out .+= 3 .* mat(3, 0, 2)
         out .+= (1 + l) .* mat(3, 2, 0)
         out .+= (4 + l) .* mat(3, 1, 1)
-        return sparse(Le2 .* (C .* out))
+        return _scale_sparse(T, Le2 * C, sparse(out))
     else
         return nblock
     end
@@ -264,7 +277,7 @@ function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
     ]
 
     combo = combine_terms(terms)
-    return (Le^2) * (2im * m) * combo
+    return _scale_sparse(T, (Le^2) * (2im * m), combo)
 end
 
 """Return off-diagonal toroidal-magnetic to poloidal-velocity Lorentz coupling."""
@@ -282,7 +295,7 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
 
     if offset == -1
         denom = 2l - 1
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps(T) && return zero_block(op)
         coef = (Le^2) * (6im * m * sqrt(max(l^2 - m^2, 0))) / denom
         terms = [
             (-(3 - 3l - 2l^2), bo(1, 0, 0)),
@@ -293,10 +306,10 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
             (-l, bo(3, 2, 0)),
         ]
         combo = combine_terms(terms)
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 1
         denom = 2l + 3
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps(T) && return zero_block(op)
         coef = (Le^2) * (6im * m * sqrt(max((l + 1)^2 - m^2, 0))) / denom
         terms = [
             ((-4 + l + 2l^2), bo(1, 0, 0)),
@@ -307,9 +320,9 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
             ((4 + l), bo(3, 1, 1)),
         ]
         combo = combine_terms(terms)
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     else
-        return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        return zero_block(op)
     end
 end
 
@@ -327,7 +340,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     bo(p, h, d) = background_operator(op, p + shift, h, d)
     L = l * (l + 1)
     Np1 = op.params.N + 1
-    zero_block = spzeros(Float64, Np1, Np1)
+    zero_block = spzeros(T, Np1, Np1)
 
     if offset == -2
         denom = 3 - 8l + 4l^2
@@ -347,7 +360,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             ((-1 + l), bo(3, 3, 0)),
         ]
         combo = combine_terms(terms)
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == -1
         denom = 2l - 1
         abs(denom) < eps() && return zero_block
@@ -364,7 +377,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             ((-l + 2), bo(3, 1, 2)),
         ]
         combo = combine_terms(terms)
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
         abs(denom) < eps() && return zero_block
@@ -382,7 +395,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (3 * (-2 + l + l^2), bo(3, 1, 2)),
         ]
         combo = combine_terms(terms)
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 1
         denom = 2l + 3
         abs(denom) < eps() && return zero_block
@@ -399,7 +412,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (2.0, bo(3, 0, 3)),
         ]
         combo = combine_terms(terms)
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 2
         denom = (3 + 2l) * (5 + 2l)
         abs(denom) < eps() && return zero_block
@@ -419,7 +432,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (-(2 + l), bo(3, 3, 0)),
         ]
         combo = combine_terms(terms)
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     else
         return zero_block
     end
@@ -440,7 +453,7 @@ function operator_lorentz_toroidal(op::MHDStabilityOperator{T},
 
     combo = 4 * term1 - L * (2 * term2 + term3) + 2 * term4
 
-    return (Le^2) * (1im * m) * combo
+    return _scale_sparse(T, (Le^2) * (1im * m), combo)
 end
 
 """Return poloidal-magnetic to toroidal-velocity Lorentz coupling for offsets -1:1."""
@@ -448,7 +461,7 @@ function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
                                              l::Int, m::Int, offset::Int,
                                              Le::T) where {T}
     Np1 = op.params.N + 1
-    zero_block = spzeros(Float64, Np1, Np1)
+    zero_block = spzeros(Complex{T}, Np1, Np1)
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_toroidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)
@@ -465,7 +478,7 @@ function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
             (6.0, bo(1, 0, 2)),
             (-(l - 1) * l, bo(1, 2, 0)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 1
         denom = 2l + 3
         abs(denom) < eps() && return zero_block
@@ -476,7 +489,7 @@ function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
             (6.0, bo(1, 0, 2)),
             (-(l + 1) * (l + 2), bo(1, 2, 0)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     else
         return zero_block
     end
@@ -487,7 +500,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
                                              l::Int, m::Int, offset::Int,
                                              Le::T) where {T}
     Np1 = op.params.N + 1
-    zero_block = spzeros(Float64, Np1, Np1)
+    zero_block = spzeros(T, Np1, Np1)
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_toroidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)
@@ -502,7 +515,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
             (-3.0, bo(1, 0, 1)),
             ((-1 + l), bo(1, 1, 0)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == -1
         denom = 2l - 1
         abs(denom) < eps() && return zero_block
@@ -512,7 +525,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
             (l, bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 0
         denom = -3 + 4l * (l + 1)
         abs(denom) < eps() && return zero_block
@@ -522,7 +535,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
             (l * (l + 1), bo(1, 1, 0)),
             (-2 * (-3 + l + l^2), bo(1, 0, 1)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 1
         denom = 2l + 3
         abs(denom) < eps() && return zero_block
@@ -532,7 +545,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
             ((l + 1), bo(1, 1, 0)),
             (2.0, bo(1, 0, 1)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 2
         denom = (3 + 2l) * (5 + 2l)
         abs(denom) < eps() && return zero_block
@@ -544,7 +557,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
             (-3.0, bo(1, 0, 1)),
             (-(2 + l), bo(1, 1, 0)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     else
         return zero_block
     end
@@ -575,7 +588,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
 
     if offset == -2
         denom = 3 - 8l + 4l^2
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps(T) && return real_zero_block(op)
         sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
         C = 3 * (l - 2) * (l + 1) * sqrt_factor / denom
         terms = [
@@ -583,44 +596,44 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
             (-3.0, bo(1, 0, 1)),
             (l - 1, bo(1, 1, 0))
         ]
-        return C * combine_terms(terms)
+        return _scale_sparse(T, C, combine_terms(terms))
 
     elseif offset == -1
         denom = 2l - 1
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps(T) && return real_zero_block(op)
         C = sqrt(max(l^2 - m^2, 0)) * (l^2 - 1) / denom
         terms = [
             ((l - 2), bo(0, 0, 0)),
             (l, bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1))
         ]
-        return C * combine_terms(terms)
+        return _scale_sparse(T, C, combine_terms(terms))
 
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps(T) && return real_zero_block(op)
         C = 3 * (l + l^2 - 3m^2) / denom
         terms = [
             ((6 - l - l^2), bo(0, 0, 0)),
             (l * (1 + l), bo(1, 1, 0)),
             (2 * (3 - l - l^2), bo(1, 0, 1))
         ]
-        return C * combine_terms(terms)
+        return _scale_sparse(T, C, combine_terms(terms))
 
     elseif offset == 1
         denom = 2l + 3
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps(T) && return real_zero_block(op)
         C = sqrt(max((l + 1)^2 - m^2, 0)) * l * (l + 2) / denom
         terms = [
             (-(l + 3), bo(0, 0, 0)),
             (-(l + 1), bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1))
         ]
-        return C * combine_terms(terms)
+        return _scale_sparse(T, C, combine_terms(terms))
 
     elseif offset == 2
         denom = (3 + 2l) * (5 + 2l)
-        abs(denom) < eps() && return spzeros(Float64, op.params.N + 1, op.params.N + 1)
+        abs(denom) < eps(T) && return real_zero_block(op)
         sqrt1 = sqrt(max((2 + l - m) * (1 + l + m), 0))
         sqrt2 = sqrt(max((1 + l - m) * (2 + l + m), 0))
         C = 3 * l * (l + 3) * sqrt1 * sqrt2 / denom
@@ -629,7 +642,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
             (-3.0, bo(1, 0, 1)),
             (-(l + 2), bo(1, 1, 0))
         ]
-        return C * combine_terms(terms)
+        return _scale_sparse(T, C, combine_terms(terms))
     else
         error("offset must be in -2:-1:2 for induction poloidal (from u)")
     end
@@ -640,21 +653,21 @@ function operator_induction_poloidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int, m::Int, offset::Int) where {T}
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_magnetic_poloidal(is_dipole)
-    term = SparseMatrixCSC{ComplexF64, Int}(background_operator(op, 1 + shift, 0, 0))
-    zero_block = spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+    term = SparseMatrixCSC{Complex{T}, Int}(background_operator(op, 1 + shift, 0, 0))
+    zero_block = spzeros(Complex{T}, op.params.N + 1, op.params.N + 1)
 
     if offset == -1
         denom = 1 - 2l
-        abs(denom) < eps() && return zero_block
+        abs(denom) < eps(T) && return zero_block
         coef = 18im * m * sqrt(max(l^2 - m^2, 0)) / denom
-        return coef * term
+        return _scale_sparse(T, coef, term)
     elseif offset == 0
-        return -2im * m * term
+        return _scale_sparse(T, -2im * m, term)
     elseif offset == 1
         denom = 3 + 2l
-        abs(denom) < eps() && return zero_block
+        abs(denom) < eps(T) && return zero_block
         coef = -18im * m * sqrt(max((l + 1)^2 - m^2, 0)) / denom
-        return coef * term
+        return _scale_sparse(T, coef, term)
     else
         return zero_block
     end
@@ -673,7 +686,7 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
 
     if offset == -1
         denom = 2l - 1
-        denom == 0 && return spzeros(ComplexF64, op.params.N + 1, op.params.N + 1)
+        denom == 0 && return zero_block(op)
         coef = (3im * m * sqrt(max(l^2 - m^2, 0))) / denom
 
         term1 = background_operator(op, 0 + shift, 1, 0)
@@ -690,7 +703,7 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
         combo += -2 * (-3 + l) * term5
         combo += ( -1 + l) * l * term6
 
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
 
     elseif offset == 0
         L = l * (l + 1)
@@ -702,7 +715,7 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
         term6 = background_operator(op, 1 + shift, 0, 2)
 
         combo = term1 + term2 - (L + 1) * term3 + term4 + (L / 2) * term5 + term6
-        return (2im * m) * combo
+        return _scale_sparse(T, 2im * m, combo)
 
     elseif offset == 1
         denom = 2l + 3
@@ -722,7 +735,7 @@ function operator_induction_toroidal_from_u(op::MHDStabilityOperator{T},
         combo += (2 + 3l + l^2) * term5
         combo += 2 * (4 + l) * term6
 
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     else
         error("offset must be -1, 0, or 1 for induction from u")
     end
@@ -732,7 +745,7 @@ end
 function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
                                             l::Int, m::Int, offset::Int) where {T}
     Np1 = op.params.N + 1
-    zero_block = spzeros(Float64, Np1, Np1)
+    zero_block = spzeros(T, Np1, Np1)
     is_dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     shift = radial_power_shift_magnetic_toroidal(is_dipole)
     bo(p, h, d) = background_operator(op, p + shift, h, d)
@@ -747,7 +760,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
             (-3.0, bo(1, 0, 1)),
             ((l - 3), bo(1, 1, 0)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == -1
         denom = 2l - 1
         abs(denom) < eps() && return zero_block
@@ -757,7 +770,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
             ((l - 2), bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 0
         denom = -3 + 4l * (l + 1)
         abs(denom) < eps() && return zero_block
@@ -767,7 +780,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
             (-3 * (-2 + l + l^2), bo(1, 1, 0)),
             (-2 * (-3 + l + l^2), bo(1, 0, 1)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 1
         denom = 2l + 3
         abs(denom) < eps() && return zero_block
@@ -777,7 +790,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
             (-(l + 3), bo(1, 1, 0)),
             (-2.0, bo(1, 0, 1)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     elseif offset == 2
         denom = (3 + 2l) * (5 + 2l)
         abs(denom) < eps() && return zero_block
@@ -789,7 +802,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
             (-3.0, bo(1, 0, 1)),
             (-(4 + l), bo(1, 1, 0)),
         ])
-        return coef * combo
+        return _scale_sparse(T, coef, combo)
     else
         return zero_block
     end

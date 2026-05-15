@@ -960,9 +960,13 @@ function meridional_streamfunction(ur::AbstractMatrix, uθ::AbstractMatrix,
 
     Nr, Nθ = size(ur)
     sinθ = sin.(θ)
+    RT = promote_type(typeof(real(zero(eltype(ur)))),
+                      typeof(real(zero(eltype(uθ)))),
+                      eltype(r), eltype(θ))
+    CT = Complex{float(RT)}
 
     # Integrate u_r × r² × sinθ in θ to get ψ
-    ψ = zeros(ComplexF64, Nr, Nθ)
+    ψ = zeros(CT, Nr, Nθ)
 
     for i in 1:Nr
         ψ[i, 1] = 0.0

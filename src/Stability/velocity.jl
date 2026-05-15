@@ -59,7 +59,7 @@ u_r, u_θ, u_φ = potentials_to_velocity(P, T; Dr=Dr, Dθ=Dθ, Lθ=Lθ,
 ```
 """
 function potentials_to_velocity(P::AbstractMatrix,
-                                T::AbstractMatrix;
+                                Tor::AbstractMatrix;
                                 Dr,
                                 Dθ,
                                 Lθ,
@@ -67,7 +67,7 @@ function potentials_to_velocity(P::AbstractMatrix,
                                 sintheta::AbstractVector,
                                 m::Int)
     Nr, Nθ = size(P)
-    size(T) == size(P) || throw(DimensionMismatch("P and T must have same size"))
+    size(Tor) == size(P) || throw(DimensionMismatch("P and T must have same size"))
     size(Dr) == (Nr, Nr) || throw(DimensionMismatch(
         "Dr must be $Nr × $Nr, got $(size(Dr))"))
     size(Dθ) == (Nθ, Nθ) || throw(DimensionMismatch(
@@ -79,27 +79,30 @@ function potentials_to_velocity(P::AbstractMatrix,
     length(sintheta) == Nθ || throw(DimensionMismatch(
         "sintheta must have length $Nθ, got $(length(sintheta))"))
 
-    Treal = eltype(r)
-    inv_r = one(Treal) ./ r
-    inv_r2 = inv_r .^ 2
-    inv_sinθ = one(eltype(sintheta)) ./ sintheta
+    CT = promote_type(eltype(P), eltype(Tor), Complex{eltype(r)},
+                      Complex{eltype(sintheta)})
+    ur = similar(P, CT, Nr, Nθ)
+    uθ = similar(P, CT, Nr, Nθ)
+    uφ = similar(P, CT, Nr, Nθ)
+    dP_dr = similar(P, CT, Nr, Nθ)
 
-    # Compute derivatives
-    dθ_T = T * Dθ'           # ∂T/∂θ
-    lap_ang_P = P * Lθ'      # L² P (angular Laplacian of P)
-    dP_dr = Dr * P           # ∂P/∂r
-    inv_r_sinθ = inv_r .* inv_sinθ'
+    # Compute only the full-size derivatives that cannot be streamed directly.
+    mul!(ur, P, transpose(Lθ))       # L² P (angular Laplacian of P)
+    mul!(dP_dr, Dr, P)               # ∂P/∂r
+    mul!(uθ, dP_dr, transpose(Dθ))   # ∂²P/∂r∂θ
+    mul!(uφ, Tor, transpose(Dθ))     # ∂T/∂θ
 
-    # u_r = ℓ(ℓ+1) P / r² = -L²P / r² (since Lθ gives -ℓ(ℓ+1))
-    ur = -lap_ang_P .* inv_r2
-
-    # u_θ = (1/r) ∂²P/∂r∂θ + (im/(r sinθ)) T
-    uθ = (dP_dr * Dθ') .* inv_r
-    uθ .+= (im * m) .* T .* inv_r_sinθ
-
-    # u_φ = (im/(r sinθ)) ∂P/∂r - (1/r) ∂T/∂θ
-    uφ = (im * m) .* dP_dr .* inv_r_sinθ
-    uφ .-= dθ_T .* inv_r
+    im_m = CT(im * m)
+    @inbounds for j in 1:Nθ
+        inv_sinθ = inv(sintheta[j])
+        for i in 1:Nr
+            inv_r = inv(r[i])
+            inv_r_sinθ = inv_r * inv_sinθ
+            ur[i, j] = -ur[i, j] * inv_r * inv_r
+            uθ[i, j] = uθ[i, j] * inv_r + im_m * Tor[i, j] * inv_r_sinθ
+            uφ[i, j] = im_m * dP_dr[i, j] * inv_r_sinθ - uφ[i, j] * inv_r
+        end
+    end
 
     return ur, uθ, uφ
 end
@@ -563,17 +566,42 @@ heatmap(grid.θ, op.r, real.(ur), xlabel="θ", ylabel="r", title="u_r")
 function eigenvector_to_velocity(eigenvector::AbstractVector{<:Complex}, op;
                                   Nθ::Union{Int, Nothing}=nothing,
                                   grid::Union{MeridionalGrid, Nothing}=nothing)
+    if grid === nothing
+        return _eigenvector_to_velocity_default_grid(eigenvector, op, Nθ)
+    else
+        return _eigenvector_to_velocity(eigenvector, op, grid)
+    end
+end
+
+function _eigenvector_to_velocity_default_grid(eigenvector::AbstractVector{<:Complex},
+                                               op,
+                                               ::Nothing)
     m = op.params.m
     lmax = op.params.lmax
+    Nθ_use = 2 * lmax
+    GT = typeof(op.params.E)
+    grid = build_meridional_grid(Nθ_use, m, lmax; T=GT)::MeridionalGrid{GT}
+    return _eigenvector_to_velocity(eigenvector, op, grid)
+end
+
+function _eigenvector_to_velocity_default_grid(eigenvector::AbstractVector{<:Complex},
+                                               op,
+                                               Nθ::Int)
+    m = op.params.m
+    lmax = op.params.lmax
+    Nθ_use = Nθ
+    GT = typeof(op.params.E)
+    grid = build_meridional_grid(Nθ_use, m, lmax; T=GT)::MeridionalGrid{GT}
+    return _eigenvector_to_velocity(eigenvector, op, grid)
+end
+
+function _eigenvector_to_velocity(eigenvector::AbstractVector{<:Complex},
+                                  op,
+                                  grid::MeridionalGrid{GT}) where {GT<:Real}
+    m = op.params.m
     Nr = op.params.Nr
     r = op.r
     Dr = op.cd.D1
-
-    # Build or use provided grid
-    if grid === nothing
-        Nθ_use = Nθ === nothing ? 2 * lmax : Nθ
-        grid = build_meridional_grid(Nθ_use, m, lmax; T=typeof(op.params.E))
-    end
 
     # Extract spectral coefficients
     P_coeffs, T_coeffs, _ = extract_eigenvector_coefficients(eigenvector, op)

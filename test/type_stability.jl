@@ -403,6 +403,20 @@ end
     @test bytes < 80_000
 end
 
+@testset "Grid mismatch helper avoids broadcast temporaries" begin
+    r = collect(range(0.35, 1.0; length=512))
+    expected = copy(r)
+
+    @test Cross._grid_mismatch(r, expected) == 0.0
+    GC.gc()
+    bytes = @allocated Cross._grid_mismatch(r, expected)
+
+    @test bytes < 128
+
+    expected[end] += 1e-3
+    @test Cross._grid_mismatch(r, expected) ≈ 1e-3
+end
+
 @testset "Typed sparse helpers avoid Float64 empty and boundary temporaries" begin
     T = Float32
     empty_terms = Tuple{T, SparseMatrixCSC{T, Int}}[]

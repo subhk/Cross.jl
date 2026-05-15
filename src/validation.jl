@@ -2,6 +2,18 @@
 # Input validation for Cross.jl parameter types
 # ============================================================================
 
+function _grid_mismatch(r::AbstractVector{T}, expected::AbstractVector{S}) where {T,S}
+    length(r) == length(expected) || throw(DimensionMismatch(
+        "grid vectors must have same length, got $(length(r)) and $(length(expected))"))
+
+    R = promote_type(T, S)
+    mismatch = zero(R)
+    @inbounds for i in eachindex(r, expected)
+        mismatch = max(mismatch, abs(R(r[i]) - R(expected[i])))
+    end
+    return mismatch
+end
+
 """
     validate_onset_params(params)
 
@@ -62,7 +74,7 @@ function validate_basic_state_consistency(bs, params)
         "BasicState r must end at 1, got $(last(bs.r))"))
 
     expected_grid = ChebyshevDiffn(params.Nr, [χ, one(T)], 1).x
-    grid_error = maximum(abs.(bs.r .- expected_grid))
+    grid_error = _grid_mismatch(bs.r, expected_grid)
     grid_tol = T(10) * tol
     grid_error <= grid_tol || throw(ArgumentError(
         "BasicState r must match Chebyshev nodes (max mismatch = $grid_error)"))
@@ -103,7 +115,7 @@ function validate_basic_state_3d_consistency(bs, params)
         "BasicState3D r must end at 1, got $(last(bs.r))"))
 
     expected_grid = ChebyshevDiffn(params.Nr, [χ, one(T)], 1).x
-    grid_error = maximum(abs.(bs.r .- expected_grid))
+    grid_error = _grid_mismatch(bs.r, expected_grid)
     grid_tol = T(10) * tol
     grid_error <= grid_tol || throw(ArgumentError(
         "BasicState3D r must match Chebyshev nodes (max mismatch = $grid_error)"))

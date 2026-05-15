@@ -117,7 +117,7 @@ See also: [`solve_biglobal_problem`](@ref), [`create_thermal_wind_basic_state`](
         isapprox(last(basic_state.r), one(T); rtol=tol, atol=tol) || throw(ArgumentError(
             "basic_state.r must end at 1, got $(last(basic_state.r))"))
         expected_grid = ChebyshevDiffn(Nr, [χ, one(T)], 1).x
-        grid_error = maximum(abs.(basic_state.r .- expected_grid))
+        grid_error = _grid_mismatch(basic_state.r, expected_grid)
         grid_tol = T(10) * tol
         grid_error <= grid_tol || throw(ArgumentError(
             "basic_state.r must match Chebyshev nodes (max mismatch = $grid_error)"))
@@ -271,8 +271,9 @@ function create_custom_basic_state(θ_profile::Function,
     # Build Chebyshev for derivatives
     cd = ChebyshevDiffn(Nr, [χ, one(T)], 4)
     tol = sqrt(eps(float(T)))
-    maximum(abs.(r_grid .- cd.x)) <= tol || throw(ArgumentError(
-        "r_grid must match Chebyshev nodes for [χ, 1] (max mismatch = $(maximum(abs.(r_grid .- cd.x))))"))
+    grid_error = _grid_mismatch(r_grid, cd.x)
+    grid_error <= tol || throw(ArgumentError(
+        "r_grid must match Chebyshev nodes for [χ, 1] (max mismatch = $grid_error)"))
 
     # Initialize coefficient dictionaries
     theta_coeffs = Dict{Int, Vector{T}}()

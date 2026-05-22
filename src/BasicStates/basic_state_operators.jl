@@ -333,7 +333,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
                                       m::Int) where T
 
     # Extract radial operators
-    r = collect(op.r)  # Radial collocation points
+    r = op.r  # Vector{T} — no copy needed
     Nr = length(r)
     inv_r = one(T) ./ r
     CT = Complex{T}
@@ -353,6 +353,7 @@ function build_basic_state_operators(basic_state::BasicState{T},
     temp_grad_theta_toroidal_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()
     metric_poloidal_blocks = Dict{Tuple{Int,Int}, Matrix{CT}}()  # T → P from metric terms
     coupling_structure = Tuple{Int,Int}[]
+    coupling_set = Set{Tuple{Int,Int}}()
 
     # Get basic state modes
     ℓ_bs_modes = sort(collect(keys(basic_state.theta_coeffs)))
@@ -408,7 +409,8 @@ function build_basic_state_operators(basic_state::BasicState{T},
                 end
 
                 # Record this coupling
-                if !((ℓ_output, ℓ_input) in coupling_structure)
+                if !((ℓ_output, ℓ_input) in coupling_set)
+                    push!(coupling_set, (ℓ_output, ℓ_input))
                     push!(coupling_structure, (ℓ_output, ℓ_input))
                 end
 
@@ -454,7 +456,8 @@ function build_basic_state_operators(basic_state::BasicState{T},
                     adv_coupling = adv_coupling_matrix[idx_out, idx_in]
                     abs(adv_coupling) < coupling_tol && continue
 
-                    if !((ℓ_output, ℓ_input) in coupling_structure)
+                    if !((ℓ_output, ℓ_input) in coupling_set)
+                        push!(coupling_set, (ℓ_output, ℓ_input))
                         push!(coupling_structure, (ℓ_output, ℓ_input))
                     end
 
@@ -487,7 +490,8 @@ function build_basic_state_operators(basic_state::BasicState{T},
                         metric_coupling = adv_coupling_matrix[idx_out, idx_in]
                         abs(metric_coupling) < coupling_tol && continue
 
-                        if !((ℓ_output, ℓ_input) in coupling_structure)
+                        if !((ℓ_output, ℓ_input) in coupling_set)
+                            push!(coupling_set, (ℓ_output, ℓ_input))
                             push!(coupling_structure, (ℓ_output, ℓ_input))
                         end
 
@@ -520,7 +524,8 @@ function build_basic_state_operators(basic_state::BasicState{T},
                     abs(meridional_coeff) < coupling_tol && continue
                     meridional = T(meridional_coeff)
 
-                    if !((ℓ_output, ℓ_input) in coupling_structure)
+                    if !((ℓ_output, ℓ_input) in coupling_set)
+                        push!(coupling_set, (ℓ_output, ℓ_input))
                         push!(coupling_structure, (ℓ_output, ℓ_input))
                     end
 

@@ -653,9 +653,16 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     function add_block!(rows, cols, vals, block::SparseMatrixCSC,
                        row_offset::Int, col_offset::Int)
         I, J, V = findnz(block)
-        append!(rows, I .+ row_offset)
-        append!(cols, J .+ col_offset)
-        append!(vals, V)
+        n = length(I)
+        n == 0 && return
+        Base.sizehint!(rows, length(rows) + n)
+        Base.sizehint!(cols, length(cols) + n)
+        Base.sizehint!(vals, length(vals) + n)
+        @inbounds for k in 1:n
+            push!(rows, I[k] + row_offset)
+            push!(cols, J[k] + col_offset)
+            push!(vals, V[k])
+        end
     end
 
     # =========================================================================
@@ -886,10 +893,10 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
     # Toroidal velocity BCs
     # -------------------------------------------------------------------------
     scale = _radial_scale(params.ricb, one(T))
-    outer_vals = _chebyshev_boundary_values(N, :outer)
-    inner_vals = _chebyshev_boundary_values(N, :inner)
-    outer_deriv = _chebyshev_boundary_derivative(N, :outer)
-    inner_deriv = _chebyshev_boundary_derivative(N, :inner)
+    outer_vals = _chebyshev_boundary_values(N, :outer, T)
+    inner_vals = _chebyshev_boundary_values(N, :inner, T)
+    outer_deriv = _chebyshev_boundary_derivative(N, :outer, T)
+    inner_deriv = _chebyshev_boundary_derivative(N, :inner, T)
     r_outer = _boundary_radius(params.ricb, one(T), :outer)
     r_inner = _boundary_radius(params.ricb, one(T), :inner)
     outer_row = @. -r_outer * scale * outer_deriv + outer_vals

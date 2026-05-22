@@ -362,7 +362,7 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
         L = TT(ℓ * (ℓ + 1))
 
         P_idx = op.index_map[(ℓ, :P)]
-        Θ_idx = haskey(op.index_map, (ℓ, :Θ)) ? op.index_map[(ℓ, :Θ)] : nothing
+        Θ_idx = get(op.index_map, (ℓ, :Θ), nothing)
 
         B[P_idx, P_idx] = -Complex.(L * (L * R2D0 - 2 * R3D1 - R4D2))
 
@@ -451,25 +451,24 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
 
     impose_boundary_conditions!(A, B, op)
 
-    boundary_dofs = Int[]
+    is_boundary = falses(n)
     for ℓ in op.l_sets[:P]
         P_idx = op.index_map[(ℓ, :P)]
         ri, inner_tau, outer_tau, ro = poloidal_tau_indices(P_idx)
-        append!(boundary_dofs, (ri, inner_tau, outer_tau, ro))
+        is_boundary[ri] = is_boundary[inner_tau] = is_boundary[outer_tau] = is_boundary[ro] = true
     end
     for ℓ in op.l_sets[:T]
         T_idx = op.index_map[(ℓ, :T)]
         riT, roT = toroidal_boundary_indices(T_idx)
-        append!(boundary_dofs, (riT, roT))
+        is_boundary[riT] = is_boundary[roT] = true
     end
     for ℓ in op.l_sets[:Θ]
         Θ_idx = op.index_map[(ℓ, :Θ)]
         riΘ, roΘ = temperature_boundary_indices(Θ_idx)
-        append!(boundary_dofs, (riΘ, roΘ))
+        is_boundary[riΘ] = is_boundary[roΘ] = true
     end
-    sort!(boundary_dofs)
-    boundary_dofs = unique(boundary_dofs)
-    interior_dofs = setdiff(collect(1:n), boundary_dofs)
+    boundary_dofs = findall(is_boundary)
+    interior_dofs = findall(!, is_boundary)
 
     return A, B, interior_dofs, boundary_dofs
 end
@@ -579,7 +578,8 @@ function _reconstruct_full_vector(reduction::ConstraintReduction{T},
     for block in reduction.blocks
         # Boundary coefficients are recovered from the same nullspace basis used
         # during matrix projection, keeping eigenvector reconstruction consistent.
-        full_vec[block.full_indices] .= block.basis * reduced_vec[block.reduced_indices]
+        mul!(view(full_vec, block.full_indices), block.basis,
+             view(reduced_vec, block.reduced_indices))
     end
     return full_vec
 end
@@ -681,10 +681,10 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
                                         krylovdim=krylovdim,
                                         verbosity=0)
 
-    finite = [abs(λ) > eps(T) for λ in vals_inv]
-    any(finite) || error("No finite eigenvalues returned by eigensolver")
-    vals_inv = vals_inv[finite]
-    vecs_int = vecs_int[finite]
+    keep = findall(λ -> abs(λ) > eps(T), vals_inv)
+    isempty(keep) && error("No finite eigenvalues returned by eigensolver")
+    vals_inv = vals_inv[keep]
+    vecs_int = vecs_int[keep]
 
     eigenvalues = Complex{T}[σ + inv(λ) for λ in vals_inv]
 

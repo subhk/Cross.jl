@@ -82,21 +82,18 @@ function chebyshev_coeff_derivative!(out::Vector{T}, coeff::Vector{T}) where {T<
 end
 
 """Construct the coefficient-space Chebyshev derivative matrix on `[-1, 1]`."""
-function chebyshev_coeff_derivative_matrix(n::Int)
-    D = zeros(Float64, n, n)
-    scratch = zeros(Float64, n)
-    coeff = zeros(Float64, n)
+function chebyshev_coeff_derivative_matrix(n::Int, ::Type{T}=Float64) where {T<:AbstractFloat}
+    D = zeros(T, n, n)
+    scratch = zeros(T, n)
+    coeff = zeros(T, n)
     for j in 1:n
-        fill!(coeff, 0.0)
-        coeff[j] = 1.0
+        fill!(coeff, zero(T))
+        coeff[j] = one(T)
         chebyshev_coeff_derivative!(scratch, coeff)
         D[:, j] .= scratch
     end
     return D
 end
-
-"""Convert precomputed Float64 derivative matrices to the requested real type."""
-promote_matrix(::Type{T}, M::Matrix{Float64}) where {T<:Real} = Matrix{T}(M)
 
 # -----------------------------------------------------------------------------
 #  Constructor
@@ -116,14 +113,14 @@ function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) w
         "Domain must satisfy a < b, got a=$a, b=$b"))
 
     # Nodes on [-1,1] and corresponding Vandermonde matrix
-    x̂ = chebyshev_nodes(n)
+    x̂ = T.(chebyshev_nodes(n))
     V = chebyshev_vandermonde(x̂)
 
     # Use LU factorization for more stable computation of V \ (...)
     V_lu = lu(V)
 
-    # Coefficient-space derivative matrices
-    Dc1 = chebyshev_coeff_derivative_matrix(n)
+    # Coefficient-space derivative matrices (typed to T throughout)
+    Dc1 = chebyshev_coeff_derivative_matrix(n, T)
     Dc2 = Dc1 * Dc1
     Dc3 = Dc1 * Dc2
     Dc4 = Dc1 * Dc3
@@ -137,7 +134,7 @@ function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) w
 
     # Map nodes to [a, b] and scale derivatives
     x = @. (b - a) / 2 * (x̂ + 1) + a
-    α = 2 / (b - a)
+    α = T(2) / (b - a)
 
     D1 = α * D1_hat
     D2 = α^2 * D2_hat
@@ -149,10 +146,10 @@ function ChebyshevDiffn(n::Int, domain::AbstractVector{T}, max_order::Int = 1) w
         (T(a), T(b)),
         max_order,
         Vector{T}(x),
-        promote_matrix(T, D1),
-        promote_matrix(T, D2),
-        D3 === nothing ? nothing : promote_matrix(T, D3),
-        D4 === nothing ? nothing : promote_matrix(T, D4)
+        Matrix{T}(D1),
+        Matrix{T}(D2),
+        D3 === nothing ? nothing : Matrix{T}(D3),
+        D4 === nothing ? nothing : Matrix{T}(D4)
     )
 end
 

@@ -216,7 +216,7 @@ function _get_inv_r(op, Nr::Int)
     elseif hasproperty(op, :r)
         r = op.r
         length(r) == Nr || throw(DimensionMismatch("r must have length $Nr"))
-        return 1.0 ./ r
+        return inv.(r)
     end
     throw(ArgumentError("op must define `inv_r` or `r`"))
 end
@@ -231,7 +231,7 @@ function _get_inv_r_sinθ(op, inv_r, Nr::Int, Nθ::Int)
     end
 
     sinθ = _get_sinθ(op, Nθ)
-    inv_sinθ = 1.0 ./ sinθ
+    inv_sinθ = inv.(sinθ)
     inv_r_vec = _inv_r_vector(inv_r, Nr)
     return inv_r_vec .* inv_sinθ'
 end
@@ -584,11 +584,11 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
     scale = _radial_scale(ri, ro)
     r_outer = RT(_boundary_radius(ri, ro, :outer))
     r_inner = RT(_boundary_radius(ri, ro, :inner))
-    outer_vals = RT.(_chebyshev_boundary_values(N, :outer))
-    inner_vals = RT.(_chebyshev_boundary_values(N, :inner))
-    outer_deriv = RT(scale) .* RT.(_chebyshev_boundary_derivative(N, :outer))
-    inner_deriv = RT(scale) .* RT.(_chebyshev_boundary_derivative(N, :inner))
-    inner_second = RT(scale)^2 .* RT.(_chebyshev_boundary_second_derivative(N, :inner))
+    outer_vals = _chebyshev_boundary_values(N, :outer, RT)
+    inner_vals = _chebyshev_boundary_values(N, :inner, RT)
+    outer_deriv = RT(scale) .* _chebyshev_boundary_derivative(N, :outer, RT)
+    inner_deriv = RT(scale) .* _chebyshev_boundary_derivative(N, :inner, RT)
+    inner_second = RT(scale)^2 .* _chebyshev_boundary_second_derivative(N, :inner, RT)
 
     if section == :f  # Poloidal magnetic field
         for (k, l) in enumerate(op.ll_f)

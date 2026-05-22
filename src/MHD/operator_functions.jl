@@ -65,14 +65,28 @@ end
 """Shared implementation for `combine_terms` with a chosen output scalar type."""
 function _combine_terms(::Type{T}, terms) where {T}
     isempty(terms) && return spzeros(T, 0, 0)
-    rows, cols = size(terms[1][2])
-    out = spzeros(T, rows, cols)
+    nrows, ncols = size(terms[1][2])
+    I_all = Int[]
+    J_all = Int[]
+    V_all = T[]
     for (coef, mat) in terms
         c = T(coef)
         c == zero(T) && continue
-        out = out + c * _typed_sparse(T, mat)
+        mat_T = _typed_sparse(T, mat)
+        I, J, V = findnz(mat_T)
+        n = length(I)
+        n == 0 && continue
+        Base.sizehint!(I_all, length(I_all) + n)
+        Base.sizehint!(J_all, length(J_all) + n)
+        Base.sizehint!(V_all, length(V_all) + n)
+        @inbounds for k in 1:n
+            push!(I_all, I[k])
+            push!(J_all, J[k])
+            push!(V_all, c * V[k])
+        end
     end
-    return out
+    isempty(I_all) && return spzeros(T, nrows, ncols)
+    return sparse(I_all, J_all, V_all, nrows, ncols)
 end
 
 # Note: spherical_bessel_j_logderiv is now defined in boundary_conditions.jl

@@ -38,13 +38,13 @@ function chebyshev_transform(f::Vector{T}) where {T<:Real}
     for n in 0:N
         s = zero(T)
         for j in 0:N
-            xj = cos(π * j / N)
-            Tn = cos(n * acos(xj))
-            w = (j == 0 || j == N) ? 0.5 : 1.0
+            xj = cos(T(π) * j / N)
+            Tn = cos(T(n) * acos(xj))
+            w = (j == 0 || j == N) ? T(0.5) : one(T)
             s += w * f[j+1] * Tn
         end
-        cn = (n == 0 || n == N) ? 2.0 : 1.0
-        coeffs[n+1] = (2.0 / (cn * N)) * s
+        cn = (n == 0 || n == N) ? T(2) : one(T)
+        coeffs[n+1] = (T(2) / (cn * N)) * s
     end
     return coeffs
 end
@@ -270,7 +270,9 @@ function chebyshev_coefficients(::Type{T}, power::Int, N::Int, ri::Real, ro::Rea
     end
 
     coeffs[1] /= T(2)
-    coeffs[abs.(coeffs) .<= T(tol)] .= zero(T)
+    @inbounds for i in eachindex(coeffs)
+        abs(coeffs[i]) <= T(tol) && (coeffs[i] = zero(T))
+    end
     return coeffs
 end
 
@@ -312,7 +314,9 @@ function chebyshev_coefficients(::Type{T}, f::Function, N::Int, ri::Real, ro::Re
     end
 
     coeffs[1] /= T(2)
-    coeffs[abs.(coeffs) .<= T(tol)] .= zero(T)
+    @inbounds for i in eachindex(coeffs)
+        abs(coeffs[i]) <= T(tol) && (coeffs[i] = zero(T))
+    end
     return coeffs
 end
 
@@ -495,42 +499,26 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
         return sparse(rows, cols, vals, N, N)
 
     else
-        # Chebyshev case (λ = 0): use Toeplitz + Hankel
+        # Chebyshev case (λ = 0): Toeplitz + Hankel combined in one pass.
         # Following Kore utils.py lines 1036-1052
         a2 = copy(a0)
         a2[1] *= T(2)  # Double the first coefficient
 
-        # Build Toeplitz matrix: T[i,j] = a2[|i-j|]
-        # In 0-indexed: T[i,j] = a2[abs(i-j)]
-        Toeplitz = zeros(T, N, N)
-        for i in 0:N-1
+        half = T(0.5)
+        out = zeros(T, N, N)
+        @inbounds for i in 0:N-1
             for j in 0:N-1
-                idx = abs(i - j) + 1  # Convert to 1-indexed
-                if idx <= N
-                    Toeplitz[i+1, j+1] = a2[idx]
+                t_idx = abs(i - j) + 1
+                val = t_idx <= N ? half * a2[t_idx] : zero(T)
+                if i > 0  # H[1,:] = 0 per Kore line 1040
+                    h_idx = i + j + 1
+                    h_idx <= N && (val += half * a2[h_idx])
                 end
+                out[i+1, j+1] = val
             end
         end
 
-        # Build Hankel matrix: H[i,j] = a2[i+j]
-        # In 0-indexed: H[i,j] = a2[i+j]
-        H = zeros(T, N, N)
-        for i in 0:N-1
-            for j in 0:N-1
-                idx = i + j + 1  # Convert to 1-indexed
-                if idx <= N
-                    H[i+1, j+1] = a2[idx]
-                end
-            end
-        end
-
-        # Set first row of Hankel to zero (Kore line 1040)
-        H[1, :] .= zero(T)
-
-        # Combine: out = 0.5 * (Toeplitz + Hankel)
-        tmp = T(0.5) * (Toeplitz + H)
-
-        return sparse(tmp)
+        return sparse(out)
     end
 end
 

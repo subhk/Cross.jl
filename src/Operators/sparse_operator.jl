@@ -653,12 +653,12 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     function add_block!(rows, cols, vals, block::SparseMatrixCSC,
                        row_offset::Int, col_offset::Int)
         I, J, V = findnz(block)
-        n = length(I)
-        n == 0 && return
-        Base.sizehint!(rows, length(rows) + n)
-        Base.sizehint!(cols, length(cols) + n)
-        Base.sizehint!(vals, length(vals) + n)
-        @inbounds for k in 1:n
+        nnz_block = length(I)
+        nnz_block == 0 && return
+        Base.sizehint!(rows, length(rows) + nnz_block)
+        Base.sizehint!(cols, length(cols) + nnz_block)
+        Base.sizehint!(vals, length(vals) + nnz_block)
+        @inbounds for k in 1:nnz_block
             push!(rows, I[k] + row_offset)
             push!(cols, J[k] + col_offset)
             push!(vals, V[k])

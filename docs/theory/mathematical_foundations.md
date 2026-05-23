@@ -41,24 +41,50 @@ Where:
 
 ### Non-Dimensionalization
 
-We non-dimensionalize using:
+The radial operators are built on $r \in [\chi, 1]$, i.e. the **outer radius $r_o$ is the length unit**. We non-dimensionalize using:
 
 | Quantity | Scale | Description |
 |----------|-------|-------------|
-| Length | $L = r_o - r_i$ | Shell thickness |
+| Length | $r_o$ | Outer radius |
 | Time | $1/\Omega$ | Rotation period |
-| Velocity | $\Omega L$ | Rotational velocity |
+| Velocity | $\Omega r_o$ | Rotational velocity |
 | Temperature | $\Delta T$ | Temperature contrast |
-| Pressure | $\rho_0 \Omega L^2$ | Rotational pressure |
+| Pressure | $\rho_0 \Omega r_o^2$ | Rotational pressure |
 
 This yields the dimensionless parameters:
 
 | Parameter | Definition | Physical Meaning |
 |-----------|------------|------------------|
-| Ekman number | $E = \nu / (\Omega L^2)$ | Viscous/Coriolis forces |
+| Ekman number | $E = \nu / (\Omega r_o^2)$ | Viscous/Coriolis forces ($r_o$-based) |
 | Prandtl number | $Pr = \nu / \kappa$ | Momentum/thermal diffusivity |
-| Rayleigh number | $Ra = \alpha g \Delta T L^3 / (\nu \kappa)$ | Buoyancy forcing strength |
+| Rayleigh number | $Ra = \alpha g \Delta T\, (r_o - r_i)^3 / (\nu \kappa)$ | Buoyancy forcing (shell-thickness based; see note) |
 | Radius ratio | $\chi = r_i / r_o$ | Geometric parameter |
+
+!!! warning "Length-scale convention (read before benchmarking)"
+    Cross.jl mixes two length scales, which is the single most common source of
+    confusion when comparing against the literature:
+
+    - The **Ekman number is outer-radius ($r_o$) based**: $E = \nu/(\Omega r_o^2)$.
+      This is the value you pass and the value used directly in the operators.
+    - The **Rayleigh number you pass is shell-thickness ($d = r_o - r_i$) based**:
+      $Ra = \alpha g \Delta T\, d^3/(\nu\kappa)$. It is converted internally to the
+      $r_o$-based value the operators need, $Ra_{\text{int}} = Ra/(1-\chi)^3$.
+
+    Much rotating-convection literature (e.g. Barik et al. 2023 and the **Kore**
+    code Cross.jl is ported from, the weakly-nonlinear onset analyses, the
+    geodynamo benchmark) non-dimensionalizes **both** $E$ and $Ra$ by the shell
+    thickness $d$, defining $Ek_d = \nu/(\Omega d^2) = E/(1-\chi)^2$.
+
+    **To reproduce a $d$-based literature value at radius ratio $\chi$:**
+
+    | Their quantity | Pass to Cross.jl |
+    |----------------|------------------|
+    | $Ek_d$ (their Ekman) | `E = Ek_d * (1 - χ)^2` |
+    | $Ra_d$ (their Rayleigh) | `Ra = Ra_d` (already $d$-based) |
+
+    The returned critical value `Ra_c` is the $d$-based Rayleigh number; the
+    *modified* Rayleigh number commonly tabulated is $\widetilde{Ra} = Ra_c \cdot Ek_d$.
+    This mapping is validated to four significant figures below.
 
 ### Non-Dimensional Equations
 

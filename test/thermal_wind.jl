@@ -742,3 +742,90 @@ end  # @testset "Triglobal"
     end
 
 end  # @testset "Full BasicState3D"
+
+
+# =============================================================================
+#  Manufactured-Solution Validation of the Coupled Solver
+#
+#  The coupled solver discretizes the full thermal-wind PDE
+#     [cosθ ∂_r - (sinθ/r) ∂_θ] u_φ = -(Ra E²)/(2 Pr r_o) ∂_θ Θ
+#  with the orthonormal cosθ / sinθ∂θ operators (A, B) and a forcing that is
+#  the full sphere projection ⟨∂_θ Y_ℓ, Y_K⟩ (modes K = ℓ±1, ℓ±3, …).
+#
+#  These tests establish ground truth independently: (1) the projection
+#  coefficients against an independent quadrature, and (2) the physical-space
+#  PDE residual through the public solver, including convergence under lmax.
+# =============================================================================
+
+@testset "Coupled thermal wind - manufactured solution" begin
+    # Orthonormal associated Legendre P̄_ℓ^m (θ-part of sphere-orthonormal Y_ℓ^m)
+    function plmbar(lmax, m, x)
+        P = zeros(lmax + 1); somx2 = sqrt((1 - x) * (1 + x)); pmm = 1.0; fact = 1.0
+        for _ in 1:m
+            pmm *= -fact * somx2; fact += 2.0
+        end
+        Nlm(l, mm) = Float64(sqrt((2l + 1) / 2 * factorial(big(l - mm)) / factorial(big(l + mm))))
+        m <= lmax && (P[m + 1] = Nlm(m, m) * pmm)
+        (m + 1 <= lmax) && (P[m + 2] = Nlm(m + 1, m) * x * (2m + 1) * pmm)
+        pl2 = pmm; pl1 = x * (2m + 1) * pmm
+        for l in (m + 2):lmax
+            pl = (x * (2l - 1) * pl1 - (l + m - 1) * pl2) / (l - m)
+            P[l + 1] = Nlm(l, m) * pl; pl2 = pl1; pl1 = pl
+        end
+        P
+    end
+    Ybar(l, m, θ) = plmbar(l, m, cos(θ))[l + 1]
+    dθY(l, m, θ) = (Ybar(l, m, θ + 1e-6) - Ybar(l, m, θ - 1e-6)) / 2e-6
+    # independent reference projection ⟨∂θ Y_ℓ, Y_K⟩ over the sphere
+    function proj_ref(ℓ, K, m)
+        θs = range(1e-5, π - 1e-5, length=40000); h = step(θs); s = 0.0
+        for θ in θs
+            s += dθY(ℓ, m, θ) * Ybar(K, m, θ) * sin(θ) * h
+        end
+        s
+    end
+
+    @testset "Projection coefficients match independent quadrature" begin
+        for (ℓ, m) in [(2, 1), (3, 1), (4, 2), (5, 3)]
+            Kset = collect(m:(ℓ + 3))
+            M = Cross._dtheta_sphere_projection(Kset, [ℓ], m, Float64)
+            for K in Kset
+                got = get(M, (K, ℓ), 0.0)
+                ref = proj_ref(ℓ, K, m)
+                @test isapprox(got, ref; atol=1e-3)
+            end
+        end
+    end
+
+    @testset "PDE residual is small and converges under lmax" begin
+        χ = 0.35; r_i = χ; r_o = 1.0; Nr = 48; E = 1e-4; Ra = 1e6; Pr = 1.0
+        cd = Cross.ChebyshevDiffn(Nr, [r_i, r_o], 4); r = cd.x; D1 = cd.D1
+        m_bs = 2
+        theta = Dict(2 => 0.1 .* r .^ 2, 4 => 0.05 .* r)
+        prefactor = -(Ra * E^2) / (2 * Pr * r_o)
+
+        function residual(lmax_vel)
+            uc = Dict(ℓ => zeros(Nr) for ℓ in 0:(lmax_vel + 2))
+            dc = Dict(ℓ => zeros(Nr) for ℓ in 0:(lmax_vel + 2))
+            Cross.solve_thermal_wind_coupled!(uc, dc, theta, m_bs, cd, r_i, r_o, Ra, Pr;
+                                              E=E, lmax=lmax_vel)
+            active = [(L, U, D1 * U) for (L, U) in uc if L >= m_bs && maximum(abs.(U)) > 0]
+            uphi(i, θ)  = sum(U[i] * Ybar(L, m_bs, θ) for (L, U, _) in active; init=0.0)
+            duphi(i, θ) = sum(dU[i] * Ybar(L, m_bs, θ) for (L, _, dU) in active; init=0.0)
+            dTdθ(i, θ)  = sum(θc[i] * dθY(ℓ, m_bs, θ) for (ℓ, θc) in theta)
+            maxres = 0.0; maxrhs = 0.0
+            for i in 10:(Nr - 10), θ in range(0.4, 2.7, length=9)
+                lhs = cos(θ) * duphi(i, θ) -
+                      (sin(θ) / r[i]) * ((uphi(i, θ + 1e-6) - uphi(i, θ - 1e-6)) / 2e-6)
+                rhs = prefactor * dTdθ(i, θ)
+                maxres = max(maxres, abs(lhs - rhs)); maxrhs = max(maxrhs, abs(rhs))
+            end
+            maxres / maxrhs
+        end
+
+        res_lo = residual(7)
+        res_hi = residual(15)
+        @test res_hi < res_lo          # consistency: refining the truncation helps
+        @test res_hi < 0.05            # small absolute residual at moderate truncation
+    end
+end

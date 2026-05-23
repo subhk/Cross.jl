@@ -513,7 +513,7 @@ end
         T(0.35), one(T), T(100), one(T);
         E = T(1e-3), lmax = 4)
 
-    @test bytes < 175_000
+    @test bytes < 185_000
 end
 
 @testset "Triglobal unweighted coupling avoids quadrature node allocation" begin

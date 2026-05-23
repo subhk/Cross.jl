@@ -1832,6 +1832,89 @@ end
 # =============================================================================
 
 """
+    _orthonormal_plm(lmax, m, x) -> Vector
+
+Orthonormal associated Legendre functions P̄_ℓ^m(x) for ℓ = 0..lmax, normalized
+so that ∫_{-1}^1 (P̄_ℓ^m)² dx = 1 (the θ-part of the sphere-orthonormal Y_ℓ^m).
+"""
+function _orthonormal_plm(lmax::Int, m::Int, x::T) where {T<:Real}
+    P = zeros(T, lmax + 1)
+    m > lmax && return P
+    somx2 = sqrt((one(T) - x) * (one(T) + x))
+    # unnormalized P_m^m = (-1)^m (2m-1)!! (1-x²)^{m/2}
+    pmm = one(T)
+    fact = one(T)
+    for _ in 1:m
+        pmm *= -fact * somx2
+        fact += T(2)
+    end
+    # orthonormal-in-x factor c_ℓ = √[(2ℓ+1)/2 · (ℓ-m)!/(ℓ+m)!]
+    cfac = function (l)
+        ratio = one(T)
+        for k in (l - m + 1):(l + m)
+            ratio /= T(k)
+        end
+        return sqrt(T(2l + 1) / T(2) * ratio)
+    end
+    P[m + 1] = cfac(m) * pmm
+    pl1 = x * T(2m + 1) * pmm                # unnormalized P_{m+1}^m
+    (m + 1 <= lmax) && (P[m + 2] = cfac(m + 1) * pl1)
+    pl2 = pmm
+    for l in (m + 2):lmax
+        pl = (x * T(2l - 1) * pl1 - T(l + m - 1) * pl2) / T(l - m)
+        P[l + 1] = cfac(l) * pl
+        pl2 = pl1
+        pl1 = pl
+    end
+    return P
+end
+
+"""
+    _dtheta_sphere_projection(Kset, Lset, m, T) -> Dict{Tuple{Int,Int},T}
+
+Projection coefficients M[(K,ℓ)] = ⟨∂Y_ℓ^m/∂θ, Y_K^m⟩ over the unit sphere,
+for velocity modes K ∈ `Kset` and temperature modes ℓ ∈ `Lset`. Uses the exact
+identity sin(θ)∂_θY_ℓ = ℓα_ℓ⁺Y_{ℓ+1} - (ℓ+1)α_ℓ⁻Y_{ℓ-1} together with
+Gauss–Chebyshev quadrature of G(a,b) = ∫ P̄_a^m P̄_b^m / √(1-x²) dx. Unlike the
+diagonal-approximation coupling, this retains the full ℓ±1, ℓ±3, … structure
+required to be consistent with the coupled solver's (orthonormal) cosθ/sinθ∂θ
+operators.
+"""
+function _dtheta_sphere_projection(Kset, Lset, m::Int, ::Type{T}) where {T<:Real}
+    (isempty(Kset) || isempty(Lset)) && return Dict{Tuple{Int,Int},T}()
+    lmax_needed = max(maximum(Kset), maximum(Lset) + 1)
+    Nq = lmax_needed + 2
+    Ptab = Matrix{T}(undef, Nq, lmax_needed + 1)
+    for j in 1:Nq
+        x = cos(T(π) * (T(j) - T(0.5)) / T(Nq))
+        Ptab[j, :] .= _orthonormal_plm(lmax_needed, m, x)
+    end
+    Gw = T(π) / T(Nq)
+    Gint = function (a, b)
+        (a < m || b < m || a > lmax_needed || b > lmax_needed) && return zero(T)
+        s = zero(T)
+        @inbounds for j in 1:Nq
+            s += Ptab[j, a + 1] * Ptab[j, b + 1]
+        end
+        return Gw * s
+    end
+    αplus(l)  = (l + 1)^2 - m^2 > 0 ? sqrt(T((l + 1)^2 - m^2) / T((2l + 1) * (2l + 3))) : zero(T)
+    αminus(l) = l^2 - m^2 > 0 ? sqrt(T(l^2 - m^2) / T((2l - 1) * (2l + 1))) : zero(T)
+    M = Dict{Tuple{Int,Int},T}()
+    for ℓ in Lset
+        ℓ < m && continue
+        for K in Kset
+            val = T(ℓ) * αplus(ℓ) * Gint(K, ℓ + 1)
+            if ℓ - 1 >= m
+                val -= T(ℓ + 1) * αminus(ℓ) * Gint(K, ℓ - 1)
+            end
+            abs(val) > eps(T) && (M[(K, ℓ)] = val)
+        end
+    end
+    return M
+end
+
+"""
     solve_thermal_wind_coupled!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
                                 m_bs, cd, r_i, r_o, Ra, Pr;
                                 mechanical_bc=:no_slip, E=1e-4, lmax=nothing)
@@ -1972,33 +2055,26 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     #
     # F_K(r) = -(Ra E²)/(2 Pr r_o) × ⟨∂Θ̄/∂θ, Y_Km⟩
     #
-    # Using ∂Y_ℓm/∂θ = c_+^ℓ Y_{ℓ+1,m} + c_-^ℓ Y_{ℓ-1,m}
+    # The forcing is the full sphere projection ⟨∂Y_ℓm/∂θ, Y_Km⟩, which couples
+    # ℓ → K = ℓ±1, ℓ±3, …. This matches the orthonormal cosθ/sinθ∂θ operators
+    # assembled above (verified by the manufactured-solution test). The diagonal
+    # ℓ±1-only approximation (theta_derivative_coeff_3d) is NOT used here because
+    # it is inconsistent with the coupled operators.
 
     prefactor = -(Ra * E^2) / (2 * Pr * r_o)
 
     F = zeros(T, n_modes, Nr)  # F[k, i] = F_{mode_idx[k]}(r[i])
 
-    for (ℓ, θ_coeff) in theta_coeffs
-        if ℓ < m_bs || maximum(abs, θ_coeff) < 1e-15
-            continue
-        end
-
-        # θ-derivative coupling: ∂Y_ℓm/∂θ → Y_{ℓ±1,m}
-        c_plus, c_minus = theta_derivative_coeff_3d(ℓ, m_bs)
-
-        # Contribution to K = ℓ+1
-        if ℓ + 1 <= lmax_vel
-            k = findfirst(==(ℓ + 1), mode_idx)
-            if k !== nothing
-                F[k, :] .+= prefactor * c_plus .* θ_coeff
-            end
-        end
-
-        # Contribution to K = ℓ-1
-        if ℓ - 1 >= m_bs
-            k = findfirst(==(ℓ - 1), mode_idx)
-            if k !== nothing
-                F[k, :] .+= prefactor * c_minus .* θ_coeff
+    Lset = Int[ℓ for (ℓ, θ_coeff) in theta_coeffs
+               if ℓ >= m_bs && maximum(abs, θ_coeff) >= 1e-15]
+    if !isempty(Lset)
+        Mproj = _dtheta_sphere_projection(mode_idx, Lset, m_bs, T)
+        for ℓ in Lset
+            θ_coeff = theta_coeffs[ℓ]
+            for (k, K) in enumerate(mode_idx)
+                c = get(Mproj, (K, ℓ), zero(T))
+                c == zero(T) && continue
+                F[k, :] .+= (prefactor * c) .* θ_coeff
             end
         end
     end
@@ -2088,8 +2164,24 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     # =========================================================================
     # Solve the system
     # =========================================================================
+    #
+    # The discretized first-order coupled BVP has a condition number that grows
+    # exponentially with lmax (the cosθ/sinθ∂θ transport couples modes with
+    # growth rate ∝ L/r, so the fundamental solution spans ~exp(L·Δr)). Above
+    # lmax≈16-18 (Float64) cond(L_op) exceeds machine precision and the solve is
+    # unreliable. Estimate the reciprocal condition number and warn rather than
+    # silently return garbage. A robust high-lmax solve would need a stiff-BVP
+    # method (e.g. marching with re-orthonormalization); basic states are
+    # low-degree in practice, so capping lmax is the pragmatic remedy.
 
-    U_vec = L_op \ F_vec
+    F_lu = lu(L_op)
+    U_vec = F_lu \ F_vec
+
+    rcond = LinearAlgebra.LAPACK.gecon!('1', F_lu.factors, opnorm(L_op, 1))
+    if rcond < eps(real(T))
+        @warn "Coupled thermal-wind system is ill-conditioned; results may be \
+               unreliable. Reduce the basic-state truncation (lmax)." rcond lmax_vel n_modes maxlog=1
+    end
 
     # =========================================================================
     # Extract results
@@ -2116,20 +2208,24 @@ end
 """
     theta_derivative_coeff_3d(ℓ::Int, m::Int)
 
-Compute θ-derivative coupling coefficients for spherical harmonics.
+Compute θ-derivative coupling coefficients for ⟨∂Θ/∂θ, Y_Lm⟩ forcing.
 
-Returns (c_plus, c_minus) where:
-- c_plus  = -(ℓ+1) × √[((ℓ+1)²-m²)/((2ℓ+1)(2ℓ+3))]  (couples Y_ℓm → Y_{ℓ+1,m})
-- c_minus = +ℓ × √[(ℓ²-m²)/((2ℓ-1)(2ℓ+1))]          (couples Y_ℓm → Y_{ℓ-1,m})
+Returns (c_plus, c_minus), including the spherical-harmonic normalization ratio
+N_ℓ/N_L (4π-normalized Y, where N_ℓ = √((2ℓ+1)/4π)), so the coefficients are
+consistent with `solve_thermal_wind_balance_3d!` (the analytically-validated
+diagonal solver) and the test helper `coupling_coeff_plus_3d`:
 
-These coefficients follow from the recurrence relation for associated Legendre functions:
-    (1-x²) dP_ℓ^m/dx = -ℓx P_ℓ^m + (ℓ+m) P_{ℓ-1}^m
+- c_plus  = -(ℓ+1) × √[((ℓ+1)²-m²)/((2ℓ+1)(2ℓ+3))] × √((2ℓ+1)/(2ℓ+3))   (Y_ℓm → Y_{ℓ+1,m})
+- c_minus = +ℓ     × √[(ℓ²-m²)/((2ℓ-1)(2ℓ+1))]     × √((2ℓ+1)/(2ℓ-1))   (Y_ℓm → Y_{ℓ-1,m})
+
+The √2 from real-harmonic normalization (m≠0) cancels in the ratio, so the same
+factor applies for all m.
 
 # Example
 ```julia
 c_plus, c_minus = theta_derivative_coeff_3d(2, 1)  # For Y_21
-# c_plus ≈ -0.7746 (coupling to Y_31)
-# c_minus ≈ 0.7746 (coupling to Y_11)
+# c_plus ≈ -1.2127 (coupling to Y_31)
+# c_minus ≈ 1.1547 (coupling to Y_11)
 ```
 """
 function theta_derivative_coeff_3d(ℓ::Int, m::Int)
@@ -2140,21 +2236,23 @@ function theta_derivative_coeff_3d(ℓ::Int, m::Int)
     c_plus = 0.0
     c_minus = 0.0
 
-    # Coupling to ℓ+1
+    # Coupling to ℓ+1 (includes norm ratio N_ℓ/N_{ℓ+1} = √((2ℓ+1)/(2ℓ+3)))
     if ℓ >= 0
         num_plus = (ℓ + 1)^2 - m^2
         den_plus = (2*ℓ + 1) * (2*ℓ + 3)
         if num_plus >= 0 && den_plus > 0
-            c_plus = -(ℓ + 1) * sqrt(num_plus / den_plus)
+            c_plus = -(ℓ + 1) * sqrt(num_plus / den_plus) *
+                     sqrt((2*ℓ + 1) / (2*ℓ + 3))
         end
     end
 
-    # Coupling to ℓ-1
+    # Coupling to ℓ-1 (includes norm ratio N_ℓ/N_{ℓ-1} = √((2ℓ+1)/(2ℓ-1)))
     if ℓ > abs(m)
         num_minus = ℓ^2 - m^2
         den_minus = (2*ℓ - 1) * (2*ℓ + 1)
         if num_minus >= 0 && den_minus > 0
-            c_minus = ℓ * sqrt(num_minus / den_minus)
+            c_minus = ℓ * sqrt(num_minus / den_minus) *
+                      sqrt((2*ℓ + 1) / (2*ℓ - 1))
         end
     end
 

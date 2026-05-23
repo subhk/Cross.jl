@@ -218,7 +218,7 @@ function ultraspherical_derivative(::Type{T}, λ::Real, N::Int) where {T<:Real}
         if iszero(λ)
             push!(vals, T(n + 1))
         else
-            push!(vals, T(2) * (λT + T(n)))
+            push!(vals, T(2) * λT)
         end
     end
 

@@ -1905,12 +1905,8 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     #   α_L^+ = √[((L+1)²-m²)/((2L+1)(2L+3))]
     #   α_L^- = √[(L²-m²)/((2L-1)(2L+1))]
     #
-    # sin(θ) ∂Y_Lm/∂θ (derived from Legendre recurrence):
-    #   Starting from: (1-x²) dP_L^m/dx = L x P_L^m - (L+m) P_{L-1}^m
-    #   With x = cos(θ): sin(θ) ∂Y_Lm/∂θ = -L cos(θ) Y_Lm + √[(L²-m²)(2L+1)/(2L-1)] Y_{L-1,m}
-    #
-    # After expanding cos(θ) Y_Lm and simplifying:
-    #   sin(θ) ∂Y_Lm/∂θ = -L α_L^+ Y_{L+1,m} + (L+1) α_L^- Y_{L-1,m}
+    # sin(θ) ∂Y_Lm/∂θ (verified numerically against orthonormal Y_lm):
+    #   sin(θ) ∂Y_Lm/∂θ = L α_L^+ Y_{L+1,m} - (L+1) α_L^- Y_{L-1,m}
 
     function alpha_plus(L::Int)
         num = (L + 1)^2 - m_bs^2
@@ -1948,9 +1944,9 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
                 A[k, j] = alpha_plus(l)
 
                 # B_{K,L} where L = K-1:
-                # From: sin(θ)∂Y_{K-1,m}/∂θ = -(K-1) α_{K-1}^+ Y_{K,m} + K α_{K-1}^- Y_{K-2,m}
-                # Projection onto Y_Km: ⟨sin(θ)∂Y_{K-1,m}/∂θ, Y_Km⟩ = -(K-1) α_{K-1}^+
-                B[k, j] = -(l) * alpha_plus(l)  # = -(K-1) α_{K-1}^+
+                # From: sin(θ)∂Y_{K-1,m}/∂θ = (K-1) α_{K-1}^+ Y_{K,m} - K α_{K-1}^- Y_{K-2,m}
+                # Projection onto Y_Km: ⟨sin(θ)∂Y_{K-1,m}/∂θ, Y_Km⟩ = (K-1) α_{K-1}^+
+                B[k, j] = l * alpha_plus(l)  # = (K-1) α_{K-1}^+
             end
         end
 
@@ -1963,9 +1959,9 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
                 A[k, j] = alpha_minus(l)
 
                 # B_{K,L} where L = K+1:
-                # From: sin(θ)∂Y_{K+1,m}/∂θ = -(K+1) α_{K+1}^+ Y_{K+2,m} + (K+2) α_{K+1}^- Y_{K,m}
-                # Projection onto Y_Km: ⟨sin(θ)∂Y_{K+1,m}/∂θ, Y_Km⟩ = (K+2) α_{K+1}^-
-                B[k, j] = (l + 1) * alpha_minus(l)  # = (K+2) α_{K+1}^-
+                # From: sin(θ)∂Y_{K+1,m}/∂θ = (K+1) α_{K+1}^+ Y_{K+2,m} - (K+2) α_{K+1}^- Y_{K,m}
+                # Projection onto Y_Km: ⟨sin(θ)∂Y_{K+1,m}/∂θ, Y_Km⟩ = -(K+2) α_{K+1}^-
+                B[k, j] = -(l + 1) * alpha_minus(l)  # = -(K+2) α_{K+1}^-
             end
         end
     end

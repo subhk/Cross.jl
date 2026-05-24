@@ -244,17 +244,26 @@ Because Cross.jl uses an $r_o$-based Ekman number (see the convention note in
 [Mathematical Foundations](../theory/mathematical_foundations.md)), the
 literature Ekman number is mapped as $E = Ek_d \,(1-\chi)^2$, with $(1-\chi)^2 = 0.4225$:
 
-| $Ek_d$ (literature) | $E$ passed to Cross.jl | $\widetilde{Ra}_c$ (Cross) | $\widetilde{Ra}_c$ (ref) | $m_c$ (Cross / ref) | $\omega_c$ (Cross) | $\omega_c$ (ref) |
+| $Ek_d$ (literature) | $E$ passed to Cross.jl | mode $m$ | $\widetilde{Ra}$ (Cross) | $\widetilde{Ra}_c$ (ref) | $\omega$ (Cross) | $\omega_c$ (ref) |
 |---|---|---|---|---|---|---|
-| $10^{-3}$ | $4.225\times10^{-4}$ | **55.905** | 55.9 | 4 / 4 | $-0.02309$ | $-0.0231$ |
-| $10^{-4}$ | $4.225\times10^{-5}$ | **75.222** | 75.2 | 5 / 5 | $-0.01125$ | $-0.0112$ |
+| $10^{-3}$ | $4.225\times10^{-4}$ | $4$ (global min) | **55.905** | 55.9 | $-0.02309$ | $-0.0231$ |
+| $10^{-4}$ | $4.225\times10^{-5}$ | $5$ (= ref $m_c$) | **75.246** | 75.2 | $-0.01123$ | $-0.0112$ |
 
-The critical wavenumber $m_c$ is reproduced exactly, the critical (modified)
-Rayleigh number to within 0.03%, and the drift frequency $\omega_c$ (in units of
-$\Omega$, hence convention-independent) to within 0.04%. This validates the full
-onset pipeline end to end — the Coriolis, viscous, buoyancy and thermal-advection
-operators, the ultraspherical radial discretization, and the shift-invert
-eigensolver.
+At $Ek_d = 10^{-3}$ the global critical mode is reproduced exactly ($m_c = 4$,
+fully resolution-converged), with the critical Rayleigh number matching to 0.01%
+and the drift frequency $\omega_c$ (in units of $\Omega$, hence
+convention-independent) to 0.04%. At $Ek_d = 10^{-4}$ the critical Rayleigh
+number and drift at the reference critical mode $m = 5$ match to 0.06% and 0.3%.
+This validates the full onset pipeline end to end — the Coriolis, viscous,
+buoyancy and thermal-advection operators, the ultraspherical radial
+discretization, and the shift-invert eigensolver.
+
+!!! note "Resolution at low Ekman number"
+    Global critical-mode selection becomes resolution-sensitive as $E$ decreases
+    (the critical wavenumber grows as $m_c \sim E^{-1/3}$ and the Ekman boundary
+    layer thins as $E^{1/3}$). At $Ek_d = 10^{-4}$, modes with $m > 5$ require
+    larger `lmax`/`Nr` to avoid spuriously low critical Rayleigh numbers; use a
+    convergence check (vary `lmax`, `Nr`) before trusting the global $m_c$ at low $E$.
 
 Reproducing the $Ek_d = 10^{-3}$ row:
 

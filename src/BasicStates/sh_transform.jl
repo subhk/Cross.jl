@@ -183,3 +183,32 @@ function vecsh_advection(theta::AbstractDict{Tuple{Int,Int},Vector{T}},
     end
     forcing
 end
+
+"""
+    _sh_nf_to_orth_factor(ℓ, m, T) -> T
+
+Coefficient rescale from the basic-state "no-factorial" SH normalization
+(`√((2ℓ+1)/4π·[2 if m≠0])`, used by the thermal-wind/construction subsystem) to
+the orthonormal full-`N_ℓm` normalization used by `sh_*`/`vecsh_advection`.
+Since ‖Y^{no-factorial}_ℓm‖² = (ℓ+|m|)!/(ℓ-|m|)!, a coefficient transforms as
+`a_orth = a_nf · √((ℓ+|m|)!/(ℓ-|m|)!)`. Returns 1 for m=0 (the conventions agree).
+"""
+function _sh_nf_to_orth_factor(ℓ::Int, m::Int, ::Type{T}) where {T<:Real}
+    am = abs(m)
+    am == 0 && return one(T)
+    ratio = one(T)                       # ∏_{k=ℓ-am+1}^{ℓ+am} k = (ℓ+am)!/(ℓ-am)!
+    for k in (ℓ - am + 1):(ℓ + am)
+        ratio *= T(k)
+    end
+    return sqrt(ratio)
+end
+
+"""Rescale a coeff dict from no-factorial → orthonormal (`dir=+1`) or back (`dir=-1`)."""
+function _sh_rescale(coeffs::AbstractDict{Tuple{Int,Int},Vector{T}}, dir::Int) where {T<:Real}
+    out = Dict{Tuple{Int,Int},Vector{T}}()
+    for ((ℓ, m), v) in coeffs
+        f = _sh_nf_to_orth_factor(ℓ, m, T)
+        out[(ℓ, m)] = dir > 0 ? v .* f : v ./ f
+    end
+    out
+end

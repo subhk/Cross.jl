@@ -68,6 +68,23 @@ import Random
         @test haskey(F, (3, -2)) && length(F[(3, 0)]) == length(r)
     end
 
+    @testset "compute_full_advection_spectral: m≥1 radial MMS (no-factorial path)" begin
+        # u_r=1/r² (mode (0,0), incompressible) advecting T̄ = r·Y_{21} (m=1).
+        # u·∇T̄ = u_r ∂_r T̄ ⇒ forcing[(2,1)] = N00/r² in the no-factorial storage.
+        # Exercises the no-factorial↔orthonormal conversion on an m≥1 mode.
+        r = collect(range(0.35, 1.0, length=24))
+        N00 = 1 / (2 * sqrt(π))
+        theta     = Dict{Tuple{Int,Int},Vector{Float64}}((2, 1) => r)
+        dtheta_dr = Dict{Tuple{Int,Int},Vector{Float64}}((2, 1) => ones(length(r)))
+        ur        = Dict{Tuple{Int,Int},Vector{Float64}}((0, 0) => 1.0 ./ r .^ 2)
+        dur_dr    = Dict{Tuple{Int,Int},Vector{Float64}}((0, 0) => -2.0 ./ r .^ 3)
+        utheta    = Dict{Tuple{Int,Int},Vector{Float64}}()
+        uphi      = Dict{Tuple{Int,Int},Vector{Float64}}()
+        F = Cross.compute_full_advection_spectral(theta, dtheta_dr, ur, dur_dr,
+                                                  utheta, uphi, 2, 1, r)
+        @test maximum(abs.(F[(2, 1)] .- N00 ./ r .^ 2)) < 1e-10
+    end
+
     @testset "Float32 grid constructs and round-trips" begin
         g32 = Cross.sh_grid(6, 2, Float32)
         c0 = Dict{Tuple{Int,Int},Float32}((ℓ, m) => randn(Float32)

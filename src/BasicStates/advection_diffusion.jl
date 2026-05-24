@@ -959,10 +959,15 @@ function compute_full_advection_spectral(
     lmax_bs::Int, mmax_bs::Int,
     r::Vector{T}
 ) where T<:Real
-    return vecsh_advection(theta_coeffs, dtheta_dr_coeffs,
-                           ur_coeffs, dur_dr_coeffs,
-                           utheta_coeffs, uphi_coeffs,
-                           lmax_bs, mmax_bs, r)
+    # The basic state is stored in the no-factorial normalization; vecsh_advection
+    # works in the orthonormal (full N_ℓm) basis. Convert inputs in, output back
+    # (m=0 conversion is identity, so the validated axisymmetric path is unchanged).
+    F_orth = vecsh_advection(
+        _sh_rescale(theta_coeffs, +1), _sh_rescale(dtheta_dr_coeffs, +1),
+        _sh_rescale(ur_coeffs, +1), _sh_rescale(dur_dr_coeffs, +1),
+        _sh_rescale(utheta_coeffs, +1), _sh_rescale(uphi_coeffs, +1),
+        lmax_bs, mmax_bs, r)
+    return _sh_rescale(F_orth, -1)
 end
 
 

@@ -40,6 +40,34 @@ import Random
         @test maximum(abs, values(div)) < 1e-12
     end
 
+    @testset "vecsh_advection: radial incompressible MMS" begin
+        # u_r = 1/r² (mode (0,0)) ⇒ ∇·ū = 0 (incompressible).  T̄ = r·Y_{10}.
+        # u·∇T̄ = u_r ∂_r T̄ = (1/r²)·1·Y_{10} ⇒ forcing[(1,0)] = N_00/r²,  N_00 = 1/(2√π).
+        r = collect(range(0.35, 1.0, length=24))
+        N00 = 1 / (2 * sqrt(π))
+        theta      = Dict{Tuple{Int,Int},Vector{Float64}}((1, 0) => r)
+        dtheta_dr  = Dict{Tuple{Int,Int},Vector{Float64}}((1, 0) => ones(length(r)))
+        ur         = Dict{Tuple{Int,Int},Vector{Float64}}((0, 0) => 1.0 ./ r .^ 2)
+        dur_dr     = Dict{Tuple{Int,Int},Vector{Float64}}((0, 0) => -2.0 ./ r .^ 3)
+        utheta     = Dict{Tuple{Int,Int},Vector{Float64}}()
+        uphi       = Dict{Tuple{Int,Int},Vector{Float64}}()
+        F = Cross.vecsh_advection(theta, dtheta_dr, ur, dur_dr, utheta, uphi, 2, 0, r)
+        expected = N00 ./ r .^ 2
+        @test maximum(abs.(F[(1, 0)] .- expected)) < 1e-10
+        # purely radial incompressible flow ⇒ no spurious other-mode forcing
+        @test maximum(abs.(F[(0, 0)])) < 1e-10
+        @test maximum(abs.(F[(2, 0)])) < 1e-10
+    end
+
+    @testset "vecsh_advection smoke (±m runs, finite)" begin
+        r = collect(range(0.35, 1.0, length=12))
+        mk() = Dict{Tuple{Int,Int},Vector{Float64}}((ℓ, m) => randn(length(r))
+                for m in -2:2 for ℓ in abs(m):3)
+        F = Cross.vecsh_advection(mk(), mk(), mk(), mk(), mk(), mk(), 3, 2, r)
+        @test all(all(isfinite, v) for v in values(F))
+        @test haskey(F, (3, -2)) && length(F[(3, 0)]) == length(r)
+    end
+
     @testset "Float32 grid constructs and round-trips" begin
         g32 = Cross.sh_grid(6, 2, Float32)
         c0 = Dict{Tuple{Int,Int},Float32}((ℓ, m) => randn(Float32)

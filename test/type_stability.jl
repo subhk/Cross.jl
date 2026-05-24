@@ -720,7 +720,10 @@ end
         verbose = false
     )
 
-    @test bytes < 1_200_000
+    # Nonaxisymmetric advection now uses the correct vector-SH divergence
+    # (vecsh_advection) — a real pseudo-spectral transform per radius, heavier
+    # than the former approximate term-split but aliasing-free and correct.
+    @test bytes < 2_500_000
 end
 
 @testset "Poisson mode solve avoids dense diagonal temporaries" begin

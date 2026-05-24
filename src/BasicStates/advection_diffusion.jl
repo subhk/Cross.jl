@@ -933,135 +933,36 @@ end
 
 """
     compute_full_advection_spectral(theta_coeffs, dtheta_dr_coeffs,
-                                     ur_coeffs, utheta_coeffs, uphi_coeffs,
+                                     ur_coeffs, dur_dr_coeffs,
+                                     utheta_coeffs, uphi_coeffs,
                                      lmax_bs, mmax_bs, r)
 
-Compute the full advection term ū·∇T̄ in spectral space including all
-velocity components (ū_r, ū_θ, ū_φ).
+Full advection ū·∇T̄ in spectral space, computed correctly via the divergence
+form `∇·(ūT̄)` (valid for incompressible ū) using a vector-spherical-harmonic
+transform — see `vecsh_advection`. This is aliasing-free and captures the full
+triadic (Gaunt) coupling, replacing the former approximate term-split (Term 1
+diagonal-only, Term 2 ℓ±1-only, Term 3 spurious "empirical" factors).
 
-The full advection is:
-    ū·∇T̄ = ū_r ∂T̄/∂r + (ū_θ/r) ∂T̄/∂θ + (ū_φ/(r sinθ)) ∂T̄/∂φ
-
-In spectral space:
-- ∂T̄/∂r is computed directly from dtheta_dr_coeffs
-- ∂T̄/∂θ couples ℓ to ℓ±1 via recurrence relations
-- ∂T̄/∂φ gives factor of im for mode m
-
-Returns forcing coefficients for the advection-diffusion equation.
+The basic state is stored in the cos(mφ), m≥0 real-SH basis, and callers read
+only the m≥0 coefficients — for those, the returned forcing is the exact
+projection of `∇·(ūT̄)`. The sin(mφ) contributions are computed but the cos-only
+storage cannot retain them; capturing them requires a full ±m representation
+(see the LIMITATIONS note in the triglobal docs).
 """
 function compute_full_advection_spectral(
     theta_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
     dtheta_dr_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
     ur_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
+    dur_dr_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
     utheta_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
     uphi_coeffs::Dict{Tuple{Int,Int}, Vector{T}},
     lmax_bs::Int, mmax_bs::Int,
     r::Vector{T}
 ) where T<:Real
-
-    Nr = length(r)
-    forcing = Dict{Tuple{Int,Int}, Vector{T}}()
-
-    # ==========================================================================
-    # Term 1: ū_r × ∂T̄/∂r (radial advection)
-    # ==========================================================================
-    # This is diagonal in (ℓ,m): ū_r,ℓm × ∂T̄_ℓm/∂r
-
-    for m_bs in 0:mmax_bs
-        for ℓ in m_bs:lmax_bs
-            if !haskey(ur_coeffs, (ℓ, m_bs)) || !haskey(dtheta_dr_coeffs, (ℓ, m_bs))
-                continue
-            end
-
-            ur_lm = ur_coeffs[(ℓ, m_bs)]
-            dT_dr_lm = dtheta_dr_coeffs[(ℓ, m_bs)]
-
-            if _maxabs(ur_lm) < eps(T) * 100 || _maxabs(dT_dr_lm) < eps(T) * 100
-                continue
-            end
-
-            # Diagonal contribution
-            if !haskey(forcing, (ℓ, m_bs))
-                forcing[(ℓ, m_bs)] = zeros(T, Nr)
-            end
-            forcing[(ℓ, m_bs)] .+= ur_lm .* dT_dr_lm
-        end
-    end
-
-    # ==========================================================================
-    # Term 2: (ū_θ/r) × ∂T̄/∂θ (meridional advection)
-    # ==========================================================================
-    # ∂T̄/∂θ couples ℓ to ℓ±1 via theta_derivative_coeff_3d
-    # This is more complex due to mode coupling
-
-    for m_bs in 0:mmax_bs
-        for ℓ_T in m_bs:lmax_bs
-            if !haskey(theta_coeffs, (ℓ_T, m_bs))
-                continue
-            end
-            T_lm = theta_coeffs[(ℓ_T, m_bs)]
-
-            if _maxabs(T_lm) < eps(T) * 100
-                continue
-            end
-
-            # θ-derivative of T̄_ℓm couples to ℓ±1
-            c_plus, c_minus = theta_derivative_coeff_3d(ℓ_T, m_bs)
-
-            # Contribution to ℓ_T - 1 mode
-            if ℓ_T > m_bs && abs(c_minus) > eps(T)
-                L_out = ℓ_T - 1
-                if haskey(utheta_coeffs, (L_out, m_bs))
-                    utheta_L = utheta_coeffs[(L_out, m_bs)]
-                    if _maxabs(utheta_L) > eps(T) * 100
-                        if !haskey(forcing, (L_out, m_bs))
-                            forcing[(L_out, m_bs)] = zeros(T, Nr)
-                        end
-                        forcing[(L_out, m_bs)] .+= c_minus .* (utheta_L ./ r) .* T_lm
-                    end
-                end
-            end
-
-            # Contribution to ℓ_T + 1 mode
-            if ℓ_T + 1 <= lmax_bs && abs(c_plus) > eps(T)
-                L_out = ℓ_T + 1
-                if haskey(utheta_coeffs, (L_out, m_bs))
-                    utheta_L = utheta_coeffs[(L_out, m_bs)]
-                    if _maxabs(utheta_L) > eps(T) * 100
-                        if !haskey(forcing, (L_out, m_bs))
-                            forcing[(L_out, m_bs)] = zeros(T, Nr)
-                        end
-                        forcing[(L_out, m_bs)] .+= c_plus .* (utheta_L ./ r) .* T_lm
-                    end
-                end
-            end
-        end
-    end
-
-    # ==========================================================================
-    # Term 3: (ū_φ/(r sinθ)) × ∂T̄/∂φ (azimuthal advection)
-    # ==========================================================================
-    # In the real-orthonormal cos(mφ) basis used for the basic state, this term
-    # has ZERO projection: ∂_φ acting on a cos(mφ) field gives sin(mφ), and
-    # ū_φ·∂_φT̄ ~ cos·sin = pure sin, which is orthogonal to every cos(mφ) basis
-    # function. (Verified to machine precision by manufactured-solution test.)
-    #
-    # The previous implementation here used arbitrary coupling factors (0.5, 0.3)
-    # and ∂_φ → ×m, producing spurious nonzero forcing. That has been removed.
-    #
-    # Capturing the genuine φ-advection requires representing the basic state in a
-    # FULL real-SH basis (both cos(mφ) and sin(mφ)) — the cos-only storage cannot
-    # hold the sin(mφ) result. See LIMITATIONS note below.
-    #
-    # NOTE: Terms 1 and 2 above are also approximate — a product of two spherical
-    # harmonics is a full triadic (Gaunt) coupling, but Term 1 keeps only the
-    # diagonal and Term 2 only the ℓ±1 coupling. A fully correct nonaxisymmetric
-    # u·∇T̄ requires a vector-spherical-harmonic transform (divergence form
-    # ∇·(ūT̄)); the scalar term-split aliases because ∂_θ of a scalar is not
-    # band-limited. This is tracked as future work; the axisymmetric (m=0) path
-    # used by the onset and biglobal solvers is exact and benchmark-validated.
-
-    return forcing
+    return vecsh_advection(theta_coeffs, dtheta_dr_coeffs,
+                           ur_coeffs, dur_dr_coeffs,
+                           utheta_coeffs, uphi_coeffs,
+                           lmax_bs, mmax_bs, r)
 end
 
 
@@ -1274,7 +1175,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
 
         advection_source = compute_full_advection_spectral(
             theta_coeffs, dtheta_dr_coeffs,
-            ur_coeffs, utheta_coeffs, uphi_coeffs,
+            ur_coeffs, dur_dr_coeffs, utheta_coeffs, uphi_coeffs,
             lmax_bs, mmax_bs, r
         )
 

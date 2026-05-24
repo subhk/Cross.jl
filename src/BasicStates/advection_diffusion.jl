@@ -1120,63 +1120,25 @@ function compute_full_advection_spectral(
     # ==========================================================================
     # Term 3: (ū_φ/(r sinθ)) × ∂T̄/∂φ (azimuthal advection)
     # ==========================================================================
-    # This is the original term, already implemented in compute_phi_advection_spectral
-    # Add it here using the same logic
-
-    for m_bs in 1:mmax_bs  # m=0 has no φ-advection
-        im_m = T(m_bs)
-
-        for ℓ_T in m_bs:lmax_bs
-            if !haskey(theta_coeffs, (ℓ_T, m_bs))
-                continue
-            end
-            T_lm = theta_coeffs[(ℓ_T, m_bs)]
-
-            if _maxabs(T_lm) < eps(T) * 100
-                continue
-            end
-
-            for ℓ_u in m_bs:lmax_bs
-                if !haskey(uphi_coeffs, (ℓ_u, m_bs))
-                    continue
-                end
-                u_Lm = uphi_coeffs[(ℓ_u, m_bs)]
-
-                if _maxabs(u_Lm) < eps(T) * 100
-                    continue
-                end
-
-                # Diagonal contribution
-                if ℓ_T == ℓ_u
-                    if !haskey(forcing, (ℓ_T, m_bs))
-                        forcing[(ℓ_T, m_bs)] = zeros(T, Nr)
-                    end
-                    forcing[(ℓ_T, m_bs)] .+= im_m .* u_Lm .* T_lm ./ r
-                end
-
-                # Off-diagonal contributions (simplified)
-                L_diff = abs(ℓ_T - ℓ_u)
-                if L_diff != ℓ_T && L_diff >= m_bs
-                    c_coupling = sqrt(T(2*ℓ_T + 1) * T(2*ℓ_u + 1)) / (4 * T(π) * T(2*L_diff + 1))
-                    c_coupling *= T(0.5)
-                    if !haskey(forcing, (L_diff, m_bs))
-                        forcing[(L_diff, m_bs)] = zeros(T, Nr)
-                    end
-                    forcing[(L_diff, m_bs)] .+= c_coupling .* im_m .* u_Lm .* T_lm ./ r
-                end
-
-                L_sum = ℓ_T + ℓ_u
-                if L_sum <= lmax_bs && L_sum != ℓ_T
-                    c_coupling = sqrt(T(2*ℓ_T + 1) * T(2*ℓ_u + 1)) / (4 * T(π) * T(2*L_sum + 1))
-                    c_coupling *= T(0.3)
-                    if !haskey(forcing, (L_sum, m_bs))
-                        forcing[(L_sum, m_bs)] = zeros(T, Nr)
-                    end
-                    forcing[(L_sum, m_bs)] .+= c_coupling .* im_m .* u_Lm .* T_lm ./ r
-                end
-            end
-        end
-    end
+    # In the real-orthonormal cos(mφ) basis used for the basic state, this term
+    # has ZERO projection: ∂_φ acting on a cos(mφ) field gives sin(mφ), and
+    # ū_φ·∂_φT̄ ~ cos·sin = pure sin, which is orthogonal to every cos(mφ) basis
+    # function. (Verified to machine precision by manufactured-solution test.)
+    #
+    # The previous implementation here used arbitrary coupling factors (0.5, 0.3)
+    # and ∂_φ → ×m, producing spurious nonzero forcing. That has been removed.
+    #
+    # Capturing the genuine φ-advection requires representing the basic state in a
+    # FULL real-SH basis (both cos(mφ) and sin(mφ)) — the cos-only storage cannot
+    # hold the sin(mφ) result. See LIMITATIONS note below.
+    #
+    # NOTE: Terms 1 and 2 above are also approximate — a product of two spherical
+    # harmonics is a full triadic (Gaunt) coupling, but Term 1 keeps only the
+    # diagonal and Term 2 only the ℓ±1 coupling. A fully correct nonaxisymmetric
+    # u·∇T̄ requires a vector-spherical-harmonic transform (divergence form
+    # ∇·(ūT̄)); the scalar term-split aliases because ∂_θ of a scalar is not
+    # band-limited. This is tracked as future work; the axisymmetric (m=0) path
+    # used by the onset and biglobal solvers is exact and benchmark-validated.
 
     return forcing
 end

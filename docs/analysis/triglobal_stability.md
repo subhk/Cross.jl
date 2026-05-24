@@ -2,6 +2,28 @@
 
 Triglobal stability analysis handles the most general case: fully three-dimensional basic states with non-axisymmetric ($m \neq 0$) components. This introduces **mode coupling** between perturbations at different azimuthal wavenumbers, requiring simultaneous solution of coupled modes.
 
+!!! warning "Validation status & known limitations (read first)"
+    The triglobal / non-axisymmetric **basic-state** machinery is **research-grade
+    and not yet benchmark-validated**, unlike the onset (exact, benchmarked) and
+    biglobal-axisymmetric (reduction-validated) paths. Specifically:
+
+    - **Non-axisymmetric advection `ū·∇T̄` is approximate.** The spectral nonlinear
+      product is a full triadic (Gaunt) coupling, but the current implementation
+      keeps only the radial-diagonal and θ-coupling-`ℓ±1` terms. A fully correct
+      version requires a vector-spherical-harmonic transform (divergence form
+      `∇·(ūT̄)`); a scalar term-split aliases because `∂_θ` of a scalar field is
+      not band-limited.
+    - **Azimuthal (φ) advection is dropped.** In the cos(mφ) basis the basic state
+      is stored in, `ū_φ·∂_φT̄` projects to exactly zero (verified). Capturing it
+      needs a full real-SH basis (both `cos mφ` and `sin mφ`).
+    - **Two SH normalization conventions coexist.** The thermal-wind/construction
+      subsystem uses `√((2ℓ+1)/4π·[2 if m≠0])` (no factorial); the azimuthal
+      coupling cache uses the full `N_ℓm` (with `(ℓ-m)!/(ℓ+m)!`). They agree for
+      `m=0` (hence the validated axisymmetric paths) but differ for `m≥1`.
+
+    Treat triglobal results as qualitative until the non-axisymmetric basic-state
+    subsystem is reimplemented on a unified vector-SH basis with validation.
+
 ## Physical Motivation
 
 ### When Triglobal Analysis is Required

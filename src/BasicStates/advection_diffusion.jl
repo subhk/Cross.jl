@@ -89,97 +89,18 @@ function compute_phi_advection_spectral(
     r::Vector{T}
 ) where T<:Real
 
-    Nr = length(r)
-    forcing = Dict{Tuple{Int,Int}, Vector{T}}()
-
-    # For each azimuthal wavenumber m
-    for m_bs in 1:mmax_bs  # m=0 has no φ-advection
-        # φ-derivative multiplier
-        im_m = T(m_bs)  # ∂/∂φ Y_ℓm = im Y_ℓm
-
-        # Loop over temperature modes with this m
-        for ℓ_T in m_bs:lmax_bs
-            if !haskey(theta_coeffs, (ℓ_T, m_bs))
-                continue
-            end
-            T_lm = theta_coeffs[(ℓ_T, m_bs)]
-
-            if _maxabs(T_lm) < eps(T) * 100
-                continue
-            end
-
-            # Loop over velocity modes with this m
-            for ℓ_u in m_bs:lmax_bs
-                if !haskey(uphi_coeffs, (ℓ_u, m_bs))
-                    continue
-                end
-                u_Lm = uphi_coeffs[(ℓ_u, m_bs)]
-
-                if _maxabs(u_Lm) < eps(T) * 100
-                    continue
-                end
-
-                # The product ū × T in spectral space couples through Gaunt coefficients
-                # For simplicity, use the "diagonal" approximation where the product
-                # of Y_ℓm × Y_Lm ≈ δ_{ℓL} at leading order for ℓ = L
-                #
-                # More accurate: use Gaunt coefficients
-                #   ⟨Y_{L'm} | Y_Lm × Y_ℓm / sinθ⟩
-                # which couple (ℓ, L) → L' through selection rules
-
-                # Diagonal contribution: ℓ_T ≈ ℓ_u → same mode
-                if ℓ_T == ℓ_u
-                    L_out = ℓ_T
-
-                    if !haskey(forcing, (L_out, m_bs))
-                        forcing[(L_out, m_bs)] = zeros(T, Nr)
-                    end
-
-                    # Advection term: im × ū_φ × T̄ / r
-                    # The 1/sinθ factor is absorbed into the Y_ℓm normalization
-                    # via the recurrence relation averaging
-                    forcing[(L_out, m_bs)] .+= im_m .* u_Lm .* T_lm ./ r
-                end
-
-                # Off-diagonal contributions from Gaunt coefficients
-                # |ℓ_T - ℓ_u| ≤ L' ≤ ℓ_T + ℓ_u (triangle rule)
-                # The 1/sinθ factor shifts selection rules
-
-                # For more accuracy, we can add the leading off-diagonal terms
-                # using the identity:
-                #   1/sinθ = Σ_n c_n P_n(cosθ)
-                # This couples L' = ℓ_T + ℓ_u, ℓ_T + ℓ_u - 2, ...
-
-                # Leading off-diagonal: L' = |ℓ_T - ℓ_u| (if different from diagonal)
-                L_diff = abs(ℓ_T - ℓ_u)
-                if L_diff != ℓ_T && L_diff >= m_bs
-                    # Coupling coefficient (simplified estimate)
-                    # Full calculation requires Wigner 3j symbols
-                    c_coupling = sqrt(T(2*ℓ_T + 1) * T(2*ℓ_u + 1)) / (4 * T(π) * T(2*L_diff + 1))
-                    c_coupling *= T(0.5)  # Empirical reduction factor
-
-                    if !haskey(forcing, (L_diff, m_bs))
-                        forcing[(L_diff, m_bs)] = zeros(T, Nr)
-                    end
-                    forcing[(L_diff, m_bs)] .+= c_coupling .* im_m .* u_Lm .* T_lm ./ r
-                end
-
-                # Sum coupling: L' = ℓ_T + ℓ_u
-                L_sum = ℓ_T + ℓ_u
-                if L_sum <= lmax_bs && L_sum != ℓ_T
-                    c_coupling = sqrt(T(2*ℓ_T + 1) * T(2*ℓ_u + 1)) / (4 * T(π) * T(2*L_sum + 1))
-                    c_coupling *= T(0.3)  # Empirical reduction factor
-
-                    if !haskey(forcing, (L_sum, m_bs))
-                        forcing[(L_sum, m_bs)] = zeros(T, Nr)
-                    end
-                    forcing[(L_sum, m_bs)] .+= c_coupling .* im_m .* u_Lm .* T_lm ./ r
-                end
-            end
-        end
-    end
-
-    return forcing
+    # Azimuthal advection ū_φ·∂_φT̄ projects to ZERO in the real-orthonormal
+    # cos(mφ) basis the basic state is stored in: ∂_φ maps cos(mφ)→sin(mφ), so
+    # ū_φ·∂_φT̄ ~ cos·sin = pure sin, orthogonal to every cos(mφ) basis function.
+    # (Verified to machine precision by a manufactured-solution test.)
+    #
+    # The previous implementation used arbitrary "empirical reduction factors"
+    # (0.5, 0.3) and ∂_φ → ×m, producing spurious nonzero forcing — removed.
+    #
+    # Capturing the genuine φ-advection requires representing the basic state in a
+    # FULL real-SH basis (both cos(mφ) and sin(mφ)); the cos-only storage cannot
+    # hold the sin(mφ) result. See the LIMITATIONS note in the triglobal docs.
+    return Dict{Tuple{Int,Int}, Vector{T}}()
 end
 
 

@@ -509,11 +509,14 @@ This is useful for understanding how the thermal wind affects stability:
 - `ω_onset::Real` - Drift frequency without mean flow
 - `ω_biglobal::Real` - Drift frequency with thermal wind
 """
-function compare_onset_vs_biglobal(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int, Ra::T,
-                                    basic_state_amplitude::T=T(0.1),
+function compare_onset_vs_biglobal(; E::Real, Pr::Real, χ::Real, m::Int, lmax::Int, Nr::Int, Ra::Real,
+                                    basic_state_amplitude::Real=0.1,
                                     mechanical_bc::Symbol=:no_slip,
                                     thermal_bc::Symbol=:fixed_temperature,
-                                    verbose::Bool=true) where T<:Real
+                                    verbose::Bool=true)
+    T = float(promote_type(typeof(E), typeof(Pr), typeof(χ), typeof(Ra), typeof(basic_state_amplitude)))
+    E, Pr, χ, Ra = T(E), T(Pr), T(χ), T(Ra)
+    basic_state_amplitude = T(basic_state_amplitude)
 
     if verbose
         println("="^60)
@@ -592,11 +595,14 @@ Sweep over thermal wind amplitudes to study stabilization/destabilization.
 # Returns
 - `results::Vector{NamedTuple}` - Growth rates and frequencies for each amplitude
 """
-function sweep_thermal_wind_amplitude(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int, Ra::T,
-                                       amplitudes::Vector{T},
+function sweep_thermal_wind_amplitude(; E::Real, Pr::Real, χ::Real, m::Int, lmax::Int, Nr::Int, Ra::Real,
+                                       amplitudes::AbstractVector{<:Real},
                                        mechanical_bc::Symbol=:no_slip,
                                        thermal_bc::Symbol=:fixed_temperature,
-                                       verbose::Bool=true) where T<:Real
+                                       verbose::Bool=true)
+    T = float(promote_type(typeof(E), typeof(Pr), typeof(χ), typeof(Ra), eltype(amplitudes)))
+    E, Pr, χ, Ra = T(E), T(Pr), T(χ), T(Ra)
+    amplitudes = T.(amplitudes)
 
     if verbose
         println("="^60)

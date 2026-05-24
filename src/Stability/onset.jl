@@ -188,21 +188,29 @@ println("Critical Ra for m=10: Ra_c = \$Ra_c, ω_c = \$ω_c")
 
 See also: [`find_global_critical_onset`](@ref)
 """
-function find_critical_Ra_onset(; E::T, Pr::T, χ::T, m::Int, lmax::Int, Nr::Int,
-                                 Ra_guess::T=T(1e6),
-                                 tol::T=T(1e-6),
-                                 Ra_bracket::Tuple{T,T}=(Ra_guess/10, Ra_guess*10),
+function find_critical_Ra_onset(; E::Real, Pr::Real, χ::Real, m::Int, lmax::Int, Nr::Int,
+                                 Ra_guess::Real=1e6,
+                                 tol::Real=1e-6,
+                                 Ra_bracket=nothing,
                                  mechanical_bc::Symbol=:no_slip,
                                  thermal_bc::Symbol=:fixed_temperature,
                                  equatorial_symmetry::Symbol=:both,
                                  nev::Int=6,
-                                 verbose::Bool=false) where {T<:Real}
+                                 verbose::Bool=false)
+
+    # Promote scalar inputs to a common float type (keyword-only `where T`
+    # cannot reliably infer T, so we infer it explicitly here).
+    T = float(promote_type(typeof(E), typeof(Pr), typeof(χ), typeof(Ra_guess)))
+    E_T, Pr_T, χ_T = T(E), T(Pr), T(χ)
+    Ra_guess_T = T(Ra_guess)
+    bracket = Ra_bracket === nothing ? (Ra_guess_T / 10, Ra_guess_T * 10) :
+              (T(Ra_bracket[1]), T(Ra_bracket[2]))
 
     # Use the existing find_critical_rayleigh function from linear_stability.jl
     # but with no basic_state
     Ra_c, ω_c, vec_c = Cross.find_critical_rayleigh(
-        E, Pr, χ, m, lmax, Nr;
-        Ra_guess=Ra_guess, tol=tol, Ra_bracket=Ra_bracket,
+        E_T, Pr_T, χ_T, m, lmax, Nr;
+        Ra_guess=Ra_guess_T, tol=T(tol), Ra_bracket=bracket,
         mechanical_bc=mechanical_bc, thermal_bc=thermal_bc,
         equatorial_symmetry=equatorial_symmetry, nev=nev
     )
@@ -256,14 +264,18 @@ At low Ekman number, theory predicts:
 - m_c ~ C_m × E^(-1/3)
 - ω_c ~ C_ω × E^(-2/3)
 """
-function find_global_critical_onset(; E::T, Pr::T, χ::T, lmax::Int, Nr::Int,
+function find_global_critical_onset(; E::Real, Pr::Real, χ::Real, lmax::Int, Nr::Int,
                                      m_range::AbstractRange,
-                                     Ra_guess::T=T(1e6),
-                                     tol::T=T(1e-6),
+                                     Ra_guess::Real=1e6,
+                                     tol::Real=1e-6,
                                      mechanical_bc::Symbol=:no_slip,
                                      thermal_bc::Symbol=:fixed_temperature,
                                      equatorial_symmetry::Symbol=:both,
-                                     verbose::Bool=true) where {T<:Real}
+                                     verbose::Bool=true)
+    T = float(promote_type(typeof(E), typeof(Pr), typeof(χ), typeof(Ra_guess)))
+    E, Pr, χ = T(E), T(Pr), T(χ)
+    Ra_guess = T(Ra_guess)
+    tol = T(tol)
     all(m -> m >= 0, m_range) || throw(ArgumentError(
         "m_range must be non-negative for onset analysis"))
     equatorial_symmetry in (:both, :symmetric, :antisymmetric) || throw(ArgumentError(
@@ -323,7 +335,7 @@ function find_global_critical_onset(; E::T, Pr::T, χ::T, lmax::Int, Nr::Int,
         error("No valid results found in the m_range")
     end
 
-    _, m_c = findmin(m -> results[m].Ra_c, keys(valid_results))
+    m_c = argmin(m -> results[m].Ra_c, keys(valid_results))
     Ra_c = results[m_c].Ra_c
     ω_c = results[m_c].ω_c
 

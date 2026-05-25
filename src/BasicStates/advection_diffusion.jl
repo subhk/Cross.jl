@@ -488,7 +488,7 @@ function solve_meridional_coupled!(
     RHS_full = zeros(T, total_size)
     r2 = r .* r
 
-    for (i_L, L) in enumerate(m_bs:lmax_bs)
+    for (i_L, L) in enumerate(am:lmax_bs)
         # Row indices for mode L
         row_start = (i_L - 1) * Nr + 1
         row_end = i_L * Nr
@@ -496,16 +496,16 @@ function solve_meridional_coupled!(
         # =================================================================
         # RHS: -(Ra E²/Pr) × im × Σ_ℓ T̄_ℓm × ⟨Y_Lm|1/(r sinθ)|Y_ℓm⟩
         # =================================================================
-        for ℓ in m_bs:lmax_bs
+        for ℓ in am:lmax_bs
             if !haskey(theta_coeffs, (ℓ, m_bs))
                 continue
             end
             T_lm = theta_coeffs[(ℓ, m_bs)]
 
             # Gaunt coefficient for 1/sinθ coupling
-            gaunt_coeff = inv_sin_theta_gaunt(L, ℓ, m_bs)
+            gaunt_coeff = inv_sin_theta_gaunt(L, ℓ, am)
             if abs(gaunt_coeff) > eps(T)
-                RHS_full[row_start:row_end] .+= -buoyancy_factor .* T(m_bs) .* gaunt_coeff .* T_lm ./ r
+                RHS_full[row_start:row_end] .+= -buoyancy_factor .* T(am) .* gaunt_coeff .* T_lm ./ r
             end
         end
 
@@ -519,7 +519,7 @@ function solve_meridional_coupled!(
         # =================================================================
 
         # Loop over source modes ℓ
-        for (i_ell, ℓ) in enumerate(m_bs:lmax_bs)
+        for (i_ell, ℓ) in enumerate(am:lmax_bs)
             col_start = (i_ell - 1) * Nr + 1
             col_end = i_ell * Nr
 
@@ -528,11 +528,11 @@ function solve_meridional_coupled!(
             C_Lell = zero(T)
             if L == ℓ + 1
                 # cosθ Y_ℓm has component C⁺_ℓm at Y_{ℓ+1,m}
-                _, C_plus = cos_theta_coupling(ℓ, m_bs)
+                _, C_plus = cos_theta_coupling(ℓ, am)
                 C_Lell = T(C_plus)
             elseif L == ℓ - 1
                 # cosθ Y_ℓm has component C⁻_ℓm at Y_{ℓ-1,m}
-                C_minus, _ = cos_theta_coupling(ℓ, m_bs)
+                C_minus, _ = cos_theta_coupling(ℓ, am)
                 C_Lell = T(C_minus)
             end
 
@@ -541,11 +541,11 @@ function solve_meridional_coupled!(
             A_Lell = zero(T)
             if L == ℓ + 1
                 # sinθ ∂Y_ℓm/∂θ has component A⁺_ℓm at Y_{ℓ+1,m}
-                _, A_plus, _ = theta_derivative_coupling(ℓ, m_bs)
+                _, A_plus, _ = theta_derivative_coupling(ℓ, am)
                 A_Lell = T(A_plus)
             elseif L == ℓ - 1
                 # sinθ ∂Y_ℓm/∂θ has component A⁻_ℓm at Y_{ℓ-1,m}
-                A_minus, _, _ = theta_derivative_coupling(ℓ, m_bs)
+                A_minus, _, _ = theta_derivative_coupling(ℓ, am)
                 A_Lell = T(A_minus)
             end
 
@@ -605,7 +605,7 @@ function solve_meridional_coupled!(
     u_theta_vec = A_full \ RHS_full
 
     # Extract u_θ for each mode
-    for (i_ell, ℓ) in enumerate(m_bs:lmax_bs)
+    for (i_ell, ℓ) in enumerate(am:lmax_bs)
         idx_start = (i_ell - 1) * Nr + 1
         idx_end = i_ell * Nr
         utheta_ℓ = u_theta_vec[idx_start:idx_end]
@@ -636,13 +636,13 @@ function solve_meridional_coupled!(
     rhs_ur = similar(r)
     r2_ur = similar(r)
 
-    for (i_L, L) in enumerate(m_bs:lmax_bs)
+    for (i_L, L) in enumerate(am:lmax_bs)
         # Source term for u_r at mode L
         fill!(source_ur, zero(T))
 
         # Contribution from ∂(sinθ u_θ)/∂θ projected onto Y_Lm
         # sinθ u_θ Y_ℓm has ∂/∂θ that couples via d±
-        for (i_ell, ℓ) in enumerate(m_bs:lmax_bs)
+        for (i_ell, ℓ) in enumerate(am:lmax_bs)
             if !haskey(utheta_coeffs, (ℓ, m_bs))
                 continue
             end
@@ -652,16 +652,16 @@ function solve_meridional_coupled!(
             # Using: ∂(sinθ Y)/∂θ = cosθ Y + sinθ ∂Y/∂θ
             d_Lell = zero(T)
             if L == ℓ + 1
-                _, C_plus = cos_theta_coupling(ℓ, m_bs)
-                _, A_plus, _ = theta_derivative_coupling(ℓ, m_bs)
+                _, C_plus = cos_theta_coupling(ℓ, am)
+                _, A_plus, _ = theta_derivative_coupling(ℓ, am)
                 d_Lell = T(C_plus) + T(A_plus)
             elseif L == ℓ - 1
-                C_minus, _ = cos_theta_coupling(ℓ, m_bs)
-                A_minus, _, _ = theta_derivative_coupling(ℓ, m_bs)
+                C_minus, _ = cos_theta_coupling(ℓ, am)
+                A_minus, _, _ = theta_derivative_coupling(ℓ, am)
                 d_Lell = T(C_minus) + T(A_minus)
             elseif L == ℓ
                 # Diagonal contribution from cosθ (zero) and sinθ∂/∂θ (small)
-                _, _, A_diag = theta_derivative_coupling(ℓ, m_bs)
+                _, _, A_diag = theta_derivative_coupling(ℓ, am)
                 d_Lell = T(A_diag)
             end
 
@@ -673,8 +673,8 @@ function solve_meridional_coupled!(
         # Contribution from u_φ term (if present)
         if haskey(uphi_coeffs, (L, m_bs))
             uphi_L = uphi_coeffs[(L, m_bs)]
-            inv_sin_LL = inv_sin_theta_gaunt(L, L, m_bs)
-            source_ur .-= T(m_bs) .* inv_sin_LL .* uphi_L ./ r
+            inv_sin_LL = inv_sin_theta_gaunt(L, L, am)
+            source_ur .-= T(am) .* inv_sin_LL .* uphi_L ./ r
         end
 
         # Solve: ∂(r² u_r)/∂r = r² × source_ur
@@ -780,14 +780,14 @@ function solve_meridional_simple!(
 
             # Effective factors for diagonal approximation
             # sinθ_eff: effective value of 1/sinθ for mode (ℓ,m)
-            inv_sin_eff = one(T) + T(m_bs^2) / T(max(ℓ * (ℓ + 1), 1))
+            inv_sin_eff = one(T) + T(am^2) / T(max(ℓ * (ℓ + 1), 1))
 
             # β_eff: effective z-derivative factor (latitude average of cosθ)
             # For geostrophic flow, use the characteristic value
             β_eff = sqrt(T(ℓ) / T(ℓ + 1))
 
             # RHS forcing: -(Ra E²/Pr) × im × T̄_ℓm × inv_sin_eff / r
-            forcing = -buoyancy_factor .* T(m_bs) .* T_lm .* inv_sin_eff ./ r
+            forcing = -buoyancy_factor .* T(am) .* T_lm .* inv_sin_eff ./ r
 
             # Simplified equation: 2Ω × β_eff × du_θ/dr = forcing
             # Integrate: u_θ = (1/(2Ω β_eff)) × ∫ forcing dr
@@ -835,7 +835,7 @@ function solve_meridional_simple!(
             # Simplified: u_r ~ -(r/ℓ(ℓ+1)) × (angular derivative of u_θ)
             # Using c_θ factor as proxy for angular derivative magnitude
             ell_factor = T(ℓ * (ℓ + 1))
-            c_theta = ell_factor > 0 ? sqrt(max(ell_factor - T(m_bs^2), zero(T))) / sqrt(ell_factor) : zero(T)
+            c_theta = ell_factor > 0 ? sqrt(max(ell_factor - T(am^2), zero(T))) / sqrt(ell_factor) : zero(T)
 
             # Estimate u_r from u_θ using poloidal relationship
             # u_r ~ ℓ(ℓ+1)/(r) × integral of u_θ type terms
@@ -902,8 +902,8 @@ function solve_meridional_circulation_toroidal_poloidal!(
 
     if !include_meridional
         # Set meridional circulation to zero (leading-order approximation)
-        for m_bs in 0:mmax_bs
-            for ℓ in m_bs:lmax_bs
+        for m_bs in (-mmax_bs:mmax_bs)
+            for ℓ in abs(m_bs):lmax_bs
                 ur_coeffs[(ℓ, m_bs)] = zeros(T, Nr)
                 utheta_coeffs[(ℓ, m_bs)] = zeros(T, Nr)
                 dur_dr_coeffs[(ℓ, m_bs)] = zeros(T, Nr)
@@ -914,9 +914,10 @@ function solve_meridional_circulation_toroidal_poloidal!(
     end
 
     if use_full_coupling
-        # Full coupled solver: solves the complete block-tridiagonal system
-        # for each azimuthal wavenumber m separately
-        for m_bs in 0:mmax_bs
+        # Full coupled solver: solves the complete block-tridiagonal system for each
+        # azimuthal wavenumber m separately. Signed range: m_bs<0 develops the sin(|m|φ)
+        # meridional partner (m_bs=0 returns zeros; ±|m| share a radial profile).
+        for m_bs in (-mmax_bs:mmax_bs)
             solve_meridional_coupled!(
                 ur_coeffs, utheta_coeffs, dur_dr_coeffs, dutheta_dr_coeffs,
                 theta_coeffs, uphi_coeffs,

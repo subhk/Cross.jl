@@ -384,6 +384,43 @@ end
         @test norm(C[_field_rows(target, 4, :Θ), _field_cols(source, 1, :T)]) > 0
     end
 
+    @testset "Real→complex coupling: φ-rotation invariance + sin modes" begin
+        # A real basic-state mode A cos(mφ)+B sin(mφ) is a φ-rotation of a pure-cos
+        # mode, so the forward coupling block C_{(m_from, m_from+m_bs)} (built from the
+        # complex coeff ĉ_{+m_bs}) must transform under a rotation by φ₀ as the pure
+        # phase e^{-i m_bs φ₀} — magnitude invariant. A pure-sin mode must give a block
+        # of the SAME magnitude as the cos mode (it is just rotated by π/2m), equal to
+        # -i × the cos block. Reading only the cosine slot (the pre-fix behavior) would
+        # scale the rotated block by cos(m_bs φ₀) and give a ZERO block for pure sin.
+        E, Pr, Ra, χ, Nr, lmax = 1e-3, 1.0, 1e4, 0.35, 12, 4
+        cd = ChebyshevDiffn(Nr, [χ, 1.0], 2)
+        f  = ones(Float64, Nr) .+ 0.3 .* cd.x
+        φ0 = 0.37
+        m_bs = 1
+
+        block12(uphi) = begin
+            bs = _basic_state_3d_with_modes(cd; uphi_coeffs=uphi)
+            p = TriglobalParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m_range=1:2, lmax=lmax,
+                                Nr=Nr, basic_state_3d=bs)
+            prob = setup_coupled_mode_problem(p)
+            smo  = Cross.build_single_mode_operators(prob, false)
+            cops = Cross.build_mode_coupling_operators(prob, smo, false)
+            get(cops, (1, 2),
+                zeros(ComplexF64, length(smo[2].interior_dofs), smo[1].reduction.n_reduced))
+        end
+
+        Ccos = block12(Dict((1, 1) => copy(f)))
+        Crot = block12(Dict((1, 1) => f .* cos(φ0), (1, -1) => f .* sin(φ0)))
+        Csin = block12(Dict((1, -1) => copy(f)))
+        ncos = norm(Ccos)
+
+        @test ncos > 1e-10                                   # cos coupling is present
+        @test isapprox(norm(Crot), ncos; rtol=1e-10)         # rotation preserves magnitude
+        @test isapprox(norm(Csin), ncos; rtol=1e-10)         # sin mode couples (was zero pre-fix)
+        @test maximum(abs.(Crot .- Ccos .* exp(-im * m_bs * φ0))) < 1e-10 * ncos
+        @test maximum(abs.(Csin .- Ccos .* (-im))) < 1e-10 * ncos
+    end
+
     # =========================================================================
     # Test 4: Axisymmetric Limit (No Mode Coupling)
     # =========================================================================

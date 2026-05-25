@@ -943,11 +943,10 @@ transform — see `vecsh_advection`. This is aliasing-free and captures the full
 triadic (Gaunt) coupling, replacing the former approximate term-split (Term 1
 diagonal-only, Term 2 ℓ±1-only, Term 3 spurious "empirical" factors).
 
-The basic state is stored in the cos(mφ), m≥0 real-SH basis, and callers read
-only the m≥0 coefficients — for those, the returned forcing is the exact
-projection of `∇·(ūT̄)`. The sin(mφ) contributions are computed but the cos-only
-storage cannot retain them; capturing them requires a full ±m representation
-(see the LIMITATIONS note in the triglobal docs).
+The basic state is stored in the full real-SH `±m` basis (`cos mφ` at `+m`,
+`sin mφ` at `-m`); both signs are computed and returned, so the forcing is the
+exact projection of `∇·(ūT̄)` including the sin(mφ) contributions that the
+self-consistent iteration retains.
 """
 function compute_full_advection_spectral(
     theta_coeffs::Dict{Tuple{Int,Int}, Vector{T}},

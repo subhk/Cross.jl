@@ -722,8 +722,10 @@ end
 
     # Nonaxisymmetric advection now uses the correct vector-SH divergence
     # (vecsh_advection) — a real pseudo-spectral transform per radius, heavier
-    # than the former approximate term-split but aliasing-free and correct.
-    @test bytes < 2_500_000
+    # than the former approximate term-split but aliasing-free and correct. The
+    # meridional solve now also computes the sin(|m|φ) partner (signed-m), adding
+    # one extra block solve per |m| present.
+    @test bytes < 3_000_000
 end
 
 @testset "Poisson mode solve avoids dense diagonal temporaries" begin

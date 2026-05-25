@@ -457,6 +457,13 @@ function solve_meridional_coupled!(
         return nothing
     end
 
+    # `m_bs` may be negative: the sin(|m|φ) partner of the temperature mode. All
+    # angular operators / ℓ-ranges depend only on |m| (`am`); the signed `m_bs` is
+    # used solely for the dictionary keys. By φ-rotation symmetry the sin partner's
+    # meridional flow has the same radial profile as the cosine mode, so `T(am)`
+    # drives both. For m_bs ≥ 0, am == m_bs and this path is bit-identical.
+    am = abs(m_bs)
+
     # Non-dimensional parameters
     two_omega = one(T) / E
     buoyancy_factor = Ra * E^2 / Pr
@@ -465,8 +472,8 @@ function solve_meridional_coupled!(
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
     idx_outer = idx_inner == 1 ? Nr : 1
 
-    # Number of ℓ modes: m_bs, m_bs+1, ..., lmax_bs
-    n_ell = lmax_bs - m_bs + 1
+    # Number of ℓ modes: |m_bs|, |m_bs|+1, ..., lmax_bs
+    n_ell = lmax_bs - am + 1
     if n_ell <= 0
         return nothing
     end
@@ -746,9 +753,13 @@ function solve_meridional_simple!(
         dutheta_dr_coeffs[(ℓ, 0)] = zeros(T, Nr)
     end
 
-    # m ≠ 0: Solve simplified θ-thermal wind equation
-    for m_bs in 1:mmax_bs
-        for ℓ in m_bs:lmax_bs
+    # m ≠ 0: Solve simplified θ-thermal wind equation. Signed m_bs: the sin(|m|φ)
+    # partner (m_bs<0) shares the cosine mode's radial profile by φ-rotation symmetry;
+    # angular factors use |m| (`am`), the signed key stores cos (+m) vs sin (−m).
+    for m_bs in (-mmax_bs:mmax_bs)
+        m_bs == 0 && continue
+        am = abs(m_bs)
+        for ℓ in am:lmax_bs
             # Check for temperature forcing
             if !haskey(theta_coeffs, (ℓ, m_bs))
                 ur_coeffs[(ℓ, m_bs)] = zeros(T, Nr)

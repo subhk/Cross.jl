@@ -29,12 +29,16 @@ Triglobal stability analysis handles the most general case: fully three-dimensio
       (test: *"Real→complex coupling: φ-rotation invariance + sin modes"*). This is an
       internal-consistency proof, not an absolute-growth-rate reference.
 
-    **Remaining limitation (higher-order):** the meridional-circulation solver
-    (`solve_meridional_circulation_toroidal_poloidal!`) is still `m≥0` only, so the
-    `sin`-phase meridional flow (`u_r, u_θ` at `m<0`, driven by `∂_φ` of a `sin`
-    temperature mode) is omitted. This is a second-order effect in the
-    non-axisymmetric amplitude. Treat absolute triglobal growth rates as
-    research-grade pending an external benchmark.
+    - **Meridional circulation carries the `sin` partner.** The solver
+      (`solve_meridional_circulation_toroidal_poloidal!`) runs over signed `m`, so a
+      `sin`-phase temperature mode (`m<0`) drives its meridional flow (`u_r, u_θ`) with
+      the same radial profile as the cosine partner (verified by φ-rotation symmetry,
+      test *"Meridional sin partner is the φ-rotation of the cos mode"*); the `m≥0`
+      path is bit-identical.
+
+    Treat absolute triglobal growth rates as research-grade pending an external
+    benchmark (none convention-matched exists; the published "non-axisymmetric"
+    rotating-convection results are onset problems, already validated here).
 
 ## Physical Motivation
 

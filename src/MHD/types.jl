@@ -739,6 +739,12 @@ function compute_mhd_l_modes(m::Int, lmax::Int, symm::Int, B0_type::BackgroundFi
         ll_v = collect(m:lmax)
     end
 
+    # Velocity has no ℓ=0 component (poloidal/toroidal scalars are undefined for
+    # ℓ=0: L=ℓ(ℓ+1)=0). Including ℓ=0 leaves a degenerate block (zero operator and
+    # zero mass) that produces spurious eigenvalues. Exclude it.
+    filter!(>=(1), ll_u)
+    filter!(>=(1), ll_v)
+
     return ll_u, ll_v
 end
 

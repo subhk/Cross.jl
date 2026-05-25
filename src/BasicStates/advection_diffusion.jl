@@ -97,9 +97,10 @@ function compute_phi_advection_spectral(
     # The previous implementation used arbitrary "empirical reduction factors"
     # (0.5, 0.3) and ∂_φ → ×m, producing spurious nonzero forcing — removed.
     #
-    # Capturing the genuine φ-advection requires representing the basic state in a
-    # FULL real-SH basis (both cos(mφ) and sin(mφ)); the cos-only storage cannot
-    # hold the sin(mφ) result. See the LIMITATIONS note in the triglobal docs.
+    # The genuine φ-advection is now captured by `vecsh_advection` (divergence form
+    # on the full ±m real-SH basis), which routes the cos→sin product into the
+    # `sin(mφ)` (`-m`) coefficients. This standalone scalar projection remains zero
+    # by construction and is retained only as a documented building block.
     return Dict{Tuple{Int,Int}, Vector{T}}()
 end
 

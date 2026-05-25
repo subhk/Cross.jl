@@ -1132,9 +1132,10 @@ function nonaxisymmetric_basic_state_selfconsistent(
     dur_dr_coeffs = Dict{Tuple{Int,Int}, Vector{T}}()
     dutheta_dr_coeffs = Dict{Tuple{Int,Int}, Vector{T}}()
 
-    # Initialize to zero for all modes
+    # Initialize to zero for all modes. Negative m holds the sin(|m|φ) partner so
+    # the self-consistent state can develop the φ-advection (zonal-drift) physics.
     for ℓ in 0:lmax_bs
-        for m in 0:min(ℓ, mmax_bs)
+        for m in -min(ℓ, mmax_bs):min(ℓ, mmax_bs)
             ur_coeffs[(ℓ, m)] = zeros(T, Nr)
             utheta_coeffs[(ℓ, m)] = zeros(T, Nr)
             dur_dr_coeffs[(ℓ, m)] = zeros(T, Nr)
@@ -1194,8 +1195,10 @@ function nonaxisymmetric_basic_state_selfconsistent(
         # ---------------------------------------------------------------------
         zero_forcing = zeros(T, Nr)
         for ℓ in 0:lmax_bs
-            for m in 0:min(ℓ, mmax_bs)
-                # Get forcing for this mode (zero if no advection)
+            for m in -min(ℓ, mmax_bs):min(ℓ, mmax_bs)  # ±m: sin partners develop via φ-advection
+                # Get forcing for this mode (zero if no advection). The Poisson
+                # operator is m-independent (eigenvalue ℓ(ℓ+1)), so m<0 solves
+                # identically with the sin-mode forcing.
                 forcing = get(advection_source, (ℓ, m), zero_forcing)
 
                 # Get boundary conditions
@@ -1223,10 +1226,14 @@ function nonaxisymmetric_basic_state_selfconsistent(
         # ---------------------------------------------------------------------
         # Step 5: Update thermal wind with new temperature
         # ---------------------------------------------------------------------
-        for m_bs in 0:mmax_bs
-            # Extract temperature modes for this m
+        # ±m: cos (m>0) and sin (m<0) partners. The thermal-wind solvers expect a
+        # non-negative wavenumber, so call them with |m| (the coupling depends only
+        # on |m|) and store the result under the signed m.
+        for m_bs in -mmax_bs:mmax_bs
+            am = abs(m_bs)
+            # Extract temperature modes for this (signed) m
             theta_m = Dict{Int, Vector{T}}()
-            for ℓ in m_bs:lmax_bs
+            for ℓ in am:lmax_bs
                 if haskey(theta_coeffs, (ℓ, m_bs))
                     theta_m[ℓ] = theta_coeffs[(ℓ, m_bs)]
                 end
@@ -1240,22 +1247,22 @@ function nonaxisymmetric_basic_state_selfconsistent(
             uphi_m = Dict{Int, Vector{T}}(ℓ => zeros(T, Nr) for ℓ in 0:lmax_bs)
             duphi_dr_m = Dict{Int, Vector{T}}(ℓ => zeros(T, Nr) for ℓ in 0:lmax_bs)
 
-            # Solve thermal wind
+            # Solve thermal wind (use |m| — coupling depends only on |m|)
             if coupled_thermal_wind
                 # Full coupled solver (no diagonal approximation)
-                solve_thermal_wind_coupled!(uphi_m, duphi_dr_m, theta_m, m_bs,
+                solve_thermal_wind_coupled!(uphi_m, duphi_dr_m, theta_m, am,
                                             cd, r_i, r_o, Ra, Pr;
                                             mechanical_bc=mechanical_bc,
                                             E=E, lmax=lmax_bs + 1)
             else
                 # Diagonal approximation
-                solve_thermal_wind_balance_3d!(uphi_m, duphi_dr_m, theta_m, m_bs,
+                solve_thermal_wind_balance_3d!(uphi_m, duphi_dr_m, theta_m, am,
                                                cd, r_i, r_o, Ra, Pr;
                                                mechanical_bc=mechanical_bc,
                                                E=E)
             end
 
-            # Copy results to storage
+            # Copy results to storage under the signed m
             for ℓ in 0:lmax_bs
                 if haskey(uphi_m, ℓ) && _maxabs(uphi_m[ℓ]) > eps(T) * 100
                     uphi_coeffs[(ℓ, m_bs)] = uphi_m[ℓ]
@@ -1301,7 +1308,7 @@ function nonaxisymmetric_basic_state_selfconsistent(
     # =========================================================================
     # Fill any missing coefficients with zeros
     for ℓ in 0:lmax_bs
-        for m in 0:min(ℓ, mmax_bs)
+        for m in -min(ℓ, mmax_bs):min(ℓ, mmax_bs)
             if !haskey(theta_coeffs, (ℓ, m))
                 theta_coeffs[(ℓ, m)] = zeros(T, Nr)
                 dtheta_dr_coeffs[(ℓ, m)] = zeros(T, Nr)

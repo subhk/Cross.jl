@@ -2,27 +2,39 @@
 
 Triglobal stability analysis handles the most general case: fully three-dimensional basic states with non-axisymmetric ($m \neq 0$) components. This introduces **mode coupling** between perturbations at different azimuthal wavenumbers, requiring simultaneous solution of coupled modes.
 
-!!! warning "Validation status & known limitations (read first)"
-    The triglobal / non-axisymmetric **basic-state** machinery is **research-grade
-    and not yet benchmark-validated**, unlike the onset (exact, benchmarked) and
-    biglobal-axisymmetric (reduction-validated) paths. Specifically:
+!!! warning "Validation status (read first)"
+    The non-axisymmetric basic-state machinery has been **reimplemented on a unified
+    vector-spherical-harmonic basis** and is **internally validated**, but it is **not
+    yet validated against an external published triglobal benchmark** (none with a
+    matching non-dimensionalization has been located). The onset (exact, benchmarked)
+    and biglobal-axisymmetric (reduction-validated) paths remain the absolute
+    references. Current state of the machinery:
 
-    - **Non-axisymmetric advection `ū·∇T̄` is approximate.** The spectral nonlinear
-      product is a full triadic (Gaunt) coupling, but the current implementation
-      keeps only the radial-diagonal and θ-coupling-`ℓ±1` terms. A fully correct
-      version requires a vector-spherical-harmonic transform (divergence form
-      `∇·(ūT̄)`); a scalar term-split aliases because `∂_θ` of a scalar field is
-      not band-limited.
-    - **Azimuthal (φ) advection is dropped.** In the cos(mφ) basis the basic state
-      is stored in, `ū_φ·∂_φT̄` projects to exactly zero (verified). Capturing it
-      needs a full real-SH basis (both `cos mφ` and `sin mφ`).
-    - **Two SH normalization conventions coexist.** The thermal-wind/construction
-      subsystem uses `√((2ℓ+1)/4π·[2 if m≠0])` (no factorial); the azimuthal
-      coupling cache uses the full `N_ℓm` (with `(ℓ-m)!/(ℓ+m)!`). They agree for
-      `m=0` (hence the validated axisymmetric paths) but differ for `m≥1`.
+    - **Advection `ū·∇T̄` is exact (divergence form).** Computed as `∇·(ūT̄)` for
+      incompressible `ū` via a vector-SH transform (`vecsh_advection`), capturing the
+      full triadic (Gaunt) coupling with no scalar-`∂_θ` aliasing. MMS-validated to
+      `<1e-10`; the `m=0` axisymmetric path is bit-identical to before.
+    - **Azimuthal (φ) advection is captured.** The basic state carries a full real-SH
+      `±m` representation (`cos mφ` at `+m`, `sin mφ` at `-m`); the self-consistent
+      solver develops the `sin` modes that `ū_φ·∂_φT̄` produces.
+    - **One normalization convention.** The real basic state enters the complex-SH
+      Gaunt coupling through a single hinge (`_basic_state_complex_profile`,
+      `ĉ_{ℓ,m}=(A∓iB)/√2`); the no-factorial ↔ orthonormal mismatch is resolved by a
+      boundary rescale (`_sh_rescale`). `m=0` is identity, so the validated paths are
+      unchanged.
+    - **Coupling convention validated by symmetry.** The real→complex map is verified
+      via φ-rotation invariance: a `sin` basic-state mode produces a coupling block of
+      the same magnitude as the corresponding `cos` mode (= `-i ×` it), and a rotated
+      basic state rephases the block by `e^{-i m_bs φ₀}` without changing its norm
+      (test: *"Real→complex coupling: φ-rotation invariance + sin modes"*). This is an
+      internal-consistency proof, not an absolute-growth-rate reference.
 
-    Treat triglobal results as qualitative until the non-axisymmetric basic-state
-    subsystem is reimplemented on a unified vector-SH basis with validation.
+    **Remaining limitation (higher-order):** the meridional-circulation solver
+    (`solve_meridional_circulation_toroidal_poloidal!`) is still `m≥0` only, so the
+    `sin`-phase meridional flow (`u_r, u_θ` at `m<0`, driven by `∂_φ` of a `sin`
+    temperature mode) is omitted. This is a second-order effect in the
+    non-axisymmetric amplitude. Treat absolute triglobal growth rates as
+    research-grade pending an external benchmark.
 
 ## Physical Motivation
 

@@ -160,10 +160,14 @@ function _nonzero_basic_state_modes_3d(basic_state::BasicState3D; tol=1e-14)
         basic_state.duphi_dr_coeffs,
     )
 
+    # Collapse ±m to a single positive-|m| representative: the real cosine part is
+    # stored at (ℓ, +|m|) and the sine part at (ℓ, -|m|); both feed the same complex
+    # coupling coefficient (see _basic_state_complex_profile). Listing both signs here
+    # would double-iterate (and double-count) the same physical mode.
     for coefficient_dict in coefficient_dicts
         for ((ℓ, m_bs), coeff) in coefficient_dict
             if m_bs != 0 && _maxabs(coeff) > tol
-                push!(modes, (ℓ, m_bs))
+                push!(modes, (ℓ, abs(m_bs)))
             end
         end
     end
@@ -509,6 +513,45 @@ function _basic_state_mode_scale(m_bs::Int, ::Type{T}) where {T<:Real}
     return phase * scale
 end
 
+"""
+    _basic_state_complex_profile(coeffs, ℓ_bs, m_bs_eff) -> Vector{Complex{T}} | nothing
+
+Complex spherical-harmonic radial coefficient `ĉ_{ℓ_bs, m_bs_eff}(r)` of a *real*
+basic-state field whose real-SH amplitudes are stored as cosine part at key
+`(ℓ_bs, +|m|)` (call it `A`) and sine part at key `(ℓ_bs, -|m|)` (call it `B`).
+
+The real→complex map for a real field is `ĉ_{ℓ,+m} = (A - iB)/√2`,
+`ĉ_{ℓ,-m} = (-1)^m (A + iB)/√2 = (-1)^m conj(ĉ_{ℓ,+m})`, and `ĉ_{ℓ,0} = A`.
+
+This is the single hinge where the real basic state enters the complex-SH Gaunt
+coupling. When the sine part `B` is absent (the historical cosine-only thermal-wind
+basic state) it reduces *exactly* to `_basic_state_mode_scale(m_bs_eff, T) .* A`, so
+the validated axisymmetric/cosine coupling path is bit-identical. Returns `nothing`
+when neither key carries data.
+"""
+function _basic_state_complex_profile(coeffs::Dict{Tuple{Int,Int}, Vector{T}},
+                                      ℓ_bs::Int, m_bs_eff::Int) where {T<:Real}
+    am = abs(m_bs_eff)
+    if am == 0
+        c = get(coeffs, (ℓ_bs, 0), nothing)
+        c === nothing && return nothing
+        return Complex{T}.(c)
+    end
+    A = get(coeffs, (ℓ_bs,  am), nothing)   # cosine part
+    B = get(coeffs, (ℓ_bs, -am), nothing)   # sine part
+    (A === nothing && B === nothing) && return nothing
+    Nr = A === nothing ? length(B) : length(A)
+    Av = A === nothing ? zeros(T, Nr) : A
+    Bv = B === nothing ? zeros(T, Nr) : B
+    invsqrt2 = inv(sqrt(T(2)))
+    if m_bs_eff > 0
+        return (Av .- im .* Bv) .* invsqrt2
+    else
+        phase = isodd(am) ? -one(T) : one(T)
+        return (phase .* invsqrt2) .* (Av .+ im .* Bv)
+    end
+end
+
 # Note: _theta_derivative_coeff is defined in basic_state_operators.jl
 
 """Angular coupling for a basic-state meridional derivative acting on perturbations."""
@@ -842,22 +885,13 @@ function add_advection_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    # Get basic state zonal flow coefficient for (ℓ_bs, |m_bs|) - already interpolated
-    # Note: m_bs can be negative for backward coupling, but coefficients are stored with positive m
-    key_bs = (ℓ_bs, abs(m_bs))
-    if !haskey(uphi_coeffs, key_bs)
-        return  # No coupling from this mode
-    end
-    uphi_bs = uphi_coeffs[key_bs]
+    # Basic-state zonal flow as complex SH coefficient (cos+sin), already interpolated.
+    uphi_bs = _basic_state_complex_profile(uphi_coeffs, ℓ_bs, m_bs)
+    (uphi_bs === nothing || maximum(abs, uphi_bs) < 1e-14) && return
 
-    if _maxabs(uphi_bs) < 1e-14
-        return  # Negligible basic state flow
-    end
-
-    # Advection coefficient: im_from × ū_φ/(r)
-    # The 1/sinθ factor is handled by using the unweighted coupling coefficient
-    bs_scale = _basic_state_mode_scale(m_bs, T)
-    adv_coeff = im * m_from .* (bs_scale .* uphi_bs) ./ r
+    # Advection coefficient: im_from × ū_φ/r; the 1/sinθ factor is handled by the
+    # unweighted coupling coefficient.
+    adv_coeff = im * m_from .* uphi_bs ./ r
 
     for field in (:P, :T, :Θ)
         for (ℓ_from, field_from) in keys(op_from.index_map)
@@ -908,17 +942,10 @@ function add_metric_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    if !haskey(uphi_coeffs, key_bs)
-        return
-    end
-    uphi_bs = uphi_coeffs[key_bs]
-    if _maxabs(uphi_bs) < 1e-14
-        return
-    end
+    uphi_bs = _basic_state_complex_profile(uphi_coeffs, ℓ_bs, m_bs)
+    (uphi_bs === nothing || maximum(abs, uphi_bs) < 1e-14) && return
 
-    bs_scale = _basic_state_mode_scale(m_bs, T)
-    metric_profile = -(bs_scale .* uphi_bs) ./ r
+    metric_profile = -uphi_bs ./ r
 
     for (ℓ_from, field_from) in keys(op_from.index_map)
         if field_from != :T || ℓ_from < m_pert_from
@@ -975,18 +1002,9 @@ function add_temperature_gradient_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    # Get basic state temperature gradient for (ℓ_bs, |m_bs|) - already interpolated
-    # Note: m_bs can be negative for backward coupling, but coefficients are stored with positive m
-    key_bs = (ℓ_bs, abs(m_bs))
-    if !haskey(dtheta_dr_coeffs, key_bs)
-        return
-    end
-    dtheta_dr_bs = dtheta_dr_coeffs[key_bs]
-
-    if _maxabs(dtheta_dr_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
+    # Basic-state temperature gradient as complex SH coefficient, already interpolated.
+    dtheta_dr_bs = _basic_state_complex_profile(dtheta_dr_coeffs, ℓ_bs, m_bs)
+    (dtheta_dr_bs === nothing || maximum(abs, dtheta_dr_bs) < 1e-14) && return
 
     # The coupling is: u'_r × ∂θ̄_bs/∂r with the same radial weighting
     # used in the single-mode operator assembly.
@@ -1024,7 +1042,7 @@ function add_temperature_gradient_coupling!(C::Matrix{Complex{T}},
 
             # Match the sparse radial weighting used by the single-mode
             # temperature equation before projection.
-            temp_grad_coeff = -L_from .* (bs_scale .* (r .^ 2) .* dtheta_dr_bs)
+            temp_grad_coeff = -L_from .* ((r .^ 2) .* dtheta_dr_bs)
 
             for i in 1:Nr
                 row = idx_to[i]
@@ -1061,18 +1079,9 @@ function add_shear_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    # Get basic state velocity gradient - already interpolated
-    # Note: m_bs can be negative for backward coupling, but coefficients are stored with positive m
-    key_bs = (ℓ_bs, abs(m_bs))
-    if !haskey(duphi_dr_coeffs, key_bs)
-        return
-    end
-    duphi_dr_bs = duphi_dr_coeffs[key_bs]
-
-    if _maxabs(duphi_dr_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
+    # Basic-state velocity gradient as complex SH coefficient, already interpolated.
+    duphi_dr_bs = _basic_state_complex_profile(duphi_dr_coeffs, ℓ_bs, m_bs)
+    (duphi_dr_bs === nothing || maximum(abs, duphi_dr_bs) < 1e-14) && return
 
     # Shear term: u'_r × ∂ū_φ/∂r couples poloidal (P) to toroidal (T)
 
@@ -1107,7 +1116,7 @@ function add_shear_coupling!(C::Matrix{Complex{T}},
             idx_to = idx_map_to[(ℓ_to, :T)]
 
             # Coupling: -L_from × ∂ū_φ/∂r
-            shear_coeff = -L_from .* (bs_scale .* duphi_dr_bs)
+            shear_coeff = -L_from .* duphi_dr_bs
 
             for i in 1:Nr
                 row = idx_to[i]
@@ -1134,16 +1143,9 @@ function add_temperature_gradient_theta_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    if !haskey(theta_coeffs, key_bs)
-        return
-    end
-    theta_bs = theta_coeffs[key_bs]
-    if _maxabs(theta_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
-    theta_scaled = bs_scale .* theta_bs
+    theta_bs = _basic_state_complex_profile(theta_coeffs, ℓ_bs, m_bs)
+    (theta_bs === nothing || maximum(abs, theta_bs) < 1e-14) && return
+    theta_scaled = theta_bs
 
     for (ℓ_from, field_from) in keys(op_from.index_map)
         if field_from != :P
@@ -1214,21 +1216,14 @@ function add_temperature_gradient_phi_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    if !haskey(theta_coeffs, key_bs)
-        return
-    end
-    theta_bs = theta_coeffs[key_bs]
-    if _maxabs(theta_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
+    theta_bs = _basic_state_complex_profile(theta_coeffs, ℓ_bs, m_bs)
+    (theta_bs === nothing || maximum(abs, theta_bs) < 1e-14) && return
 
     # The φ-derivative of θ̄_bs gives: ∂θ̄_bs/∂φ = i × m_bs × θ̄_bs
     # Combined with 1/r factor for the advection term
     # Factor: (i × m_bs) × θ̄_bs / r
     inv_r = one(T) ./ r
-    phi_deriv_coeff = (im * m_bs) .* (bs_scale .* theta_bs .* inv_r)
+    phi_deriv_coeff = (im * m_bs) .* (theta_bs .* inv_r)
 
     # Loop over toroidal field (source of u'_φ) coupling to temperature
     for (ℓ_from, field_from) in keys(op_from.index_map)
@@ -1289,16 +1284,9 @@ function add_shear_theta_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    if !haskey(uphi_coeffs, key_bs)
-        return
-    end
-    uphi_bs = uphi_coeffs[key_bs]
-    if _maxabs(uphi_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
-    uphi_scaled = bs_scale .* uphi_bs
+    uphi_bs = _basic_state_complex_profile(uphi_coeffs, ℓ_bs, m_bs)
+    (uphi_bs === nothing || maximum(abs, uphi_bs) < 1e-14) && return
+    uphi_scaled = uphi_bs
 
     for (ℓ_from, field_from) in keys(op_from.index_map)
         if field_from != :P
@@ -1352,15 +1340,9 @@ function add_radial_advection_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    ur_coeffs_bs = get(ur_coeffs, key_bs, nothing)
-    ur_coeffs_bs === nothing && return
-
-    if _maxabs(ur_coeffs_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
-    ur_scaled = bs_scale .* ur_coeffs_bs
+    ur_coeffs_bs = _basic_state_complex_profile(ur_coeffs, ℓ_bs, m_bs)
+    (ur_coeffs_bs === nothing || maximum(abs, ur_coeffs_bs) < 1e-14) && return
+    ur_scaled = ur_coeffs_bs
 
     for field in (:P, :T, :Θ)
         for (ℓ_from, field_from) in keys(op_from.index_map)
@@ -1412,15 +1394,9 @@ function add_meridional_advection_coupling!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    utheta_bs = get(utheta_coeffs, key_bs, nothing)
-    utheta_bs === nothing && return
-
-    if _maxabs(utheta_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
-    adv_profile = (bs_scale .* utheta_bs) ./ r
+    utheta_bs = _basic_state_complex_profile(utheta_coeffs, ℓ_bs, m_bs)
+    (utheta_bs === nothing || maximum(abs, utheta_bs) < 1e-14) && return
+    adv_profile = utheta_bs ./ r
 
     for field in (:P, :T, :Θ)
         for (ℓ_from, field_from) in keys(op_from.index_map)
@@ -1469,14 +1445,8 @@ function add_radial_velocity_shear!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    dur_dr_bs = get(dur_dr_coeffs, key_bs, nothing)
-    dur_dr_bs === nothing && return
-
-    if _maxabs(dur_dr_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
+    dur_dr_bs = _basic_state_complex_profile(dur_dr_coeffs, ℓ_bs, m_bs)
+    (dur_dr_bs === nothing || maximum(abs, dur_dr_bs) < 1e-14) && return
 
     for (ℓ_from, field_from) in keys(op_from.index_map)
         if field_from != :P || ℓ_from < m_pert_from
@@ -1500,7 +1470,7 @@ function add_radial_velocity_shear!(C::Matrix{Complex{T}},
 
             idx_from = idx_map_from[(ℓ_from, :P)]
             idx_to = idx_map_to[(ℓ_to, :P)]
-            shear_profile = -L_from .* (bs_scale .* dur_dr_bs)
+            shear_profile = -L_from .* dur_dr_bs
 
             for i in 1:Nr
                 row = idx_to[i]
@@ -1526,14 +1496,8 @@ function add_meridional_velocity_shear!(C::Matrix{Complex{T}},
     m_pert_from = abs(m_from)
     m_pert_to = abs(m_to)
 
-    key_bs = (ℓ_bs, abs(m_bs))
-    dutheta_dr_bs = get(dutheta_dr_coeffs, key_bs, nothing)
-    dutheta_dr_bs === nothing && return
-
-    if _maxabs(dutheta_dr_bs) < 1e-14
-        return
-    end
-    bs_scale = _basic_state_mode_scale(m_bs, T)
+    dutheta_dr_bs = _basic_state_complex_profile(dutheta_dr_coeffs, ℓ_bs, m_bs)
+    (dutheta_dr_bs === nothing || maximum(abs, dutheta_dr_bs) < 1e-14) && return
 
     for (ℓ_from, field_from) in keys(op_from.index_map)
         if field_from != :P || ℓ_from < m_pert_from
@@ -1557,7 +1521,7 @@ function add_meridional_velocity_shear!(C::Matrix{Complex{T}},
 
             idx_from = idx_map_from[(ℓ_from, :P)]
             idx_to = idx_map_to[(ℓ_to, :P)]
-            shear_profile = -L_from .* (bs_scale .* dutheta_dr_bs)
+            shear_profile = -L_from .* dutheta_dr_bs
 
             for i in 1:Nr
                 row = idx_to[i]

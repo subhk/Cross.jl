@@ -39,12 +39,28 @@ end
     @test size(res.eigenvectors, 1) > 0                          # full-size eigenvectors reconstructed
 end
 
-@testset "assemble_mhd_galerkin guards the (reverted) magnetic sector" begin
-    # Magnetic Galerkin coupling was reverted (G3.2b); magnetic cases route through
-    # the tau path, so assembly errors on a field.
-    op = Cross.MHDStabilityOperator(MHDParams(E=1e-3, Pr=1.0, Ra=100.0, ricb=0.35, m=4,
-                                              lmax=6, N=16, B0_type=Cross.axial, Le=0.1))
-    @test_throws ErrorException Cross.assemble_mhd_galerkin(op)
+@testset "MHD axial Galerkin: spurious-free, physical (decaying), convective at onset" begin
+    E = 4.225e-4; Pr = 1.0; m = 4; lmax = 8; Nr = 32; χ = 0.35; Ra = 55.905
+    onl = maximum(real.(solve(OnsetProblem(OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ, m=m,
+                                           lmax=lmax, Nr=Nr)); nev=12).eigenvalues))
+    op = Cross.MHDStabilityOperator(MHDParams(E=E, Pr=Pr, Ra=Ra, ricb=χ, m=m, lmax=lmax,
+                                              N=Nr, symm=0, B0_type=Cross.axial, Le=1e-2,
+                                              B0_amplitude=1.0))
+    A, B, lay = Cross.assemble_mhd_galerkin(op)
+    ev = filter(isfinite, eigen(A, B).values)
+    @test length(ev) == lay.nred                      # full-rank B (no infinite eigenvalues)
+    @test count(>(0.1), real.(ev)) == 0               # NO spurious (was a +14.6 swarm pre-fix)
+    @test maximum(real.(ev)) < 1e-3                   # all modes decay (subcritical + dissipative)
+    @test minimum(abs.(real.(ev) .- onl)) < 5e-3      # convective mode survives near onset
+end
+
+@testset "solve(MHDProblem) axial routes through Galerkin, spurious-free" begin
+    res = solve(MHDProblem(MHDParams(E=4.225e-4, Pr=1.0, Ra=55.905, ricb=0.35, m=4, lmax=8,
+                                     N=32, symm=0, B0_type=Cross.axial, Le=1e-2,
+                                     B0_amplitude=1.0)); nev=8, which=:LR)
+    @test maximum(real.(res.eigenvalues)) < 0.1        # no spurious selected
+    @test size(res.eigenvectors, 2) == length(res.eigenvalues)
+    @test size(res.eigenvectors, 1) > 0                # full-size eigenvectors reconstructed
 end
 
 @testset "Magnetic diffusion sign: free-decay modes dissipate (≡ viscous at Pm=1)" begin

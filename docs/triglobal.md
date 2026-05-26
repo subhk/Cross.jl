@@ -218,15 +218,8 @@ end
 
 ```julia
 Ra_c, ω_c, eigvec = find_critical_rayleigh_triglobal(
-    E = params_triglobal.E,
-    Pr = params_triglobal.Pr,
-    χ = params_triglobal.χ,
-    m_range = params_triglobal.m_range,
-    lmax = params_triglobal.lmax,
-    Nr = params_triglobal.Nr,
-    basic_state_3d = bs3d;
-    Ra_guess = 1e7,
-    tol = 1e-3,
+    params.E, params.Pr, params.χ, m_range, params.lmax, params.Nr, bs3d;
+    Ra_min = 1e6, Ra_max = 1e8, tol = 1e-3,
 )
 
 println("Critical Rayleigh number (tri-global): ", Ra_c)
@@ -243,15 +236,10 @@ for amp in amplitudes
     boundary_modes = Dict((2, 2) => amp)
     bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 
-    params = TriglobalParams(
-        E = E, Pr = Pr, Ra = Ra, χ = χ,
-        m_range = -2:2, lmax = 40, Nr = 64,
-        basic_state_3d = bs3d,
-    )
+    params = OnsetParams(E = E, Pr = Pr, Ra = Ra, χ = χ, m = 0, lmax = 40, Nr = 64)
+    result = solve(TriglobalProblem(params, bs3d, -2:2); nev = 4, verbose = false)
 
-    eigenvalues, _ = solve_triglobal_eigenvalue_problem(params; nev=4, verbose=false)
-
-    push!(results, (amplitude=amp, σ=real(eigenvalues[1]), ω=imag(eigenvalues[1])))
+    push!(results, (amplitude = amp, σ = result.growth_rate, ω = result.frequency))
 end
 ```
 
@@ -263,10 +251,10 @@ Begin with narrow `m_range` and increase gradually:
 
 ```julia
 # Quick test
-params_test = TriglobalParams(..., m_range=-1:1, lmax=20, Nr=32)
+problem_test = TriglobalProblem(OnsetParams(...; lmax=20, Nr=32), bs3d, -1:1)
 
 # Production run
-params_full = TriglobalParams(..., m_range=-3:3, lmax=50, Nr=64)
+problem_full = TriglobalProblem(OnsetParams(...; lmax=50, Nr=64), bs3d, -3:3)
 ```
 
 ### Use Sparse Storage
@@ -308,24 +296,21 @@ boundary_modes = Dict(
 bs3d = nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, 8, 4, boundary_modes)
 
 # === Tri-Global Setup ===
-params = TriglobalParams(
-    E = E, Pr = Pr, Ra = Ra, χ = χ,
-    m_range = -2:2,
-    lmax = 35,
-    Nr = Nr,
-    basic_state_3d = bs3d,
+params = OnsetParams(
+    E = E, Pr = Pr, Ra = Ra, χ = χ, m = 0,
+    lmax = 35, Nr = Nr,
     mechanical_bc = :no_slip,
     thermal_bc = :fixed_temperature,
 )
+problem = TriglobalProblem(params, bs3d, -2:2)
 
 # === Check Size ===
-size_report = estimate_triglobal_problem_size(params)
-@printf("Problem: %d DOFs across %d modes\n",
-    size_report.total_dofs, size_report.num_modes)
+estimate_size(problem)
 
 # === Solve ===
 println("Solving eigenvalue problem...")
-eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(params; nev=8)
+result = solve(problem; nev = 8)
+eigenvalues = result.eigenvalues
 
 # === Results ===
 println("\n" * "="^50)

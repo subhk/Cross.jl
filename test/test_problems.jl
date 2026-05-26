@@ -80,6 +80,15 @@ end
     @test_throws ArgumentError TriglobalProblem(params, _basic_state_3d_fixture(params; coefficient_length=params.Nr - 1), 0:2)
 end
 
+@testset "basic_state(params; mode=...) convenience constructor" begin
+    params = OnsetParams(E=1e-3, Pr=1.0, Ra=1e4, χ=0.35, m=4, lmax=8, Nr=16)
+    @test basic_state(params; mode=:conduction) isa BasicState
+    @test basic_state(params; mode=:meridional, amplitude=0.05) isa BasicState
+    @test basic_state(params; mode=:nonaxisymmetric, mmax_bs=2) isa BasicState3D
+    @test basic_state(params; mode=:selfconsistent, max_iterations=10) isa BasicState3D
+    @test_throws ArgumentError basic_state(params; mode=:bogus)
+end
+
 @testset "MHDProblem construction" begin
     params = MHDParams(E=1e-3, Pr=1.0, Pm=1.0, Ra=100.0, ricb=0.35,
                        m=1, lmax=6, symm=1, N=8)

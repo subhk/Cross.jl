@@ -68,3 +68,33 @@ end
         @test isapprox(got, sort([(b/L)^4 for b in β]); rtol = 1e-5)
     end
 end
+
+@testset "Stress-free recombinations: nullity + BCs (independent of library helpers)" begin
+    T = Float64; ri = 0.35; ro = 1.0; N = 32; K = N + 1
+    scale = Cross._radial_scale(ri, ro)
+    Rp = Cross.recomb_poloidal_stressfree(T, N, ri, ro)
+    Rt = Cross.recomb_toroidal_stressfree(T, N, ri, ro)
+    @test size(Rp) == (K, N - 3)        # q=4 (u=0, r·u''=0 both ends)
+    @test size(Rt) == (K, N - 1)        # q=2 (-r·v'+v=0 both ends)
+
+    # First-principles boundary evaluators (no Cross._chebyshev_boundary_* helpers):
+    #   T_n(1)=1, T_n(-1)=(-1)^n ; T_n'(1)=n^2, T_n'(-1)=(-1)^(n+1) n^2 ;
+    #   T_n''(1)=n^2(n^2-1)/3, T_n''(-1)=(-1)^n n^2(n^2-1)/3
+    val_o = T[1 for n in 0:N];            val_i = T[(-1)^n for n in 0:N]
+    der_o = T[n^2 for n in 0:N];          der_i = T[(-1)^(n+1) * n^2 for n in 0:N]
+    sec_o = T[n^2*(n^2-1)/3 for n in 0:N]; sec_i = T[(-1)^n * n^2*(n^2-1)/3 for n in 0:N]
+    rb_o = Cross._boundary_radius(ri, ro, :outer)
+    rb_i = Cross._boundary_radius(ri, ro, :inner)
+
+    # Poloidal stress-free: u=0 and u''=0 at both boundaries.
+    @test maximum(abs.(val_o' * Rp)) < 1e-8
+    @test maximum(abs.(val_i' * Rp)) < 1e-8
+    @test maximum(abs.((scale^2 .* sec_o)' * Rp)) < 1e-6
+    @test maximum(abs.((scale^2 .* sec_i)' * Rp)) < 1e-6
+
+    # Toroidal stress-free: -r·v' + v = 0 at both boundaries.
+    @test maximum(abs.((@. -rb_o * scale * der_o + val_o)' * Rt)) < 1e-8
+    @test maximum(abs.((@. -rb_i * scale * der_i + val_i)' * Rt)) < 1e-8
+    # ...and it must NOT force v=0 (distinguishes the Robin basis from Dirichlet).
+    @test maximum(abs.(val_o' * Rt)) > 1e-3
+end

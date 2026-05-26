@@ -128,3 +128,42 @@ rows (P_M restriction), right-multiply by the trial recombination `R_trial`.
 function galerkin_block(L_band::AbstractMatrix, R_trial::AbstractMatrix, M_test::Int)
     return Matrix((L_band * R_trial)[1:M_test, :])
 end
+
+"""
+    recomb_poloidal_stressfree(T, N, ri, ro) -> Matrix
+
+Stress-free poloidal velocity trial basis: `u = 0` and `r·u'' = 0` at both
+boundaries (order q=4). Built as the nullspace of the exact tau functionals used
+by `apply_velocity_boundary_conditions!` (`:dirichlet` + `:neumann2`), so the
+Galerkin reduction is equivalent to the validated tau path. Size (N+1)×(N−3).
+"""
+function recomb_poloidal_stressfree(::Type{T}, N::Int, ri::Real, ro::Real) where {T<:Real}
+    scale = T(_radial_scale(ri, ro))
+    funcs = Matrix{T}(undef, 4, N + 1)
+    for (i, b) in enumerate((:outer, :inner))
+        rb = T(_boundary_radius(ri, ro, b))
+        funcs[2i - 1, :] = _chebyshev_boundary_values(N, b, T)
+        funcs[2i,     :] = rb .* scale^2 .* _chebyshev_boundary_second_derivative(N, b, T)
+    end
+    return T.(recomb_from_functionals(funcs))
+end
+
+"""
+    recomb_toroidal_stressfree(T, N, ri, ro) -> Matrix
+
+Stress-free toroidal velocity trial basis: `-r·v' + v = 0` at both boundaries
+(order q=2). Built as the nullspace of the exact tau functional used by
+`apply_velocity_boundary_conditions!` (assembly.jl: `-r·scale·deriv + value`).
+Size (N+1)×(N−1).
+"""
+function recomb_toroidal_stressfree(::Type{T}, N::Int, ri::Real, ro::Real) where {T<:Real}
+    scale = T(_radial_scale(ri, ro))
+    funcs = Matrix{T}(undef, 2, N + 1)
+    for (i, b) in enumerate((:outer, :inner))
+        rb    = T(_boundary_radius(ri, ro, b))
+        vals  = _chebyshev_boundary_values(N, b, T)
+        deriv = _chebyshev_boundary_derivative(N, b, T)
+        funcs[i, :] = @. -rb * scale * deriv + vals
+    end
+    return T.(recomb_from_functionals(funcs))
+end

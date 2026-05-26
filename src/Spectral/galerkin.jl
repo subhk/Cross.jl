@@ -167,3 +167,26 @@ function recomb_toroidal_stressfree(::Type{T}, N::Int, ri::Real, ro::Real) where
     end
     return T.(recomb_from_functionals(funcs))
 end
+
+"""
+    recomb_magnetic_poloidal(T, N, ℓ, ri, ro; bci=0, bco=0) -> Matrix
+
+Trial recombination for the poloidal magnetic scalar `f` at degree `ℓ` (order q=2).
+Insulating boundaries (`bci=bco=0`) impose the ℓ-dependent Robin conditions used by
+`apply_magnetic_boundary_conditions!`: outer `(ℓ+1)·f + ro·f' = 0`, inner
+`ℓ·f − ri·f' = 0`. Built as the nullspace of those functionals (ℓ-dependent ⇒ rebuilt
+per ℓ). Non-insulating falls back to `f = 0` (perfect/conducting variants TODO).
+Size (N+1)×(N−1).
+"""
+function recomb_magnetic_poloidal(::Type{T}, N::Int, ℓ::Int, ri::Real, ro::Real;
+                                  bci::Int=0, bco::Int=0) where {T<:Real}
+    scale = T(_radial_scale(ri, ro))
+    rb_o = T(_boundary_radius(ri, ro, :outer)); rb_i = T(_boundary_radius(ri, ro, :inner))
+    val_o = _chebyshev_boundary_values(N, :outer, T)
+    val_i = _chebyshev_boundary_values(N, :inner, T)
+    der_o = scale .* _chebyshev_boundary_derivative(N, :outer, T)
+    der_i = scale .* _chebyshev_boundary_derivative(N, :inner, T)
+    f_out = bco == 0 ? ((ℓ + 1) .* val_o .+ rb_o .* der_o) : val_o
+    f_in  = bci == 0 ? (ℓ .* val_i .- rb_i .* der_i)        : val_i
+    return T.(recomb_from_functionals(vcat(f_out', f_in')))
+end

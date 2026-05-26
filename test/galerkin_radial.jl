@@ -98,3 +98,21 @@ end
     # ...and it must NOT force v=0 (distinguishes the Robin basis from Dirichlet).
     @test maximum(abs.(val_o' * Rt)) > 1e-3
 end
+
+@testset "Magnetic poloidal insulating recombination (ℓ-dependent Robin)" begin
+    T = Float64; ri = 0.35; ro = 1.0; N = 32
+    scale = Cross._radial_scale(ri, ro)
+    rb_o = Cross._boundary_radius(ri, ro, :outer); rb_i = Cross._boundary_radius(ri, ro, :inner)
+    # first-principles boundary evaluators (no library helpers)
+    val_o = T[1 for n in 0:N];  val_i = T[(-1)^n for n in 0:N]
+    cd_o  = T[n^2 for n in 0:N]; cd_i = T[(-1)^(n+1) * n^2 for n in 0:N]
+    for ℓ in (1, 4, 8)
+        R = Cross.recomb_magnetic_poloidal(T, N, ℓ, ri, ro)
+        @test size(R) == (N + 1, N - 1)
+        f_out = (ℓ + 1) .* val_o .+ rb_o .* scale .* cd_o   # (ℓ+1)f + ro·f' = 0
+        f_in  = ℓ .* val_i .- rb_i .* scale .* cd_i          # ℓ·f − ri·f' = 0
+        @test maximum(abs.(f_out' * R)) < 1e-7
+        @test maximum(abs.(f_in'  * R)) < 1e-7
+        @test maximum(abs.(val_o' * R)) > 1e-3               # Robin, not f=0
+    end
+end

@@ -90,23 +90,7 @@ result.growth_rate
 
 A background field requires `Le > 0`. Dipole fields and perfectly-conducting / finite-conductivity magnetic boundaries are solved via the tau method.
 
-## Documentation
 
-Full documentation, theory, and examples: https://subhk.github.io/Cross.jl/
-
-## Citation
-
-If you use Cross.jl in your research, please cite:
-
-```bibtex
-@software{cross_jl,
-  author  = {Kar, Subhajit},
-  title   = {Cross.jl: Spectral Methods for Rotating Convection},
-  url     = {https://github.com/subhk/Cross.jl},
-  version = {2.0.0},
-  year    = {2025}
-}
-```
 
 ## License
 

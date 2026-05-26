@@ -6,12 +6,14 @@
 #  onset spectrum to ~1e-12 with zero spurious for the MHD(B0→0) hydro reduction.
 #
 #  Sectors:
-#   - Hydro (u, v, h): fully implemented (banded, B2). Matches onset.
-#   - Magnetic (f, g): DIAGONAL blocks (time-derivative mass + magnetic diffusion)
-#     implemented for the axial / non-dipole case. The Le>0 velocity↔magnetic
-#     coupling (induction + Lorentz) is NOT yet implemented here (G3.2b) — this
-#     function errors if asked to assemble it, so the caller must route Le>0 (or
-#     dipole) cases through the tau path.
+#   - Hydro (u, v, h): fully implemented (banded, B2). Matches onset to ~1e-12.
+#   - Magnetic (f, g): NOT yet supported. A background field always requires Le>0
+#     (MHDParams rejects Le=0 with a field), so there is no decoupled limit — the
+#     velocity↔magnetic coupling (induction + Lorentz, G3.2b) is always present and
+#     must be implemented together with the f/g diagonal blocks. This function
+#     therefore ERRORS on any magnetic field; the caller routes such cases through
+#     the tau path. The f/g diagonal mass+diffusion blocks below are scaffolding for
+#     G3.2b (they are not reached until the guard is lifted and coupling is added).
 #
 #  ADDITIVE: does not modify the tau path (`assemble_mhd_matrices`).
 # =============================================================================
@@ -20,10 +22,10 @@
     assemble_mhd_galerkin(op) -> (A, B, layout)
 
 Assemble the MHD generalized eigenproblem in tau-free ultraspherical-Galerkin
-form for the hydro sector (and decoupled magnetic diffusion when a field is
-present at `Le=0`). Returns dense `A`, `B` and a `layout` NamedTuple
-`(index_map, M, R, fields, nred)` for reconstruction. Errors if `Le>0` with a
-magnetic field present (coupling not yet implemented; use the tau path).
+form for the hydro sector. Returns dense `A`, `B` and a `layout` NamedTuple
+`(index_map, M, R, fields, nred)` for reconstruction. Errors on any magnetic
+field (a field always implies `Le>0`, whose induction+Lorentz coupling is not yet
+implemented — G3.2b); such cases must use the tau path.
 """
 function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
     p = op.params

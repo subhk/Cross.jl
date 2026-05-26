@@ -25,3 +25,16 @@ using LinearAlgebra
     # :maxreal lands on the convective mode with no σ-targeting, matching onset.
     @test isapprox(gal_lead, onset_lead; atol=5e-3)
 end
+
+@testset "solve(MHDProblem) hydro path: spurious-free, matches onset end-to-end" begin
+    E = 4.225e-4; Pr = 1.0; χ = 0.35; m = 4; Ra = 55.905; lmax = 8; Nr = 32
+    onset_lead = maximum(real.(solve(OnsetProblem(OnsetParams(E=E, Pr=Pr, Ra=Ra, χ=χ,
+                                     m=m, lmax=lmax, Nr=Nr)); nev=12).eigenvalues))
+    res = solve(MHDProblem(MHDParams(E=E, Pr=Pr, Ra=Ra, ricb=χ, m=m, lmax=lmax, N=Nr, symm=0));
+                nev=8, which=:LR)
+    # Public solve(): :LR selects the convective mode with no σ-targeting, matching onset.
+    @test isapprox(maximum(real.(res.eigenvalues)), onset_lead; atol=5e-3)
+    @test maximum(real.(res.eigenvalues)) < 0.1                  # no +real spurious returned
+    @test size(res.eigenvectors, 2) == length(res.eigenvalues)   # structural
+    @test size(res.eigenvectors, 1) > 0                          # full-size eigenvectors reconstructed
+end

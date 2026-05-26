@@ -1976,6 +1976,17 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
         return nothing
     end
 
+    # The cosθ coupling matrix A (built below) is zero-diagonal tridiagonal, which
+    # is singular for an ODD number of modes (det recurrence d_n = -a·b·d_{n-2},
+    # d_1 = 0 ⇒ det = 0 for every odd dim). That makes the coupled thermal-wind BVP
+    # singular (e.g. m_bs=1 with lmax_vel=9). Pad by one degree so n_modes is even
+    # and A is non-singular; the extra high-degree mode is a small truncation
+    # correction.
+    if isodd(n_modes)
+        lmax_vel += 1
+        n_modes += 1
+    end
+
     # Mode indices: mode_idx[k] = L means the k-th mode corresponds to degree L
     mode_idx = collect(m_bs:lmax_vel)
 

@@ -346,10 +346,8 @@ function basic_state(params::OnsetParams{T}; mode::Symbol=:conduction,
                                       mechanical_bc=params.mechanical_bc,
                                       thermal_bc=params.thermal_bc)
     elseif mode === :selfconsistent
-        # Force even m≥2 only: the (2,1) thermal-wind solve is singular.
-        mmax_eff = max(2, mmax_bs)
         flux = Y00(-one(T))
-        for mm in 2:2:mmax_eff
+        for mm in 1:mmax_bs
             flux = flux + Ylm(2, mm, T(amplitude))
         end
         bs, _ = basic_state_selfconsistent(cd, χ, E, Ra, Pr; flux_bc=flux,
@@ -358,10 +356,8 @@ function basic_state(params::OnsetParams{T}; mode::Symbol=:conduction,
                                            tolerance=T(tol))
         return bs
     elseif mode === :nonaxisymmetric
-        # Force even m≥2 only: the (2,1) thermal-wind solve is singular.
-        mmax_eff = max(2, mmax_bs)
-        amps = Dict{Tuple{Int,Int},T}((2, mm) => T(amplitude) for mm in 2:2:mmax_eff)
-        return nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, lmax_bs, mmax_eff, amps;
+        amps = Dict{Tuple{Int,Int},T}((2, mm) => T(amplitude) for mm in 1:mmax_bs)
+        return nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amps;
                                            mechanical_bc=params.mechanical_bc,
                                            thermal_bc=params.thermal_bc)
     else

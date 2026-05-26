@@ -228,6 +228,34 @@ function solve(problem::MHDProblem{T, BS};
 
     mhd_params = problem.params
     op = MHDStabilityOperator(mhd_params)
+
+    if isempty(op.ll_f) && isempty(op.ll_g)
+        # Hydro (no background field): tau-free ultraspherical-Galerkin assembly.
+        # Spurious-free, so `:LR`/`:maxreal` selects the convective mode with no
+        # σ-targeting. The reduced pencil is small ⇒ a dense solve gives the exact
+        # spectrum (no Krylov convergence fragility).
+        A_gal, B_gal, layout = assemble_mhd_galerkin(op)
+        F = eigen(A_gal, B_gal)
+        keep = findall(isfinite, F.values)
+        vals = F.values[keep]
+        order = sigma !== nothing ? sortperm(abs.(vals .- Complex{T}(sigma))) :
+                which === :LM      ? sortperm(abs.(vals); rev=true) :
+                which === :LI      ? sortperm(imag.(vals); rev=true) :
+                                     sortperm(real.(vals); rev=true)
+        sel = order[1:min(nev, length(order))]
+        eigenvalues = vals[sel]
+        evecs_full = [reconstruct_mhd_galerkin_full(op, layout, F.vectors[:, keep[s]]) for s in sel]
+        evec_matrix = _eigvecs_to_matrix(eigenvalues, evecs_full, T)
+        info = Dict("method" => "MHD ultraspherical-Galerkin (hydro)", "n_reduced" => layout.nred)
+        return StabilityResult(
+            Vector{Complex{T}}(eigenvalues),
+            evec_matrix,
+            problem;
+            extra=(operator=op, interior_dofs=collect(1:layout.nred),
+                   assembly_info=info, galerkin_layout=layout)
+        )
+    end
+
     A, B, interior_dofs, info_assembly = assemble_mhd_matrices(op)
 
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(

@@ -1,0 +1,128 @@
+# =============================================================================
+#  Tau-free ultraspherical-Galerkin radial operators.
+#
+#  Composes the banded ultraspherical primitives (derivative, conversion,
+#  multiplication) up to a common C^(q) output basis WITHOUT the S_chain \ D
+#  back-solve and WITHOUT tau boundary rows. Boundary conditions enter through
+#  a recombined trial basis (see recombination builders below).
+# =============================================================================
+
+"""
+    _diff_to_ultra(T, k, N, scale) -> SparseMatrixCSC
+
+k-th radial-derivative operator mapping Chebyshev (C^(0)) coefficients to
+C^(k) coefficients. Banded, no back-solve.
+"""
+function _diff_to_ultra(::Type{T}, k::Int, N::Int, scale::T) where {T<:Real}
+    D = sparse(one(T)I, N + 1, N + 1)            # C^(0) identity
+    for λ in 0:(k - 1)
+        Dλ = ultraspherical_derivative(T, λ, N)  # C^(λ) -> C^(λ+1)
+        D = (scale * Dλ) * D
+    end
+    return D                                      # C^(0) -> C^(k)
+end
+
+"""
+    _convert_up(T, from, to, N) -> SparseMatrixCSC
+
+Product of conversion matrices mapping C^(from) coefficients to C^(to).
+"""
+function _convert_up(::Type{T}, from::Int, to::Int, N::Int) where {T<:Real}
+    S = sparse(one(T)I, N + 1, N + 1)
+    for λ in from:(to - 1)
+        S = ultraspherical_conversion(T, λ, N) * S
+    end
+    return S                                      # C^(from) -> C^(to)
+end
+
+"""
+    banded_radial_term(T, power, deriv, q_out, N, ri, ro) -> SparseMatrixCSC
+
+Banded representation of `r^power * d^deriv/dr^deriv`, as a map from Chebyshev
+coefficients to C^(q_out) coefficients (q_out ≥ deriv). No tau rows, no back-solve.
+Multiplication by r^power is applied in the C^(deriv) basis, then converted up.
+"""
+function banded_radial_term(::Type{T}, power::Int, deriv::Int, q_out::Int,
+                            N::Int, ri::Real, ro::Real) where {T<:Real}
+    @assert deriv <= q_out "q_out must be ≥ deriv"
+    scale = T(_radial_scale(ri, ro))
+    Dk = _diff_to_ultra(T, deriv, N, scale)              # C^(0) -> C^(deriv)
+    if power != 0
+        rc = chebyshev_coefficients(T, power, N + 1, ri, ro)
+        M = multiplication_matrix(rc, T(deriv), N + 1; vector_parity=0)
+        op = M * Dk
+    else
+        op = Dk
+    end
+    return _convert_up(T, deriv, q_out, N) * op          # C^(0) -> C^(q_out)
+end
+
+"""
+    recomb_dirichlet(T, N) -> SparseMatrixCSC
+
+Trial recombination for homogeneous Dirichlet at both ends (u(±1)=0).
+Columns φ_k = T_k − T_{k+2}, k=0..N−2. Size (N+1)×(N−1).
+"""
+function recomb_dirichlet(::Type{T}, N::Int) where {T<:Real}
+    rows = Int[]; cols = Int[]; vals = T[]
+    for k in 0:(N - 2)
+        push!(rows, k + 1);     push!(cols, k + 1); push!(vals, one(T))
+        push!(rows, k + 2 + 1); push!(cols, k + 1); push!(vals, -one(T))
+    end
+    return sparse(rows, cols, vals, N + 1, N - 1)
+end
+
+"""
+    recomb_neumann(T, N) -> SparseMatrixCSC
+
+Trial recombination for homogeneous Neumann at both ends (u'(±1)=0).
+Columns φ_k = T_k − (k²/(k+2)²) T_{k+2}, k=0..N−2. Size (N+1)×(N−1).
+"""
+function recomb_neumann(::Type{T}, N::Int) where {T<:Real}
+    rows = Int[]; cols = Int[]; vals = T[]
+    for k in 0:(N - 2)
+        push!(rows, k + 1); push!(cols, k + 1); push!(vals, one(T))
+        c = T(k)^2 / T(k + 2)^2
+        push!(rows, k + 2 + 1); push!(cols, k + 1); push!(vals, -c)
+    end
+    return sparse(rows, cols, vals, N + 1, N - 1)
+end
+
+"""
+    recomb_clamped(T, N) -> SparseMatrixCSC
+
+Trial recombination for clamped BCs at both ends (u(±1)=u'(±1)=0), 4th order.
+Columns φ_k = T_k − [2(k+2)/(k+3)] T_{k+2} + [(k+1)/(k+3)] T_{k+4}, k=0..N−4.
+Size (N+1)×(N−3). (Shen 1995 Chebyshev biharmonic basis.)
+"""
+function recomb_clamped(::Type{T}, N::Int) where {T<:Real}
+    rows = Int[]; cols = Int[]; vals = T[]
+    for k in 0:(N - 4)
+        a = T(2) * T(k + 2) / T(k + 3)
+        b = T(k + 1) / T(k + 3)
+        push!(rows, k + 1);     push!(cols, k + 1); push!(vals, one(T))
+        push!(rows, k + 2 + 1); push!(cols, k + 1); push!(vals, -a)
+        push!(rows, k + 4 + 1); push!(cols, k + 1); push!(vals, b)
+    end
+    return sparse(rows, cols, vals, N + 1, N - 3)
+end
+
+"""
+    recomb_from_functionals(funcs) -> Matrix
+
+General trial recombination = nullspace of the boundary-functional row-vectors.
+`funcs` is q×(N+1). Returns (N+1)×(N+1−q) basis satisfying every functional.
+"""
+function recomb_from_functionals(funcs::AbstractMatrix{T}) where {T}
+    return nullspace(Matrix(funcs))
+end
+
+"""
+    galerkin_block(L_band, R_trial, M_test) -> Matrix
+
+Project a banded C^(q) operator into Galerkin form: keep the leading `M_test`
+rows (P_M restriction), right-multiply by the trial recombination `R_trial`.
+"""
+function galerkin_block(L_band::AbstractMatrix, R_trial::AbstractMatrix, M_test::Int)
+    return Matrix((L_band * R_trial)[1:M_test, :])
+end

@@ -85,6 +85,7 @@ end
     @test basic_state(params; mode=:conduction) isa BasicState
     @test basic_state(params; mode=:meridional, amplitude=0.05) isa BasicState
     @test basic_state(params; mode=:nonaxisymmetric, mmax_bs=2) isa BasicState3D
+    @test basic_state(params; mode=:nonaxisymmetric, mmax_bs=1) isa BasicState3D  # m=1 ⇒ odd mode count (exercises the thermal-wind parity-pad)
     @test basic_state(params; mode=:selfconsistent, max_iterations=10) isa BasicState3D
     @test_throws ArgumentError basic_state(params; mode=:bogus)
 end

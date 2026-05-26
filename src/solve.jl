@@ -229,12 +229,12 @@ function solve(problem::MHDProblem{T, BS};
     mhd_params = problem.params
     op = MHDStabilityOperator(mhd_params)
 
-    if mhd_params.Le == 0 && !is_dipole_case(mhd_params.B0_type, mhd_params.ricb)
-        # Hydro, or a field present at Le=0 (decoupled magnetic diffusion):
-        # tau-free ultraspherical-Galerkin assembly. Spurious-free, so `:LR`/`:maxreal`
-        # selects the convective mode with no σ-targeting. The reduced pencil is
-        # small ⇒ a dense solve gives the exact spectrum (no Krylov fragility).
-        # (Le>0 coupling and the dipole case still route through the tau path below.)
+    if isempty(op.ll_f) && isempty(op.ll_g)
+        # Hydro (no background field): tau-free ultraspherical-Galerkin assembly.
+        # Spurious-free, so `:LR`/`:maxreal` selects the convective mode with no
+        # σ-targeting. The reduced pencil is small ⇒ a dense solve gives the exact
+        # spectrum (no Krylov fragility). Magnetic cases route through the tau path
+        # below (the Galerkin magnetic sector was reverted — see galerkin_assembly.jl).
         A_gal, B_gal, layout = assemble_mhd_galerkin(op)
         F = eigen(A_gal, B_gal)
         keep = findall(isfinite, F.values)

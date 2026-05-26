@@ -39,7 +39,9 @@ end
     @test size(res.eigenvectors, 1) > 0                          # full-size eigenvectors reconstructed
 end
 
-@testset "assemble_mhd_galerkin guards unimplemented Le>0 magnetic coupling" begin
+@testset "assemble_mhd_galerkin guards the (reverted) magnetic sector" begin
+    # Magnetic Galerkin was reverted (unphysical decoupled magnetic-diffusion modes);
+    # magnetic cases must route through the tau path, so assembly errors on a field.
     op = Cross.MHDStabilityOperator(MHDParams(E=1e-3, Pr=1.0, Ra=100.0, ricb=0.35, m=4,
                                               lmax=6, N=16, B0_type=Cross.axial, Le=0.1))
     @test_throws ErrorException Cross.assemble_mhd_galerkin(op)

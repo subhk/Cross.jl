@@ -423,9 +423,12 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
             # A matrix: RHS operators
             # -----------------------------------------------------------------
 
-            # Magnetic diffusion
+            # Magnetic diffusion. Enters A with a MINUS sign, like the (identical-form)
+            # viscous operator (cf. velocity sections): the decoupled free-decay modes
+            # must dissipate (Re<0). The previous +sign made them grow — see
+            # test/mhd_galerkin.jl "magnetic free-decay". (Cross-check vs Kore advised.)
             mag_diff_pol = operator_magnetic_diffusion_poloidal(op, l, Em)
-            add_block!(A_rows, A_cols, A_vals, mag_diff_pol, row_base, col_base)
+            add_block!(A_rows, A_cols, A_vals, -mag_diff_pol, row_base, col_base)
 
             # Induction from velocity field
             if Le > 0
@@ -474,9 +477,9 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
             # A matrix: RHS operators
             # -----------------------------------------------------------------
 
-            # Magnetic diffusion
+            # Magnetic diffusion — MINUS sign (dissipative free-decay); see poloidal note above.
             mag_diff_tor = operator_magnetic_diffusion_toroidal(op, l, Em)
-            add_block!(A_rows, A_cols, A_vals, mag_diff_tor, row_base, col_base)
+            add_block!(A_rows, A_cols, A_vals, -mag_diff_tor, row_base, col_base)
 
             # Induction from velocity field (if Le > 0)
             if Le > 0

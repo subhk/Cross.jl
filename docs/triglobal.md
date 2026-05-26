@@ -330,7 +330,7 @@ end
 
 Before running tri-global analysis:
 
-- [ ] `TriglobalParams` uses m-range consistent with basic state content
+- [ ] `TriglobalProblem` `m_range` is consistent with the basic state's mode content
 - [ ] Coupling graph matches physical expectations
 - [ ] Estimated problem size is feasible for available memory
 - [ ] Basic state satisfies reality conditions

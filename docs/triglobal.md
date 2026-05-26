@@ -62,27 +62,23 @@ bs3d = nonaxisymmetric_basic_state(
 ### Step 2: Define Tri-Global Parameters
 
 ```julia
-params_triglobal = TriglobalParams(
-    # Physical parameters
+# Shared physical/numerical parameters live in OnsetParams. The base mode is m=0;
+# the coupled perturbation modes are supplied by `m_range` when the problem is built.
+params = OnsetParams(
     E = 1e-5,
     Pr = 1.0,
     Ra = 1.2e7,
     χ = 0.35,
-
-    # Mode coupling range
-    m_range = -2:2,           # Coupled perturbation modes
-
-    # Resolution
+    m = 0,
     lmax = 40,
     Nr = 64,
-
-    # Basic state
-    basic_state_3d = bs3d,
-
-    # Boundary conditions
     mechanical_bc = :no_slip,
     thermal_bc = :fixed_temperature,
 )
+
+# Wrap params + the 3-D basic state + the coupled-mode range into a TriglobalProblem.
+m_range = -2:2          # coupled perturbation modes (keep symmetric around the base)
+problem  = TriglobalProblem(params, bs3d, m_range)
 ```
 
 !!! warning "Mode Range Selection"
@@ -93,13 +89,8 @@ params_triglobal = TriglobalParams(
 Before solving, check the computational requirements:
 
 ```julia
-size_report = estimate_triglobal_problem_size(params_triglobal)
-
-println("Problem size estimate:")
-println("  Number of modes: ", size_report.num_modes)
-println("  Total DOFs: ", size_report.total_dofs)
-println("  Matrix size: ", size_report.matrix_size, " × ", size_report.matrix_size)
-println("  DOFs per mode: ", size_report.dofs_per_mode)
+# Prints the number of coupled modes, total DOFs, and the matrix size.
+estimate_size(problem)
 ```
 
 ### Typical Problem Sizes
@@ -114,15 +105,10 @@ println("  DOFs per mode: ", size_report.dofs_per_mode)
 
 ### Build the Coupled Problem
 
-```julia
-problem = setup_coupled_mode_problem(params_triglobal)
-
-# Inspect the coupling graph
-println("Coupling structure:")
-for (m, neighbors) in sort(problem.coupling_graph)
-    println("  Mode m=$m couples to: ", join(neighbors, ", "))
-end
-```
+The `TriglobalProblem` built in Step 2 already encodes the coupling: each
+perturbation mode `m` couples to its neighbours `m ± m_bs`, where `m_bs` are the
+azimuthal wavenumbers present in the 3-D basic state. The resulting block
+structure is:
 
 ### Understand the Block Structure
 
@@ -150,29 +136,28 @@ Where:
 ### Solve the Eigenvalue Problem
 
 ```julia
-eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(
-    params_triglobal;
-    nev = 12,            # Number of eigenvalues
-    σ_target = 0.0,      # Shift-invert target
-    verbose = true,
-)
+result = solve(problem; nev = 12, sigma = 0.0, verbose = true)
 
-# Leading eigenvalue
-σ₁ = real(eigenvalues[1])
-ω₁ = imag(eigenvalues[1])
+σ₁ = result.growth_rate     # real part of the leading eigenvalue
+ω₁ = result.frequency       # imaginary part (drift frequency)
 
 println("Leading tri-global mode:")
 println("  Growth rate: ", σ₁)
 println("  Drift frequency: ", ω₁)
-
-if σ₁ > 0
-    println("  → System is UNSTABLE")
-else
-    println("  → System is STABLE")
-end
+println("  Status: ", σ₁ > 0 ? "UNSTABLE" : "STABLE")
 ```
 
 ## Post-Processing
+
+`solve` returns a `StabilityResult`: `result.eigenvalues` (all computed values),
+`result.eigenvectors` (columns), `result.growth_rate`, `result.frequency`.
+
+!!! note "Per-mode decomposition is low-level"
+    Splitting an eigenvector into its individual `m` components requires the
+    internal coupled-mode block layout (`block_indices`), which the high-level
+    `TriglobalProblem`/`StabilityResult` does not expose. The snippets below are
+    conceptual; obtaining the per-`m` index ranges requires the low-level
+    coupled-mode assembly.
 
 ### Extract Mode Components
 

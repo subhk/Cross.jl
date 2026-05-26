@@ -103,32 +103,19 @@ params = MHDParams(
     heating = :differential,
 )
 
-# Build operator
-op = MHDStabilityOperator(params)
+# Solve via the high-level API.
+# For no-field (hydro) and axial-field MHD, solve() uses a tau-free
+# ultraspherical-Galerkin assembly: spurious-free, so the default which=:LR picks
+# the physical mode with no σ-targeting. (The dipole case routes through the
+# Chebyshev-tau method, whose spurious modes require targeting, e.g. sigma=0.0.)
+result = solve(MHDProblem(params); nev=10, which=:LR)
 
-# Assemble matrices
-A, B, interior_dofs, info = assemble_mhd_matrices(op)
-
-# Load the sparse A·x = σ·B·x solver
-include("src/OnsetEigenvalueSolver.jl")
-using .OnsetEigenvalueSolver: solve_eigenvalue_problem
-
-# Solve eigenvalue problem
-A_int = A[interior_dofs, interior_dofs]
-B_int = B[interior_dofs, interior_dofs]
-
-eigenvalues, eigenvectors, info = solve_eigenvalue_problem(A_int, B_int; nev=10)
-
-# Analyze results
-σ_lead = real(eigenvalues[1])
-ω_lead = imag(eigenvalues[1])
+eigenvalues = result.eigenvalues
+σ_lead = maximum(real.(eigenvalues))            # growth rate (largest real part)
+ω_lead = imag(eigenvalues[argmax(real.(eigenvalues))])
 
 println("Leading eigenvalue: $σ_lead + $(ω_lead)i")
-if σ_lead > 0
-    println("System is UNSTABLE")
-else
-    println("System is STABLE")
-end
+println(σ_lead > 0 ? "System is UNSTABLE" : "System is STABLE")
 ```
 
 ## MHDParams Reference

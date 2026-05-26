@@ -2,18 +2,16 @@
 #  Tau-free ultraspherical-Galerkin assembly of the MHD eigenproblem.
 #
 #  Boundary conditions are carried by a recombined trial basis (no tau rows →
-#  full-rank B → no spurious eigenvalues). Validated to reproduce the collocation
-#  onset spectrum to ~1e-12 with zero spurious for the MHD(B0→0) hydro reduction.
+#  full-rank B → no spurious eigenvalues).
 #
-#  Sectors:
-#   - Hydro (u, v, h): fully implemented (banded, B2). Matches onset to ~1e-12.
-#   - Magnetic (f, g): NOT yet supported. A background field always requires Le>0
-#     (MHDParams rejects Le=0 with a field), so there is no decoupled limit — the
-#     velocity↔magnetic coupling (induction + Lorentz, G3.2b) is always present and
-#     must be implemented together with the f/g diagonal blocks. This function
-#     therefore ERRORS on any magnetic field; the caller routes such cases through
-#     the tau path. The f/g diagonal mass+diffusion blocks below are scaffolding for
-#     G3.2b (they are not reached until the guard is lifted and coupling is added).
+#   - Hydro (u, v, h): pure-banded (B2) via `banded_radial_term`. Matches the
+#     collocation onset spectrum to ~1e-12 with zero spurious.
+#   - Magnetic (f, g) + velocity↔magnetic coupling (Lorentz, induction): built by
+#     REUSING the audited C^0 operator functions and lifting each block to the row
+#     equation's C^(q) basis before projecting (`gbC0`). Identical operator content
+#     to the tau path ⇒ the Galerkin spectrum equals the tau spectrum minus the
+#     spurious modes (self-validating cross-check). The dipole case is deferred
+#     (errors → caller routes to the tau path).
 #
 #  ADDITIVE: does not modify the tau path (`assemble_mhd_matrices`).
 # =============================================================================
@@ -22,22 +20,18 @@
     assemble_mhd_galerkin(op) -> (A, B, layout)
 
 Assemble the MHD generalized eigenproblem in tau-free ultraspherical-Galerkin
-form for the hydro sector. Returns dense `A`, `B` and a `layout` NamedTuple
-`(index_map, M, R, fields, nred)` for reconstruction. Errors on any magnetic
-field (a field always implies `Le>0`, whose induction+Lorentz coupling is not yet
-implemented — G3.2b); such cases must use the tau path.
+form (hydro pure-banded; magnetic via reuse-and-lift of the audited operators).
+Returns dense `A`, `B` and a `layout` NamedTuple `(index_map, M, R, fields, nred)`
+for reconstruction. Errors for the dipole case (use the tau path).
 """
 function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
     p = op.params
     N = p.N; ri = p.ricb; ro = one(T); gap = ro - ri; m = p.m
-    E = p.E; Pr = p.Pr; Ra = p.Ra; Em = p.Em
+    E = p.E; Pr = p.Pr; Ra = p.Ra; Em = p.Em; Le = p.Le
 
     has_mag = !isempty(op.ll_f) || !isempty(op.ll_g)
-    if has_mag && p.Le != 0
-        error("assemble_mhd_galerkin: Le>0 magnetic coupling not implemented (G3.2b); route through the tau path.")
-    end
     if has_mag && is_dipole_case(p.B0_type, p.ricb)
-        error("assemble_mhd_galerkin: dipole magnetic diffusion not implemented; route through the tau path.")
+        error("assemble_mhd_galerkin: dipole magnetic case not implemented; use the tau path.")
     end
 
     noslip = (p.bci == 1 && p.bco == 1)
@@ -47,6 +41,7 @@ function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
     Rtem = fixedT ? recomb_dirichlet(T, N) : recomb_neumann(T, N)
     Rg   = recomb_dirichlet(T, N)                       # toroidal magnetic: g=0 both ends
 
+    qof = Dict(:u => 4, :v => 2, :h => 2, :f => 2, :g => 2)
     Mof = Dict(:u => N + 1 - 4, :v => N + 1 - 2, :h => N + 1 - 2,
                :f => N + 1 - 2, :g => N + 1 - 2)
 
@@ -70,12 +65,15 @@ function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
     B = zeros(Complex{T}, nred, nred)
 
     bt(pw, d, q) = banded_radial_term(T, pw, d, q, N, ri, ro)
+    # Hydro blocks: the banded operator is already in C^(q_row).
     gb(band, fi, fj, ℓj) = galerkin_block(band, Rmap[(fj, ℓj)], Mof[fi])
+    # Magnetic blocks: lift an audited C^0 operator block to C^(q_row), then project.
+    gbC0(blk0, fi, fj, ℓj) = galerkin_block(_convert_up(T, 0, qof[fi], N) * blk0, Rmap[(fj, ℓj)], Mof[fi])
 
     Ra_int = Ra / gap^3
     beyonce = -Ra_int * E^2 / Pr
     thermaD = E / Pr
-    Uls = op.ll_u; Vls = op.ll_v; Hls = op.ll_h
+    Uls = op.ll_u; Vls = op.ll_v; Hls = op.ll_h; Fls = op.ll_f; Gls = op.ll_g
 
     # ---- Poloidal velocity equation (order q=4) ----
     for ℓ in Uls
@@ -94,6 +92,15 @@ function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
         end
         if ℓ in Hls
             A[P, idx[(:h, ℓ)]] += gb(beyonce * L * bt(4,0,4), :u, :h, ℓ)
+        end
+        if Le > 0                                        # Lorentz: u ← magnetic
+            for o in -2:2
+                (ℓ+o) in Fls && (A[P, idx[(:f, ℓ+o)]] += gbC0(operator_lorentz_poloidal_from_bpol(op, ℓ, m, o, Le), :u, :f, ℓ+o))
+            end
+            ℓ in Gls && (A[P, idx[(:g, ℓ)]] += gbC0(operator_lorentz_poloidal_diagonal(op, ℓ, Le), :u, :g, ℓ))
+            for o in (-1, 1)
+                (ℓ+o) in Gls && (A[P, idx[(:g, ℓ+o)]] += gbC0(operator_lorentz_poloidal_offdiag(op, ℓ, m, o, Le), :u, :g, ℓ+o))
+            end
         end
     end
 
@@ -122,18 +129,44 @@ function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
             Cp = ℓ * (ℓ+2) * sqrt(max(zero(T), T((ℓ+m+1) * (ℓ-m+1)))) / (2ℓ + 3)
             A[V, idx[(:u, ℓ+1)]] += gb(2 * Cp * (-(ℓ+2) * bt(1,0,2) - bt(2,1,2)), :v, :u, ℓ+1)
         end
+        if Le > 0                                        # Lorentz: v ← magnetic
+            for o in -1:1
+                (ℓ+o) in Fls && (A[V, idx[(:f, ℓ+o)]] += gbC0(operator_lorentz_toroidal_from_bpol(op, ℓ, m, o, Le), :v, :f, ℓ+o))
+            end
+            for o in -2:2
+                (ℓ+o) in Gls && (A[V, idx[(:g, ℓ+o)]] += gbC0(operator_lorentz_toroidal_from_btor(op, ℓ, m, o, Le), :v, :g, ℓ+o))
+            end
+        end
     end
 
-    # ---- Magnetic diagonal blocks (axial, decoupled at Le=0): mass + diffusion ----
-    for ℓ in op.ll_f
-        L = T(ℓ * (ℓ + 1)); F = idx[(:f, ℓ)]
-        B[F, F] += gb(-L * bt(2,0,2), :f, :f, ℓ)
-        A[F, F] += gb(Em * L * (-L * bt(0,0,2) + 2 * bt(1,1,2) + bt(2,2,2)), :f, :f, ℓ)
+    # ---- Poloidal magnetic equation (order q=2): mass + diffusion + induction ----
+    for ℓ in Fls
+        F = idx[(:f, ℓ)]
+        B[F, F] += gbC0(-operator_b_poloidal(op, ℓ), :f, :f, ℓ)
+        A[F, F] += gbC0(operator_magnetic_diffusion_poloidal(op, ℓ, Em), :f, :f, ℓ)
+        if Le > 0                                        # induction: f ← velocity
+            for o in -2:2
+                (ℓ+o) in Uls && (A[F, idx[(:u, ℓ+o)]] += gbC0(operator_induction_poloidal_from_u(op, ℓ, m, o), :f, :u, ℓ+o))
+            end
+            for o in -1:1
+                (ℓ+o) in Vls && (A[F, idx[(:v, ℓ+o)]] += gbC0(operator_induction_poloidal_from_v(op, ℓ, m, o), :f, :v, ℓ+o))
+            end
+        end
     end
-    for ℓ in op.ll_g
-        L = T(ℓ * (ℓ + 1)); G = idx[(:g, ℓ)]
-        B[G, G] += gb(-L * bt(2,0,2), :g, :g, ℓ)
-        A[G, G] += gb(Em * L * (-L * bt(0,0,2) + 2 * bt(1,1,2) + bt(2,2,2)), :g, :g, ℓ)
+
+    # ---- Toroidal magnetic equation (order q=2): mass + diffusion + induction ----
+    for ℓ in Gls
+        G = idx[(:g, ℓ)]
+        B[G, G] += gbC0(-operator_b_toroidal(op, ℓ), :g, :g, ℓ)
+        A[G, G] += gbC0(operator_magnetic_diffusion_toroidal(op, ℓ, Em), :g, :g, ℓ)
+        if Le > 0                                        # induction: g ← velocity
+            for o in -2:2
+                (ℓ+o) in Vls && (A[G, idx[(:v, ℓ+o)]] += gbC0(operator_induction_toroidal_from_v(op, ℓ, m, o), :g, :v, ℓ+o))
+            end
+            for o in -1:1
+                (ℓ+o) in Uls && (A[G, idx[(:u, ℓ+o)]] += gbC0(operator_induction_toroidal_from_u(op, ℓ, m, o), :g, :u, ℓ+o))
+            end
+        end
     end
 
     layout = (index_map = idx, M = Mof, R = Rmap, fields = (:u, :v, :f, :g, :h), nred = nred)

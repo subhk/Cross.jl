@@ -267,14 +267,8 @@ params = MHDParams(
     bci_magnetic = 0, bco_magnetic = 0,
 )
 
-op = MHDStabilityOperator(params)
-A, B, interior_dofs, _ = assemble_mhd_matrices(op)
-
-eigenvalues, _, _ = solve_eigenvalue_problem(
-    A[interior_dofs, interior_dofs],
-    B[interior_dofs, interior_dofs];
-    nev = 10
-)
+result = solve(MHDProblem(params); nev = 10, which = :LR)  # no_field ⇒ Galerkin (spurious-free)
+eigenvalues = result.eigenvalues
 
 println("Growth rate: ", real(eigenvalues[1]), " (expect ≈ 0)")
 println("Frequency: ", imag(eigenvalues[1]), " (expect ≈ 0.37)")
@@ -299,14 +293,8 @@ for Le in Le_values
         bci_magnetic = 0, bco_magnetic = 0,
     )
 
-    op = MHDStabilityOperator(params)
-    A, B, interior_dofs, _ = assemble_mhd_matrices(op)
-
-    eigenvalues, _, _ = solve_eigenvalue_problem(
-        A[interior_dofs, interior_dofs],
-        B[interior_dofs, interior_dofs];
-        nev = 5
-    )
+    # axial + insulating ⇒ Galerkin (spurious-free); :LR picks the physical mode
+    eigenvalues = solve(MHDProblem(params); nev = 5, which = :LR).eigenvalues
 
     push!(growth_rates, real(eigenvalues[1]))
     println("Le = $Le: σ = ", growth_rates[end])
@@ -415,15 +403,10 @@ params = MHDParams(
     heating = :differential,
 )
 
-# Solve
-op = MHDStabilityOperator(params)
-A, B, interior_dofs, _ = assemble_mhd_matrices(op)
-
-eigenvalues, eigenvectors, info = solve_eigenvalue_problem(
-    A[interior_dofs, interior_dofs],
-    B[interior_dofs, interior_dofs];
-    nev = 10
-)
+# Solve (no_field/axial + insulating ⇒ tau-free Galerkin, spurious-free)
+result = solve(MHDProblem(params); nev = 10, which = :LR)
+eigenvalues  = result.eigenvalues
+eigenvectors = result.eigenvectors
 
 # Results
 println("\nLeading eigenvalues:")

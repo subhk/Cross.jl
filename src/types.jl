@@ -318,6 +318,55 @@ function estimate_size(p::TriglobalProblem)
 end
 
 """
+    basic_state(params::OnsetParams; mode=:conduction, amplitude=0.05, mmax_bs=2,
+                lmax_bs=4, max_iterations=20, tol=1e-8)
+
+Convenience constructor that builds a basic state directly from an `OnsetParams`,
+selecting the implementation by `mode`. The radial grid (`ChebyshevDiffn`) is
+derived from `params.Nr` and `params.χ`.
+
+- `:conduction`      — pure conduction profile (`conduction_basic_state`)
+- `:meridional`      — axisymmetric thermal-wind state of strength `amplitude`
+                       (`meridional_basic_state`) → `BasicState`
+- `:selfconsistent`  — self-consistent geostrophic balance from a flux BC
+                       `Y00(-1) + Σ Y(2,m)(amplitude)` (`basic_state_selfconsistent`)
+- `:nonaxisymmetric` — 3-D state with `m≠0` boundary forcing of strength
+                       `amplitude` at degree 2, `m=1…mmax_bs`
+                       (`nonaxisymmetric_basic_state`) → `BasicState3D`
+"""
+function basic_state(params::OnsetParams{T}; mode::Symbol=:conduction,
+                     amplitude::Real=0.05, mmax_bs::Int=2, lmax_bs::Int=4,
+                     max_iterations::Int=20, tol::Real=1e-8) where {T}
+    cd = ChebyshevDiffn(params.Nr, [T(params.χ), one(T)], 4)
+    χ = T(params.χ); E = T(params.E); Ra = T(params.Ra); Pr = T(params.Pr)
+    if mode === :conduction
+        return conduction_basic_state(cd, χ, lmax_bs; thermal_bc=params.thermal_bc)
+    elseif mode === :meridional
+        return meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, T(amplitude);
+                                      mechanical_bc=params.mechanical_bc,
+                                      thermal_bc=params.thermal_bc)
+    elseif mode === :selfconsistent
+        flux = Y00(-one(T))
+        for mm in 1:mmax_bs
+            flux = flux + Ylm(2, mm, T(amplitude))
+        end
+        bs, _ = basic_state_selfconsistent(cd, χ, E, Ra, Pr; flux_bc=flux,
+                                           mechanical_bc=params.mechanical_bc,
+                                           lmax_bs=lmax_bs, max_iterations=max_iterations,
+                                           tolerance=T(tol))
+        return bs
+    elseif mode === :nonaxisymmetric
+        amps = Dict{Tuple{Int,Int},T}((2, mm) => T(amplitude) for mm in 1:mmax_bs)
+        return nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amps;
+                                           mechanical_bc=params.mechanical_bc,
+                                           thermal_bc=params.thermal_bc)
+    else
+        throw(ArgumentError("basic_state: unknown mode :$mode " *
+              "(use :conduction, :meridional, :selfconsistent, or :nonaxisymmetric)"))
+    end
+end
+
+"""
     estimate_size(p::MHDProblem)
 
 Print field counts, matrix dimension, and approximate dense storage for an MHD

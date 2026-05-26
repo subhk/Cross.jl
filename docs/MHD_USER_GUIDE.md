@@ -75,21 +75,12 @@ params = MHDParams(
     bci_thermal = 0, bco_thermal = 0  # Fixed temperature
 )
 
-# Build operator
-op = MHDStabilityOperator(params)
+# Solve via the high-level API. Le=0 (no field) ⇒ tau-free ultraspherical-Galerkin
+# assembly: spurious-free, so which=:LR picks the convective mode with no σ-targeting.
+result = solve(MHDProblem(params); nev=20, tol=1e-6, which=:LR)
 
-# Assemble matrices
-A, B, interior_dofs, info = assemble_mhd_matrices(op)
-
-# Solve eigenvalue problem
-σ, eigenvectors, history = solve_eigenvalue_problem(
-    A[interior_dofs, interior_dofs],
-    B[interior_dofs, interior_dofs];
-    nev=20, tol=1e-6, which=:LR,
-)
-
-growth_rates = real.(σ)
-frequencies = imag.(σ)
+growth_rates = real.(result.eigenvalues)
+frequencies  = imag.(result.eigenvalues)
 
 println("Largest growth rate: ", maximum(growth_rates))
 println("Critical mode frequency: ", frequencies[argmax(growth_rates)])
@@ -98,6 +89,32 @@ println("Critical mode frequency: ", frequencies[argmax(growth_rates)])
 **Expected Output** (for Ra = Raᶜ ≈ 1.6×10⁶):
 - Growth rate: ≈ 0 (marginal stability)
 - Frequency: ≈ 0.35-0.40
+
+---
+
+## Eigensolver and spurious eigenvalues
+
+`solve(MHDProblem(params))` is the recommended entry point.
+
+**Hydrodynamic case** (no background field, `B0_type = no_field`): `solve` uses a
+tau-free **ultraspherical-Galerkin** assembly. Boundary conditions are built into a
+recombined trial basis, so the generalized eigenproblem has a full-rank mass matrix
+and **no spurious modes**. The default `which = :LR` selects the convective mode
+directly — no `sigma`-targeting needed — and the spectrum matches the validated
+collocation onset benchmark (`m = 4`, `E = 4.225×10⁻⁴`: `Raᶜ ≈ 55.905`) to ~1×10⁻¹².
+
+**Magnetic case** (`Le > 0`): `solve` uses the Chebyshev-tau method, which emits
+spurious positive-real eigenvalues. Select the physical mode by shift-targeting
+(`solve(prob; sigma = 0.0, which = :LM)`) rather than `:LR`.
+
+!!! warning "Magnetic diffusion operator — sign under review"
+    A Galerkin port of the magnetic sector revealed that the *decoupled*
+    magnetic-diffusion modes come out **growing** (Re > 0), which is unphysical for a
+    purely dissipative process. `operator_magnetic_diffusion_poloidal/toroidal` share
+    the form of the viscous operator but enter the system matrix with the opposite
+    sign. Whether this is a sign error or a no-curl-formulation subtlety is unresolved
+    (the magnetic operators have no external benchmark). Treat magnetic (`Le > 0`)
+    growth rates with caution pending verification against a reference.
 
 ---
 

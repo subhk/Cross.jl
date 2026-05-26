@@ -120,3 +120,32 @@ function reconstruct_mhd_galerkin(layout, y::AbstractVector)
     end
     return out
 end
+
+"""Full-eigenvector layout range for `(field, ℓ)`, matching `assemble_mhd_matrices`
+((N+1) coefficients per mode; sections ordered u, v, f, g, h)."""
+function _mhd_full_range(op::MHDStabilityOperator, field::Symbol, ℓ::Int)
+    npm = op.params.N + 1
+    nbu = length(op.ll_u); nbv = length(op.ll_v)
+    nbf = length(op.ll_f); nbg = length(op.ll_g)
+    base = if field === :u
+        (findfirst(==(ℓ), op.ll_u) - 1) * npm
+    elseif field === :v
+        (nbu + findfirst(==(ℓ), op.ll_v) - 1) * npm
+    elseif field === :h
+        (nbu + nbv + nbf + nbg + findfirst(==(ℓ), op.ll_h) - 1) * npm
+    else
+        error("unsupported field $field")
+    end
+    return (base + 1):(base + npm)
+end
+
+"""Lift a reduced hydro Galerkin eigenvector to a full `op.matrix_size` vector in
+the standard MHD coefficient layout (for `StabilityResult` compatibility)."""
+function reconstruct_mhd_galerkin_full(op::MHDStabilityOperator, layout, y::AbstractVector)
+    full = zeros(eltype(y), op.matrix_size)
+    for (key, rng) in layout.index_map
+        field, ℓ = key
+        full[_mhd_full_range(op, field, ℓ)] = layout.R[field] * y[rng]
+    end
+    return full
+end

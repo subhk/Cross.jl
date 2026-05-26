@@ -213,17 +213,20 @@ This is automatically enforced when constructing `BasicState3D` from physical da
 
 ### v2.0 Unified API
 
-In v2.0, `basic_state(params; mode=:nonaxisymmetric)` replaces the manual `ChebyshevDiffn` + `nonaxisymmetric_basic_state` workflow. Call `estimate_size` before large triglobal solves:
+In v2.0 you build an `OnsetParams`, construct a 3-D basic state, wrap both in a `TriglobalProblem`, and call `solve`. Build the non-axisymmetric basic state with `nonaxisymmetric_basic_state` (m≠0 boundary modes ⇒ `BasicState3D`). Call `estimate_size` before large triglobal solves:
 
 ```julia
 using Cross
 
-params = OnsetParams(E=1e-5, Pr=1.0, Ra=1.5e7, χ=0.35, lmax=40, Nr=48)
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1.5e7, χ=0.35, m=0, lmax=40, Nr=48)
 
-# Non-axisymmetric basic state (Laplace approximation)
-bs3d = basic_state(params; mode=:nonaxisymmetric, mmax_bs=2)
+# Non-axisymmetric 3-D basic state (m≠0 boundary forcing)
+cd = ChebyshevDiffn(params.Nr, [params.χ, 1.0], 4)
+boundary_modes = Dict((2, 0) => 0.1, (2, 2) => 0.05)
+bs3d = nonaxisymmetric_basic_state(cd, params.χ, params.E, params.Ra, params.Pr,
+                                   8, 2, boundary_modes)
 
-# Check problem size before committing memory
+# Wrap, then check problem size before committing memory
 problem = TriglobalProblem(params, bs3d, -2:2)
 estimate_size(problem)
 
@@ -236,7 +239,8 @@ println("Frequency:   ", result.frequency)
 For the self-consistent solver with full geostrophic balance:
 
 ```julia
-bs3d = basic_state(params; mode=:selfconsistent, max_iterations=50)
+bs3d, _ = basic_state_selfconsistent(cd, params.χ, params.E, params.Ra, params.Pr;
+                                     flux_bc = Y00(-1.0) + Y22(-0.2), max_iterations = 50)
 result = solve(TriglobalProblem(params, bs3d, -5:5); nev=6)
 ```
 

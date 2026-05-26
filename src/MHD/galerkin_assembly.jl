@@ -30,8 +30,13 @@ function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
     N = p.N; ri = p.ricb; ro = one(T); gap = ro - ri; m = p.m
     E = p.E; Pr = p.Pr; Ra = p.Ra; Em = p.Em; Le = p.Le
 
-    if (!isempty(op.ll_f) || !isempty(op.ll_g)) && is_dipole_case(p.B0_type, p.ricb)
+    has_mag = !isempty(op.ll_f) || !isempty(op.ll_g)
+    if has_mag && is_dipole_case(p.B0_type, p.ricb)
         error("assemble_mhd_galerkin: dipole magnetic case not implemented; use the tau path.")
+    end
+    if has_mag && !(p.bci_magnetic == 0 && p.bco_magnetic == 0)
+        error("assemble_mhd_galerkin: only insulating magnetic BC (bci/bco_magnetic=0) " *
+              "supported; use the tau path for conducting/perfect conductor.")
     end
 
     noslip = (p.bci == 1 && p.bco == 1)

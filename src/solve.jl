@@ -229,8 +229,11 @@ function solve(problem::MHDProblem{T, BS};
     mhd_params = problem.params
     op = MHDStabilityOperator(mhd_params)
 
-    if !is_dipole_case(mhd_params.B0_type, mhd_params.ricb)
-        # Hydro AND axial-field MHD: tau-free ultraspherical-Galerkin assembly.
+    if !is_dipole_case(mhd_params.B0_type, mhd_params.ricb) &&
+       mhd_params.bci_magnetic == 0 && mhd_params.bco_magnetic == 0
+        # Hydro AND axial-field MHD with insulating magnetic BCs: tau-free
+        # ultraspherical-Galerkin assembly. (Dipole and conducting/perfect-conductor
+        # magnetic BCs are not yet supported by the Galerkin path → tau below.)
         # Spurious-free, so `:LR`/`:maxreal` selects the convective mode with no
         # σ-targeting. The reduced pencil is small ⇒ a dense solve gives the exact
         # spectrum (no Krylov fragility). The dipole case still routes through the

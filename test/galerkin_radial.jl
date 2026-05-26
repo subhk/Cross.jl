@@ -27,18 +27,7 @@ end
         banded = Matrix(Cross.banded_radial_term(T, power, deriv, deriv, N, ri, ro))  # C^(deriv)
         lifted = Matrix(Cross._convert_up(T, 0, deriv, N) *
                         Cross.sparse_radial_operator(power, deriv, N, ri, ro))        # C^0 -> C^(deriv)
-        match = isapprox(banded[:, 1:dmax+1], lifted[:, 1:dmax+1]; atol=1e-8, rtol=1e-8)
-        if power == 0 || deriv == 0
-            @test match
-        else
-            # KNOWN BUG (G0): the variable-coefficient path (multiplication in the
-            # C^(deriv) basis via multiplication_matrix's λ>0 branch, which is
-            # unexercised by sparse_radial_operator) disagrees with the validated
-            # sparse_radial_operator by ~2x on resolved inputs. Needs a root-cause
-            # fix before G2 wires r^power·D^deriv blocks. Flips to an Unexpected Pass
-            # (failing the suite) once fixed — that is the reminder to remove @test_broken.
-            @test_broken match
-        end
+        @test isapprox(banded[:, 1:dmax+1], lifted[:, 1:dmax+1]; atol=1e-8, rtol=1e-8)
     end
 end
 

@@ -48,7 +48,9 @@ function banded_radial_term(::Type{T}, power::Int, deriv::Int, q_out::Int,
     scale = T(_radial_scale(ri, ro))
     Dk = _diff_to_ultra(T, deriv, N, scale)              # C^(0) -> C^(deriv)
     if power != 0
-        rc = chebyshev_coefficients(T, power, N + 1, ri, ro)
+        # multiplication_matrix's C^(λ) branch (here λ=deriv) expects the multiplier
+        # expressed in C^(deriv) coefficients, not Chebyshev — convert r^power up.
+        rc = _convert_up(T, 0, deriv, N) * chebyshev_coefficients(T, power, N + 1, ri, ro)
         M = multiplication_matrix(rc, T(deriv), N + 1; vector_parity=0)
         op = M * Dk
     else

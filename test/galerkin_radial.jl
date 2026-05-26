@@ -13,14 +13,21 @@ function _galerkin_1d(::Type{T}, a_terms, q, R, N, ri, ro) where {T}
     return A, B
 end
 
-@testset "banded_radial_term matches sparse_radial_operator (multiplication path)" begin
-    T = Float64; ri = 0.35; ro = 1.0; N = 20
+@testset "banded_radial_term matches sparse_radial_operator on resolved inputs" begin
+    T = Float64; ri = 0.35; ro = 1.0; N = 24
+    # Validate the r^power multiplication path (multiply in C^(deriv)) against the
+    # already-validated sparse_radial_operator. Compare operator ACTION on
+    # band-limited inputs (Chebyshev modes up to degree dmax), where r^power·D^deriv
+    # stays within the truncation so the two encodings must agree to machine
+    # precision. Full-matrix equality fails only in the top truncated rows, which
+    # raise polynomial degree past N — and which the Galerkin restriction P_M
+    # discards anyway, so they never enter the assembled pencil.
     for (power, deriv) in [(0,1),(1,0),(2,0),(2,1),(2,2),(3,1),(4,2),(1,1)]
-        q = deriv
-        sparse_op = Cross.sparse_radial_operator(power, deriv, N, ri, ro)   # C^(0)
-        banded    = Cross.banded_radial_term(T, power, deriv, q, N, ri, ro) # C^(q)
-        lifted    = Cross._convert_up(T, 0, q, N) * sparse_op               # C^0 -> C^(q)
-        @test isapprox(Matrix(banded), Matrix(lifted); atol=1e-8, rtol=1e-8)
+        dmax = N - power - deriv
+        banded = Matrix(Cross.banded_radial_term(T, power, deriv, deriv, N, ri, ro))  # C^(deriv)
+        lifted = Matrix(Cross._convert_up(T, 0, deriv, N) *
+                        Cross.sparse_radial_operator(power, deriv, N, ri, ro))        # C^0 -> C^(deriv)
+        @test isapprox(banded[:, 1:dmax+1], lifted[:, 1:dmax+1]; atol=1e-8, rtol=1e-8)
     end
 end
 

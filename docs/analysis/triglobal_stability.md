@@ -489,9 +489,11 @@ println("  Status: ", σ₁ > 0 ? "UNSTABLE" : "STABLE")
 **v2.0 API** — use `TriglobalProblem` + `solve`. Always call `estimate_size` before large triglobal solves:
 
 ```julia
-# Create 3D basic state via unified API
-params = OnsetParams(E=1e-5, Pr=1.0, Ra=1.5e7, χ=0.35, lmax=40, Nr=48)
-bs3d = basic_state(params; mode=:nonaxisymmetric, mmax_bs=2)
+# Build params + a 3-D basic state
+params = OnsetParams(E=1e-5, Pr=1.0, Ra=1.5e7, χ=0.35, m=0, lmax=40, Nr=48)
+cd = ChebyshevDiffn(params.Nr, [params.χ, 1.0], 4)
+bs3d = nonaxisymmetric_basic_state(cd, params.χ, params.E, params.Ra, params.Pr,
+                                   8, 2, Dict((2,0)=>0.1, (2,2)=>0.05))
 
 # Wrap in a TriglobalProblem
 m_range = -2:2

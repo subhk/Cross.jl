@@ -1,6 +1,17 @@
 # Getting Started
 
-This guide walks you through installing Cross.jl and running your first stability analysis. Follow the steps in order on Linux, macOS, or Windows with WSL.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Install &amp; first run</div>
+  <h1>From a fresh clone to your first eigenvalue.</h1>
+  <p>
+    Install Cross.jl on Linux, macOS, or Windows (WSL), then assemble and solve a
+    rotating-convection onset problem &mdash; follow the steps in order.
+  </p>
+  <div class="cross-actions">
+    <a class="cross-button primary" href="../problem_setup/">First problem</a>
+    <a class="cross-button secondary" href="../examples/">Examples</a>
+  </div>
+</div>
 
 ## Prerequisites
 

@@ -1,6 +1,17 @@
 # Examples
 
-Cross.jl includes several ready-to-run example scripts in the `example/` directory. This page provides an overview of each script and what you can learn from it.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Ready-to-run scripts</div>
+  <h1>Learn Cross.jl by running complete examples.</h1>
+  <p>
+    Each script in the <code>example/</code> directory is a self-contained stability
+    calculation you can run and adapt to your own problem.
+  </p>
+  <div class="cross-actions">
+    <a class="cross-button primary" href="../getting_started/">Get started</a>
+    <a class="cross-button secondary" href="../analysis/onset_convection/">Analysis modes</a>
+  </div>
+</div>
 
 ## Running Examples
 

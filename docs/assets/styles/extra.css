@@ -63,11 +63,14 @@
   border-radius: 6px;
 }
 
-.md-typeset pre > code,
 .md-typeset .highlight {
   border: 1px solid var(--cross-border);
   border-radius: 14px;
   box-shadow: 0 10px 24px rgba(16, 35, 63, 0.08);
+}
+
+.md-typeset .highlight pre {
+  border-radius: 14px;
 }
 
 /* Sidebar / nav active + hover accent. */

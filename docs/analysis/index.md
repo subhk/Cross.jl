@@ -1,14 +1,31 @@
 # Analysis Modes
 
-Cross.jl provides three progressively complex approaches for linear stability analysis, each tailored to different physical scenarios involving background mean flows.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Three ways to analyze stability</div>
+  <h1>Pick the mode that matches your background flow.</h1>
+  <p>
+    From classical onset with no mean flow, through axisymmetric biglobal analysis,
+    to fully 3-D mode-coupled triglobal analysis &mdash; each tuned to a different
+    physical scenario.
+  </p>
+</div>
 
 ## Overview
 
-| Analysis Mode | Basic State | Mode Coupling | Use Case |
-|---------------|-------------|---------------|----------|
-| **[Onset Convection](onset_convection.md)** | Conduction only ($\bar{\mathbf{u}} = 0$) | None | Classical convection onset |
-| **[Biglobal](biglobal_stability.md)** | Axisymmetric ($m = 0$) | None | Thermal wind, zonal jets |
-| **[Triglobal](triglobal_stability.md)** | Non-axisymmetric ($m \neq 0$) | Yes | CMB heterogeneity, tidal forcing |
+<div class="cross-card-grid">
+  <div class="cross-card">
+    <strong><a href="onset_convection/">Onset convection</a></strong>
+    <p>Conductive base state, no mean flow. Each azimuthal mode <em>m</em> is independent. Classical convection onset.</p>
+  </div>
+  <div class="cross-card">
+    <strong><a href="biglobal_stability/">Biglobal</a></strong>
+    <p>Axisymmetric (<em>m</em> = 0) mean flow &mdash; thermal wind, zonal jets. Perturbation modes stay decoupled.</p>
+  </div>
+  <div class="cross-card">
+    <strong><a href="triglobal_stability/">Triglobal</a></strong>
+    <p>Non-axisymmetric mean flow. Modes couple via Gaunt coefficients. CMB heterogeneity, tidal forcing.</p>
+  </div>
+</div>
 
 ## Choosing the Right Analysis Mode
 

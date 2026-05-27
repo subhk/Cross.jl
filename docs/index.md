@@ -1,39 +1,59 @@
 # Cross.jl
 
-**High-Performance Spectral Methods for Rotating Convection and MHD Stability in Spherical Shells**
+<div class="cross-hero">
+  <div class="cross-eyebrow">Rotating convection &amp; MHD stability in Julia</div>
+  <h1>Spectral eigenvalue problems for spherical-shell convection and dynamos.</h1>
+  <p>
+    Cross.jl solves linear stability problems for rotating convection and magnetohydrodynamic
+    flows in spherical shells, using banded ultraspherical operators for spectral accuracy at
+    98&ndash;99% matrix sparsity.
+  </p>
+  <div class="cross-actions">
+    <a class="cross-button primary" href="getting_started/">Get started</a>
+    <a class="cross-button secondary" href="examples/">Browse examples</a>
+  </div>
+</div>
 
----
+## Highlights
 
-Cross.jl is a Julia package for analyzing the onset of convection and magnetohydrodynamic (MHD) instabilities in rotating spherical shells. It uses ultra-sparse spectral methods based on the Olver-Townsend ultraspherical (Gegenbauer) approach to achieve exceptional computational efficiency while maintaining spectral accuracy.
+<div class="cross-card-grid">
+  <div class="cross-card">
+    <strong>Ultra-sparse spectral method</strong>
+    <p>Olver&ndash;Townsend ultraspherical operators give banded radial matrices and 98&ndash;99% sparsity.</p>
+  </div>
+  <div class="cross-card">
+    <strong>Three analysis modes</strong>
+    <p>Onset convection, biglobal (axisymmetric mean flow), and triglobal (mode-coupled) stability.</p>
+  </div>
+  <div class="cross-card">
+    <strong>MHD extension</strong>
+    <p>Magnetoconvection and kinematic-dynamo problems with axial and dipolar background fields.</p>
+  </div>
+  <div class="cross-card">
+    <strong>Spurious-free eigenvalues</strong>
+    <p>A banded Galerkin discretization removes the tau method's spurious modes, matching the onset benchmark to ~1e-12.</p>
+  </div>
+</div>
 
-## Key Features
+## What to read first
 
-<div class="grid cards" markdown>
-
--   :material-lightning-bolt:{ .lg .middle } **Ultra-Sparse Spectral Methods**
-
-    ---
-
-    Achieves 98-99% matrix sparsity using the ultraspherical spectral method, enabling efficient computation even for high-resolution problems.
-
--   :material-earth:{ .lg .middle } **Geophysical Applications**
-
-    ---
-
-    Designed for planetary core dynamics, stellar convection, and laboratory rotating fluid experiments.
-
--   :material-magnet:{ .lg .middle } **MHD Extension**
-
-    ---
-
-    Full magnetohydrodynamic capability with support for axial and dipolar background magnetic fields.
-
--   :material-cube-outline:{ .lg .middle } **Tri-Global Analysis**
-
-    ---
-
-    Mode coupling analysis for non-axisymmetric basic states with multiple azimuthal wavenumbers.
-
+<div class="cross-path">
+  <div class="cross-step">
+    <a href="getting_started/">Installation</a>
+    <p>Set up the environment and run your first problem.</p>
+  </div>
+  <div class="cross-step">
+    <a href="problem_setup/">First problem</a>
+    <p>Assemble an onset problem and find a critical Rayleigh number.</p>
+  </div>
+  <div class="cross-step">
+    <a href="analysis/onset_convection/">Analysis modes</a>
+    <p>Choose onset, biglobal, or triglobal for your background state.</p>
+  </div>
+  <div class="cross-step">
+    <a href="examples/">Examples</a>
+    <p>Work through ready-to-run example scripts and benchmarks.</p>
+  </div>
 </div>
 
 ## Three Analysis Modes

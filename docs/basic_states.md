@@ -1,6 +1,14 @@
 # Basic States
 
-Cross.jl separates the base (steady) state of the system from the perturbations whose stability we study. This enables analyzing convection onset with realistic background temperature and flow profiles.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Base states</div>
+  <h1>Separate the background state from the perturbations.</h1>
+  <p>
+    Cross.jl decouples the steady base state from the perturbations whose stability
+    you study, so you can analyze onset against realistic background temperature and
+    flow profiles.
+  </p>
+</div>
 
 ## Overview
 

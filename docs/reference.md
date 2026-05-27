@@ -1,6 +1,10 @@
 # API Reference
 
-Complete reference for Cross.jl functions, types, and modules.
+<div class="cross-hero">
+  <div class="cross-eyebrow">API reference</div>
+  <h1>Every function, type, and module.</h1>
+  <p>Complete reference for the Cross.jl public API and lower-level building blocks.</p>
+</div>
 
 > **Note:** The public API is the v2 problem/solve/result interface. Lower-level
 > operator constructors remain documented for advanced workflows.

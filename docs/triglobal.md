@@ -1,6 +1,14 @@
 # Tri-Global Instability Analysis
 
-Tri-global analysis captures mode coupling across multiple azimuthal wavenumbers when the base state is fully 3-D. This enables studying instabilities driven by non-axisymmetric boundary conditions or background flows.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Mode coupling</div>
+  <h1>3-D instabilities across coupled azimuthal wavenumbers.</h1>
+  <p>
+    Tri-global analysis captures coupling between azimuthal wavenumbers when the base
+    state is fully 3-D &mdash; for instabilities driven by non-axisymmetric boundary
+    conditions or background flows.
+  </p>
+</div>
 
 ## When to Use Tri-Global Analysis
 

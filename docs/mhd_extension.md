@@ -1,6 +1,14 @@
 # Magnetohydrodynamic Extension
 
-Cross.jl includes a comprehensive MHD module for studying the linear stability of conducting fluids under rotation, thermal gradients, and imposed magnetic fields. This is essential for understanding planetary dynamos, stellar convection, and laboratory MHD experiments.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Magnetohydrodynamics</div>
+  <h1>Stability of rotating, conducting fluids in magnetic fields.</h1>
+  <p>
+    The MHD module studies the linear stability of conducting fluids under rotation,
+    thermal gradients, and imposed magnetic fields &mdash; for planetary dynamos,
+    stellar convection, and laboratory MHD.
+  </p>
+</div>
 
 ## Overview
 

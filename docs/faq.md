@@ -1,6 +1,10 @@
 # FAQ & Troubleshooting
 
-Common questions and solutions for Cross.jl users.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Help</div>
+  <h1>FAQ &amp; troubleshooting.</h1>
+  <p>Common questions and fixes for Cross.jl users.</p>
+</div>
 
 ## Installation
 

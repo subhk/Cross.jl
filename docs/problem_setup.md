@@ -1,6 +1,13 @@
 # Setting Up Your First Problem
 
-This tutorial walks you through assembling a linear stability operator for a rotating spherical shell, finding the critical Rayleigh number, and analyzing the results.
+<div class="cross-hero">
+  <div class="cross-eyebrow">First problem</div>
+  <h1>Assemble, solve, and read a stability problem.</h1>
+  <p>
+    Build a linear stability operator for a rotating spherical shell, find the
+    critical Rayleigh number, and analyze the results &mdash; step by step.
+  </p>
+</div>
 
 ## Overview
 

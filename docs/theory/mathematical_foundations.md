@@ -1,6 +1,10 @@
 # Mathematical Foundations
 
-This page presents the mathematical framework underlying Cross.jl, covering the governing equations, non-dimensionalization, and eigenvalue problem formulation.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Theory</div>
+  <h1>The equations behind Cross.jl.</h1>
+  <p>The mathematical framework: governing equations, non-dimensionalization, and the eigenvalue-problem formulation.</p>
+</div>
 
 ## Governing Equations
 

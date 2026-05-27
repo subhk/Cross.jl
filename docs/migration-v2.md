@@ -1,6 +1,10 @@
 # Migrating to Cross.jl v2.0
 
-This guide covers all breaking changes from v1.x to v2.0.
+<div class="cross-hero">
+  <div class="cross-eyebrow">v1.x &rarr; v2.0</div>
+  <h1>Migrating to the v2.0 problem / solve API.</h1>
+  <p>Everything that changed from v1.x to v2.0, and how to update your code.</p>
+</div>
 
 ## 1. Basic State API
 

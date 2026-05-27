@@ -1,6 +1,10 @@
 # Codebase Structure
 
-This page provides an overview of the Cross.jl source code organization, helping developers understand the architecture and navigate the codebase.
+<div class="cross-hero">
+  <div class="cross-eyebrow">For developers</div>
+  <h1>How the Cross.jl source is organized.</h1>
+  <p>An overview of the source-code layout and architecture to help you navigate and extend the codebase.</p>
+</div>
 
 ## Directory Layout
 

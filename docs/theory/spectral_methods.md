@@ -1,6 +1,10 @@
 # Spectral Methods
 
-Cross.jl uses advanced spectral methods to achieve high accuracy with sparse matrix representations. This page describes the Chebyshev and ultraspherical spectral methods implemented in the code.
+<div class="cross-hero">
+  <div class="cross-eyebrow">Theory</div>
+  <h1>Sparse spectral discretization.</h1>
+  <p>The Chebyshev and ultraspherical spectral methods Cross.jl uses for high accuracy at high sparsity.</p>
+</div>
 
 ## Overview
 

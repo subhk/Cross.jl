@@ -469,14 +469,14 @@ end
         @test haskey(bs.theta_coeffs, 2)
         @test maximum(abs.(bs.theta_coeffs[2])) > 1e-14
 
-        # Should have non-zero L=1,3 zonal flow
-        @test haskey(bs.uphi_coeffs, 1)
-        @test haskey(bs.uphi_coeffs, 3)
-
-        # At least one should be non-zero
-        has_flow = maximum(abs.(bs.uphi_coeffs[1])) > 1e-14 ||
-                   maximum(abs.(bs.uphi_coeffs[3])) > 1e-14
-        @test has_flow
+        # Coupled thermal wind: a Y_ℓ0 (equatorially symmetric) temperature drives an
+        # equatorially symmetric zonal flow ⇒ EVEN L (2,4,…); odd L stays ~0. (The old
+        # diagonal heuristic wrongly placed the flow at odd L=1,3.)
+        @test haskey(bs.uphi_coeffs, 2)
+        @test maximum(abs.(bs.uphi_coeffs[2])) > 1e-14
+        # odd-L flow is negligible vs even-L — correct parity for Y_ℓ0 forcing
+        @test maximum(abs.(get(bs.uphi_coeffs, 1, zeros(Nr)))) <
+              1e-6 * maximum(abs.(bs.uphi_coeffs[2]))
 
         # Check inner BC (first-order ODE can only satisfy one BC)
         for (L, uphi) in bs.uphi_coeffs
@@ -731,12 +731,12 @@ end  # @testset "Triglobal"
         # Should match the axisymmetric result
         bs_axi = Cross.meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, 0.1)
 
-        # Compare L=1 velocity (should be similar)
-        if haskey(bs3d.uphi_coeffs, (1, 0)) && haskey(bs_axi.uphi_coeffs, 1)
-            uphi_3d_L1 = bs3d.uphi_coeffs[(1, 0)]
-            uphi_axi_L1 = bs_axi.uphi_coeffs[1]
+        # Compare L=2 velocity (dominant even mode; both paths use the coupled m=0 solve)
+        if haskey(bs3d.uphi_coeffs, (2, 0)) && haskey(bs_axi.uphi_coeffs, 2)
+            uphi_3d_L2 = bs3d.uphi_coeffs[(2, 0)]
+            uphi_axi_L2 = bs_axi.uphi_coeffs[2]
 
-            rel_diff = norm(uphi_3d_L1 - uphi_axi_L1) / (norm(uphi_axi_L1) + 1e-14)
+            rel_diff = norm(uphi_3d_L2 - uphi_axi_L2) / (norm(uphi_axi_L2) + 1e-14)
             @test rel_diff < 0.1  # 10% tolerance for different code paths
         end
     end

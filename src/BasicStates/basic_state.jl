@@ -657,7 +657,11 @@ function meridional_basic_state(cd::ChebyshevDiffn{T}, χ::T, E::T, Ra::T, Pr::T
     # =========================================================================
     # Solve thermal wind balance for ū_φ
     # =========================================================================
-    solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
+    # Use the full coupled operator (not the diagonal heuristic): the diagonal
+    # solver placed the zonal flow at the wrong (odd-L) parity and did not satisfy
+    # the thermal-wind PDE. The coupled solve (m_bs=0) yields the correct
+    # equatorially-symmetric (even-L) flow that satisfies the balance.
+    solve_thermal_wind_coupled!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs, 0,
                                 cd, r_i, r_o, Ra, Pr;
                                 mechanical_bc=mechanical_bc,
                                 E=E)
@@ -1949,13 +1953,13 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
                                      E::T=T(1e-4),
                                      lmax::Union{Nothing,Int}=nothing) where T<:Real
 
-    # For m=0, the equations decouple and we can use the simpler solver
-    if m_bs == 0
-        solve_thermal_wind_balance!(uphi_coeffs, duphi_dr_coeffs, theta_coeffs,
-                                    cd, r_i, r_o, Ra, Pr;
-                                    mechanical_bc=mechanical_bc, E=E)
-        return nothing
-    end
+    # NOTE: m=0 is handled by the SAME coupled operator below — it is deliberately
+    # NOT delegated to the diagonal solve_thermal_wind_balance! heuristic. That
+    # heuristic puts the axisymmetric zonal flow at the wrong spherical-harmonic
+    # parity (odd L for a Y_ℓ0-even forcing) and does not satisfy the thermal-wind
+    # PDE (the true cosθ/sinθ∂θ operator is zero-diagonal). Velocity modes start at
+    # L = max(m_bs, 1): u_φ has no ℓ=0 component (a constant-in-θ zonal flow is
+    # unphysical and pole-singular under advection).
 
     if !(mechanical_bc in (:no_slip, :stress_free))
         error("mechanical_bc must be :no_slip or :stress_free, got: $mechanical_bc")
@@ -1969,9 +1973,10 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     lmax_theta = isempty(theta_coeffs) ? m_bs : maximum(keys(theta_coeffs))
     lmax_vel = lmax === nothing ? lmax_theta + 1 : lmax
     lmax_vel = max(lmax_vel, m_bs)  # L ≥ m required
+    Lmin = max(m_bs, 1)             # exclude unphysical ℓ=0 zonal flow; for m≥1, Lmin=m_bs
 
-    # Number of velocity modes: L = m, m+1, ..., lmax_vel
-    n_modes = lmax_vel - m_bs + 1
+    # Number of velocity modes: L = Lmin, Lmin+1, ..., lmax_vel
+    n_modes = lmax_vel - Lmin + 1
     if n_modes < 1
         return nothing
     end
@@ -1988,7 +1993,7 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     end
 
     # Mode indices: mode_idx[k] = L means the k-th mode corresponds to degree L
-    mode_idx = collect(m_bs:lmax_vel)
+    mode_idx = collect(Lmin:lmax_vel)
 
     # =========================================================================
     # Coupling coefficients

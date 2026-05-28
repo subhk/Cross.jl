@@ -724,8 +724,10 @@ end
     # (vecsh_advection) — a real pseudo-spectral transform per radius, heavier
     # than the former approximate term-split but aliasing-free and correct. The
     # meridional solve now also computes the sin(|m|φ) partner (signed-m), adding
-    # one extra block solve per |m| present.
-    @test bytes < 3_000_000
+    # one extra block solve per |m| present. The m=0 sector now uses the full
+    # coupled thermal-wind operator (a dense block solve) instead of the diagonal
+    # heuristic — correct parity + satisfies the PDE, at ~0.5 MB extra (measured 3.51 MB).
+    @test bytes < 4_000_000
 end
 
 @testset "Poisson mode solve avoids dense diagonal temporaries" begin

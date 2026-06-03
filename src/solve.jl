@@ -109,7 +109,7 @@ function solve(problem::OnsetProblem{T};
     evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
 
     return StabilityResult(
-        Vector{Complex{T}}(eigenvalues),
+        convert(Vector{Complex{T}}, eigenvalues),
         evec_matrix,
         problem;
         extra=(operator=op, info=info)
@@ -153,7 +153,7 @@ function solve(problem::BiglobalProblem{T};
     evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
 
     return StabilityResult(
-        Vector{Complex{T}}(eigenvalues),
+        convert(Vector{Complex{T}}, eigenvalues),
         evec_matrix,
         problem;
         extra=(operator=op, info=info)
@@ -197,7 +197,7 @@ function solve(problem::TriglobalProblem{T};
     evec_matrix = Matrix{Complex{T}}(eigenvectors)
 
     return StabilityResult(
-        Vector{Complex{T}}(eigenvalues),
+        convert(Vector{Complex{T}}, eigenvalues),
         evec_matrix,
         problem;
         extra=(coupled_modes=collect(problem.m_range),)
@@ -250,9 +250,9 @@ function solve(problem::MHDProblem{T, BS};
         eigenvalues = vals[sel]
         evecs_full = [reconstruct_mhd_galerkin_full(op, layout, F.vectors[:, keep[s]]) for s in sel]
         evec_matrix = _eigvecs_to_matrix(eigenvalues, evecs_full, T)
-        info = Dict("method" => "MHD ultraspherical-Galerkin (hydro)", "n_reduced" => layout.nred)
+        info = (method = "MHD ultraspherical-Galerkin (hydro)", n_reduced = layout.nred)
         return StabilityResult(
-            Vector{Complex{T}}(eigenvalues),
+            convert(Vector{Complex{T}}, eigenvalues),
             evec_matrix,
             problem;
             extra=(operator=op, interior_dofs=collect(1:layout.nred),
@@ -268,7 +268,7 @@ function solve(problem::MHDProblem{T, BS};
     evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
 
     return StabilityResult(
-        Vector{Complex{T}}(eigenvalues),
+        convert(Vector{Complex{T}}, eigenvalues),
         evec_matrix,
         problem;
         extra=(operator=op, interior_dofs=interior_dofs, assembly_info=info_assembly)
@@ -279,22 +279,31 @@ end
 # Utility: convert Vector{Vector} to Matrix
 # ============================================================================
 
-"""Normalize solver eigenvectors to a dense `Matrix{Complex{T}}` for `StabilityResult`."""
-function _eigvecs_to_matrix(eigenvalues, eigenvectors, ::Type{T}) where T
-    if eigenvectors isa AbstractMatrix
-        return Matrix{Complex{T}}(eigenvectors)
-    elseif eigenvectors isa AbstractVector && !isempty(eigenvectors)
-        n = length(eigenvectors[1])
-        nev = length(eigenvectors)
-        mat = Matrix{Complex{T}}(undef, n, nev)
-        for j in 1:nev
-            mat[:, j] = eigenvectors[j]
-        end
-        return mat
-    else
-        # Fallback: empty matrix
-        return Matrix{Complex{T}}(undef, 0, length(eigenvalues))
+"""Normalize solver eigenvectors to a dense `Matrix{Complex{T}}` for `StabilityResult`.
+
+Split into multiple-dispatch methods so the eigenvector container type (matrix for
+the Galerkin/triglobal paths, vector-of-vectors for the tau paths) is resolved at
+compile time instead of via runtime `isa` branches."""
+function _eigvecs_to_matrix(eigenvalues, eigenvectors::AbstractMatrix, ::Type{T}) where T
+    return Matrix{Complex{T}}(eigenvectors)
+end
+
+function _eigvecs_to_matrix(eigenvalues,
+                            eigenvectors::AbstractVector{<:AbstractVector},
+                            ::Type{T}) where T
+    isempty(eigenvectors) && return Matrix{Complex{T}}(undef, 0, length(eigenvalues))
+    n = length(eigenvectors[1])
+    nev = length(eigenvectors)
+    mat = Matrix{Complex{T}}(undef, n, nev)
+    for j in 1:nev
+        mat[:, j] = eigenvectors[j]
     end
+    return mat
+end
+
+# Fallback for empty/degenerate containers that match neither concrete shape.
+function _eigvecs_to_matrix(eigenvalues, eigenvectors, ::Type{T}) where T
+    return Matrix{Complex{T}}(undef, 0, length(eigenvalues))
 end
 
 # ============================================================================

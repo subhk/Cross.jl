@@ -615,8 +615,10 @@ function _project_coupling_block(C_full::Matrix{Complex{T}},
     C = zeros(Complex{T}, length(target.interior_dofs), source.reduction.n_reduced)
 
     for block in source.reduction.blocks
+        # View the source/target sub-block instead of materializing a copy of the
+        # integer-indexed slice before the matmul.
         C[:, block.reduced_indices] .=
-            C_full[target.interior_dofs, block.full_indices] * block.basis
+            (@view C_full[target.interior_dofs, block.full_indices]) * block.basis
     end
 
     return C
@@ -1174,10 +1176,11 @@ function add_temperature_gradient_theta_coupling!(C::Matrix{Complex{T}},
             for i in 1:Nr
                 row = idx_to[i]
                 row == 0 && continue
+                w = -meridional_coeff * theta_scaled[i]  # invariant in j
                 for j in 1:Nr
                     col = idx_from[j]
                     col == 0 && continue
-                    C[row, col] += -meridional_coeff * theta_scaled[i] * Dr[i, j]
+                    C[row, col] += w * Dr[i, j]
                 end
             end
         end
@@ -1315,10 +1318,11 @@ function add_shear_theta_coupling!(C::Matrix{Complex{T}},
             for i in 1:Nr
                 row = idx_to[i]
                 row == 0 && continue
+                w = -meridional_coeff * uphi_scaled[i]  # invariant in j
                 for j in 1:Nr
                     col = idx_from[j]
                     col == 0 && continue
-                    C[row, col] += -meridional_coeff * uphi_scaled[i] * Dr[i, j]
+                    C[row, col] += w * Dr[i, j]
                 end
             end
         end
@@ -1369,10 +1373,11 @@ function add_radial_advection_coupling!(C::Matrix{Complex{T}},
                 for i in 1:Nr
                     row = idx_to[i]
                     row == 0 && continue
+                    w = coupling_coeff * ur_scaled[i]  # invariant in j
                     for j in 1:Nr
                         col = idx_from[j]
                         col == 0 && continue
-                        C[row, col] += coupling_coeff * ur_scaled[i] * Dr[i, j]
+                        C[row, col] += w * Dr[i, j]
                     end
                 end
             end

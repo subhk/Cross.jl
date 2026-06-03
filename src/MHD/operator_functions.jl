@@ -47,19 +47,27 @@ end
 
 """Combine `(coefficient, sparse_matrix)` terms into one sparse radial block."""
 function combine_terms(terms::AbstractVector{<:Tuple})
-    isempty(terms) && return spzeros(_empty_terms_output_eltype(eltype(terms)), 0, 0)
-    Tmat = eltype(terms[1][2])
-    Tout = (Tmat <: Complex || any(term -> !(term[1] isa Real), terms)) ?
-           _complex_eltype(Tmat) : Tmat
+    # Derive the output scalar type from `eltype(terms)` (compile-time) rather than
+    # inspecting runtime coefficient values. A `Vector{Tuple{C,M}}` cannot hold a
+    # complex coefficient unless `C` admits it, so the type-domain test
+    # `!(C <: Real)` is equivalent to the former `any(!isa Real, terms)` while
+    # keeping `combine_terms` return-type inferrable for every block builder.
+    Tout = _terms_output_eltype(eltype(terms))
+    isempty(terms) && return spzeros(Tout, 0, 0)
     return _combine_terms(Tout, terms)
 end
 
-@inline _empty_terms_output_eltype(::Type) = Float64
-@inline function _empty_terms_output_eltype(
-    ::Type{<:Tuple{C, <:SparseMatrixCSC{T, Int}}}) where {C, T}
-    # Empty term lists still need a concrete sparse eltype so callers do not
-    # silently fall back to Float64 in Float32 or complex assembly paths.
-    return (T <: Complex || !(C <: Real)) ? _complex_eltype(T) : T
+@inline _terms_output_eltype(::Type) = Float64
+@inline function _terms_output_eltype(::Type{TT}) where {TT <: Tuple}
+    # Concrete sparse eltype so callers do not silently fall back to Float64 in
+    # Float32 or complex assembly paths (also covers empty term lists). Read the
+    # coefficient/matrix types with `fieldtype`/`eltype` rather than binding them
+    # as static parameters — an abstract coefficient slot (e.g. `Tuple{Real,…}`,
+    # produced by builders mixing Int and Float coefficients) cannot bind a
+    # `where {C}` parameter and would raise an UndefVarError.
+    C = fieldtype(TT, 1)
+    Tm = eltype(fieldtype(TT, 2))
+    return (Tm <: Complex || !(C <: Real)) ? _complex_eltype(Tm) : Tm
 end
 
 """Shared implementation for `combine_terms` with a chosen output scalar type."""
@@ -100,9 +108,13 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
     nblock = zero_block(op)
-    mat(p, h, d) = Matrix{Complex{T}}(background_operator(op, p, h, d))
+    bg(p, h, d) = background_operator(op, p, h, d)
     L = l * (l + 1)
     Le2 = Le^2
+    # Accumulate the radial terms as a sparse sum instead of densifying each
+    # cached background block via `Matrix(...)`. Scaling by a `Complex{T}` factor
+    # keeps the block complex (matching the former dense `Matrix{Complex{T}}` path).
+    scaled(C, terms) = _scale_sparse(T, Complex{T}(Le2 * C), combine_terms(terms))
 
     if offset == -2
         denom = 3 - 8l + 4l^2
@@ -114,17 +126,18 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (3 * (-2 - l + l^2) * sqrt_factor) / denom
-        out = (2l + 3l^2 + l^3) .* mat(0, 0, 0)
-        out .-= (6 - 7l + 3l^2) .* mat(1, 0, 1)
-        out .+= (2 + l - 6l^2 + l^3) .* mat(1, 1, 0)
-        out .+= (6 - l) .* mat(2, 0, 2)
-        out .+= 2 * (2 - l) .* mat(2, 1, 1)
-        out .+= (-2 + l) .* mat(2, 2, 0)
-        out .-= mat(3, 2, 1)
-        out .+= 3 .* mat(3, 0, 3)
-        out .+= (3 - l) .* mat(3, 1, 2)
-        out .+= (-1 + l) .* mat(3, 3, 0)
-        return _scale_sparse(T, Le2 * C, sparse(out))
+        return scaled(C, [
+            (2l + 3l^2 + l^3, bg(0, 0, 0)),
+            (-(6 - 7l + 3l^2), bg(1, 0, 1)),
+            (2 + l - 6l^2 + l^3, bg(1, 1, 0)),
+            (6 - l, bg(2, 0, 2)),
+            (2 * (2 - l), bg(2, 1, 1)),
+            (-2 + l, bg(2, 2, 0)),
+            (-1, bg(3, 2, 1)),
+            (3, bg(3, 0, 3)),
+            (3 - l, bg(3, 1, 2)),
+            (-1 + l, bg(3, 3, 0)),
+        ])
     elseif offset == -1
         denom = 2l - 1
         if abs(denom) < eps(T)
@@ -135,33 +148,35 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = sqrt_factor * (l^2 - 1) / denom
-        out = -2 * (l^2 + 2) .* mat(1, 0, 1)
-        out .-= 2 * (l - 2) .* mat(2, 1, 1)
-        out .-= (l - 4) .* mat(2, 0, 2)
-        out .-= (l - 2) .* mat(3, 1, 2)
-        out .+= L * (l + 2) .* mat(0, 0, 0)
-        out .+= L * (l - 4) .* mat(1, 1, 0)
-        out .+= l .* mat(2, 2, 0)
-        out .+= l .* mat(3, 3, 0)
-        out .+= 2 .* mat(3, 0, 3)
-        return _scale_sparse(T, Le2 * C, sparse(out))
+        return scaled(C, [
+            (-2 * (l^2 + 2), bg(1, 0, 1)),
+            (-2 * (l - 2), bg(2, 1, 1)),
+            (-(l - 4), bg(2, 0, 2)),
+            (-(l - 2), bg(3, 1, 2)),
+            (L * (l + 2), bg(0, 0, 0)),
+            (L * (l - 4), bg(1, 1, 0)),
+            (l, bg(2, 2, 0)),
+            (l, bg(3, 3, 0)),
+            (2, bg(3, 0, 3)),
+        ])
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
         if abs(denom) < eps(T)
             return nblock
         end
         C = 3 * (l + l^2 - 3 * m^2) / denom
-        out = 3 * l * (1 + l) * (-2 + l + l^2) .* mat(0, 0, 0)
-        out .-= 3 * L^2 .* mat(1, 1, 0)
-        out .+= 2 * (6 - 4l - 5l^2 - 2l^3 - l^4) .* mat(1, 0, 1)
-        out .+= 3 * L .* mat(2, 2, 0)
-        out .+= (-12 + 5l + 5l^2) .* mat(2, 0, 2)
-        out .+= 2 * (-6 + 5l + 5l^2) .* mat(2, 1, 1)
-        out .+= 2 * L .* mat(3, 2, 1)
-        out .+= L .* mat(3, 3, 0)
-        out .+= 2 * (-3 + l + l^2) .* mat(3, 0, 3)
-        out .+= 3 * (-2 + l + l^2) .* mat(3, 1, 2)
-        return _scale_sparse(T, Le2 * C, sparse(out))
+        return scaled(C, [
+            (3 * l * (1 + l) * (-2 + l + l^2), bg(0, 0, 0)),
+            (-3 * L^2, bg(1, 1, 0)),
+            (2 * (6 - 4l - 5l^2 - 2l^3 - l^4), bg(1, 0, 1)),
+            (3 * L, bg(2, 2, 0)),
+            (-12 + 5l + 5l^2, bg(2, 0, 2)),
+            (2 * (-6 + 5l + 5l^2), bg(2, 1, 1)),
+            (2 * L, bg(3, 2, 1)),
+            (L, bg(3, 3, 0)),
+            (2 * (-3 + l + l^2), bg(3, 0, 3)),
+            (3 * (-2 + l + l^2), bg(3, 1, 2)),
+        ])
     elseif offset == 1
         denom = 2l + 3
         if abs(denom) < eps(T)
@@ -172,16 +187,17 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = sqrt_factor * l * (l + 2) / denom
-        out = -2 * (l^2 + 2l + 3) .* mat(1, 0, 1)
-        out .+= 2 * (l + 3) .* mat(2, 1, 1)
-        out .+= (l + 5) .* mat(2, 0, 2)
-        out .+= (l + 3) .* mat(3, 1, 2)
-        out .-= L * (l - 1) .* mat(0, 0, 0)
-        out .-= L * (l + 5) .* mat(1, 1, 0)
-        out .-= (l + 1) .* mat(2, 2, 0)
-        out .-= (l + 1) .* mat(3, 3, 0)
-        out .+= 2 .* mat(3, 0, 3)
-        return _scale_sparse(T, Le2 * C, sparse(out))
+        return scaled(C, [
+            (-2 * (l^2 + 2l + 3), bg(1, 0, 1)),
+            (2 * (l + 3), bg(2, 1, 1)),
+            (l + 5, bg(2, 0, 2)),
+            (l + 3, bg(3, 1, 2)),
+            (-L * (l - 1), bg(0, 0, 0)),
+            (-L * (l + 5), bg(1, 1, 0)),
+            (-(l + 1), bg(2, 2, 0)),
+            (-(l + 1), bg(3, 3, 0)),
+            (2, bg(3, 0, 3)),
+        ])
     elseif offset == 2
         denom = (3 + 2l) * (5 + 2l)
         if abs(denom) < eps(T)
@@ -192,17 +208,18 @@ function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (3 * l * (l + 3) * sqrt_factor) / denom
-        out = (l - l^3) .* mat(0, 0, 0)
-        out .-= (16 + 13l + 3l^2) .* mat(1, 0, 1)
-        out .-= (6 + 16l + 9l^2 + l^3) .* mat(1, 1, 0)
-        out .+= 2 * (3 + l) .* mat(2, 1, 1)
-        out .-= (3 + l) .* mat(2, 2, 0)
-        out .+= (7 + l) .* mat(2, 0, 2)
-        out .-= mat(3, 2, 1)
-        out .+= 3 .* mat(3, 0, 3)
-        out .+= (4 + l) .* mat(3, 1, 2)
-        out .-= (2 + l) .* mat(3, 3, 0)
-        return _scale_sparse(T, Le2 * C, sparse(out))
+        return scaled(C, [
+            (l - l^3, bg(0, 0, 0)),
+            (-(16 + 13l + 3l^2), bg(1, 0, 1)),
+            (-(6 + 16l + 9l^2 + l^3), bg(1, 1, 0)),
+            (2 * (3 + l), bg(2, 1, 1)),
+            (-(3 + l), bg(2, 2, 0)),
+            (7 + l, bg(2, 0, 2)),
+            (-1, bg(3, 2, 1)),
+            (3, bg(3, 0, 3)),
+            (4 + l, bg(3, 1, 2)),
+            (-(2 + l), bg(3, 3, 0)),
+        ])
     else
         return nblock
     end
@@ -213,8 +230,10 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
     nblock = zero_block(op)
-    mat(p, h, d) = Matrix{Complex{T}}(background_operator(op, p, h, d))
+    bg(p, h, d) = background_operator(op, p, h, d)
     Le2 = Le^2
+    # Sparse accumulation; complex `C` (∝ im·m) keeps the block complex.
+    scaled(C, terms) = _scale_sparse(T, Complex{T}(Le2 * C), combine_terms(terms))
 
     if offset == -1
         denom = 2l - 1
@@ -226,20 +245,22 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (6im * m * sqrt_factor) / denom
-        out = -(3 - 3l - 2l^2) .* mat(1, 0, 0)
-        out .-= (l - 3) .* mat(2, 0, 1)
-        out .+= (3 - 2l - l^2) .* mat(2, 1, 0)
-        out .+= 3 .* mat(3, 0, 2)
-        out .-= (l - 3) .* mat(3, 1, 1)
-        out .-= l .* mat(3, 2, 0)
-        return _scale_sparse(T, Le2 * C, sparse(out))
+        return scaled(C, [
+            (-(3 - 3l - 2l^2), bg(1, 0, 0)),
+            (-(l - 3), bg(2, 0, 1)),
+            (3 - 2l - l^2, bg(2, 1, 0)),
+            (3, bg(3, 0, 2)),
+            (-(l - 3), bg(3, 1, 1)),
+            (-l, bg(3, 2, 0)),
+        ])
     elseif offset == 0
-        out = -mat(1, 0, 0)
-        out .-= (l^2 + l - 1) .* mat(2, 1, 0)
-        out .+= mat(2, 0, 1)
-        out .+= mat(3, 1, 1)
-        out .+= mat(3, 0, 2)
-        return _scale_sparse(T, Le2 * (2im * m), sparse(out))
+        return scaled(2im * m, [
+            (-1, bg(1, 0, 0)),
+            (-(l^2 + l - 1), bg(2, 1, 0)),
+            (1, bg(2, 0, 1)),
+            (1, bg(3, 1, 1)),
+            (1, bg(3, 0, 2)),
+        ])
     elseif offset == 1
         denom = 2l + 3
         if abs(denom) < eps(T)
@@ -250,13 +271,14 @@ function lorentz_upol_btor_axial(op::MHDStabilityOperator{T},
             return nblock
         end
         C = (6im * m * sqrt_factor) / denom
-        out = (-4 + l + 2l^2) .* mat(1, 0, 0)
-        out .+= (4 + l) .* mat(2, 0, 1)
-        out .+= (4 - l^2) .* mat(2, 1, 0)
-        out .+= 3 .* mat(3, 0, 2)
-        out .+= (1 + l) .* mat(3, 2, 0)
-        out .+= (4 + l) .* mat(3, 1, 1)
-        return _scale_sparse(T, Le2 * C, sparse(out))
+        return scaled(C, [
+            (-4 + l + 2l^2, bg(1, 0, 0)),
+            (4 + l, bg(2, 0, 1)),
+            (4 - l^2, bg(2, 1, 0)),
+            (3, bg(3, 0, 2)),
+            (1 + l, bg(3, 2, 0)),
+            (4 + l, bg(3, 1, 1)),
+        ])
     else
         return nblock
     end

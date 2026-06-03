@@ -29,7 +29,19 @@ struct SHGrid{T<:Real}
     N::Dict{Int,Vector{T}}    # |m| → N_ℓ|m|
 end
 
+# `sh_grid` is a pure function of (lmax, mmax, T) and its result is read-only, so
+# memoize it: the self-consistent basic-state Picard loop calls `vecsh_advection`
+# once per iteration and would otherwise rebuild the Gauss-Legendre nodes and the
+# associated-Legendre tables from scratch every time.
+const _SH_GRID_CACHE = Dict{Tuple{Int,Int,DataType}, Any}()
+
 function sh_grid(lmax::Int, mmax::Int, ::Type{T}=Float64) where {T<:Real}
+    return get!(_SH_GRID_CACHE, (lmax, mmax, T)) do
+        _build_sh_grid(lmax, mmax, T)
+    end::SHGrid{T}
+end
+
+function _build_sh_grid(lmax::Int, mmax::Int, ::Type{T}) where {T<:Real}
     Nθ = 3 * lmax + 6                      # oversampled for product dealiasing
     Nφ = max(3 * mmax + 4, 6)              # ≥ product (2mmax) + test (mmax) azimuthal degree
     μ64, w64 = _gauss_legendre_nodes(Nθ)

@@ -252,12 +252,16 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     B_cols = Int[]
     B_vals = Complex{T}[]
 
-    # Helper function to add block to sparse matrix
+    # Helper function to add block to sparse matrix. Shift the COO indices as we
+    # push instead of allocating `Is .+ offset` / `Js .+ offset` temporaries.
     function add_block!(rows, cols, vals, block, row_offset, col_offset)
         Is, Js, Vs = findnz(block)
-        append!(rows, Is .+ row_offset)
-        append!(cols, Js .+ col_offset)
-        append!(vals, Vs)
+        @inbounds for k in eachindex(Vs)
+            push!(rows, Is[k] + row_offset)
+            push!(cols, Js[k] + col_offset)
+            push!(vals, Vs[k])
+        end
+        return nothing
     end
 
     # =========================================================================
@@ -597,7 +601,7 @@ end
 # -----------------------------------------------------------------------------
 
 """Overwrite MHD velocity tau rows with the selected poloidal and toroidal BCs."""
-function apply_velocity_boundary_conditions!(A, B, op)
+function apply_velocity_boundary_conditions!(A, B, op::MHDStabilityOperator{T}) where {T}
     # Apply boundary conditions to velocity fields (poloidal and toroidal)
     # Following the correct implementation from SparseOperator.jl
     params = op.params

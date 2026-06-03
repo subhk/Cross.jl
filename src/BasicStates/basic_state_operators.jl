@@ -179,7 +179,19 @@ For axisymmetric basic state (m2 = 0), this simplifies to:
     G = √[(2ℓ1+1)(2ℓ2+1)(2ℓ3+1)/(4π)] × ⎛ℓ1  ℓ2  ℓ3⎞ ⎛ℓ1  ℓ2  ℓ3 ⎞ × δ_{m1,m3}
                                         ⎝0   0   0 ⎠ ⎝m1  0   -m1⎠
 """
+# Gaunt coefficients are pure functions of the six integer quantum numbers and
+# `WignerSymbols.wigner3j` allocates (BigInt/Rational) internally, so memoize them.
+# The coupling builders evaluate the same (ℓ,m) triples across every basic-state
+# mode and Picard iteration.
+const _GAUNT_CACHE = Dict{NTuple{6,Int}, Float64}()
+
 function compute_gaunt_coefficient(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int, ℓ3::Int, m3::Int)
+    return get!(_GAUNT_CACHE, (ℓ1, m1, ℓ2, m2, ℓ3, m3)) do
+        _compute_gaunt_coefficient(ℓ1, m1, ℓ2, m2, ℓ3, m3)
+    end
+end
+
+function _compute_gaunt_coefficient(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int, ℓ3::Int, m3::Int)
     # Selection rules for ⟨Y_{ℓ1,m1} Y_{ℓ2,m2} Y_{ℓ3,m3}*⟩
     if m1 + m2 != m3
         return 0.0

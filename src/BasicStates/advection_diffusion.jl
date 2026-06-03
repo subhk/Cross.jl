@@ -1165,8 +1165,10 @@ function nonaxisymmetric_basic_state_selfconsistent(
     for iter in 1:max_iterations
         iteration = iter
 
-        # Store previous temperature for convergence check
-        theta_prev = deepcopy(theta_coeffs)
+        # Store previous temperature for convergence check. The coefficient dict
+        # holds plain numeric vectors, so copying each vector is equivalent to
+        # `deepcopy` but skips its identity-tracking overhead.
+        theta_prev = Dict(k => copy(v) for (k, v) in theta_coeffs)
 
         # ---------------------------------------------------------------------
         # Step 2: Update thermal wind (already done for initial guess)

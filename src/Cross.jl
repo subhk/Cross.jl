@@ -46,6 +46,8 @@ module Cross
         OnsetParams,
         LinearStabilityOperator,
         solve_eigenvalue_problem,
+        slepc_init!,
+        slepc_finalize!,
         find_growth_rate,
         find_critical_rayleigh,
         assemble_matrices,

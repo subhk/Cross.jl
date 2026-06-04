@@ -1,7 +1,7 @@
 name = "Cross"
 uuid = "b261f30d-6c96-4f96-8f67-071dc8a02665"
-authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
 version = "2.0.0"
+authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
 
 [deps]
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
@@ -16,6 +16,17 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 WignerSymbols = "9f57e263-0b3d-5e2e-b1be-24f2bb48858b"
 
+[weakdeps]
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+PetscWrap = "5be22e1c-01b5-4697-96eb-ef9ccdc854b8"
+RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+SlepcWrap = "c3679e3b-785e-4ccc-b734-b7685cbb935e"
+
+[extensions]
+CrossMakieExt = "Makie"
+CrossRecipesBaseExt = "RecipesBase"
+CrossSlepcExt = ["PetscWrap", "SlepcWrap"]
+
 [compat]
 BenchmarkTools = "1"
 JLD2 = "0.4, 0.5"
@@ -23,23 +34,17 @@ KrylovKit = "0.6"
 LinearMaps = "3"
 Makie = "0.21, 0.22"
 Parameters = "0.12"
+PetscWrap = "0.1"
 RecipesBase = "1"
+SlepcWrap = "0.1"
 SpecialFunctions = "2"
 WignerSymbols = "2.0.0"
 julia = "1.9, 1.10, 1.11"
 
-[weakdeps]
-RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
-Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
-
-[extensions]
-CrossRecipesBaseExt = "RecipesBase"
-CrossMakieExt = "Makie"
-
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test", "TOML"]

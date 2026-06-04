@@ -127,7 +127,8 @@ function solve_onset_problem(params::OnsetConvectionParams{T};
                              tol::Float64=1e-10,
                              maxiter::Int=1000,
                              which::Symbol=:LR,
-                             sigma=nothing) where T
+                             sigma=nothing,
+                             backend::Symbol=:krylovkit) where T
 
     # Convert to internal OnsetParams (no basic_state → pure conduction)
     internal_params = OnsetParams(
@@ -147,7 +148,7 @@ function solve_onset_problem(params::OnsetConvectionParams{T};
     # Build operator and solve
     op = LinearStabilityOperator(internal_params)
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op;
-        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma)
+        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
 
     return eigenvalues, eigenvectors, op, info
 end

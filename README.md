@@ -90,7 +90,53 @@ result.growth_rate
 
 A background field requires `Le > 0`. Dipole fields and perfectly-conducting / finite-conductivity magnetic boundaries are solved via the tau method.
 
+### SLEPc eigensolver backend (optional)
 
+KrylovKit is the default eigensolver. A SLEPc backend is available as an optional
+extension for distributed (MPI) eigensolving. It requires a system PETSc **and**
+SLEPc built with **complex scalars** (`--with-scalar-type=complex`) **and MUMPS**
+(`--download-mumps`, for the parallel shift-invert factorization), plus MPI, with
+`PETSC_DIR`, `PETSC_ARCH`, and `SLEPC_DIR` set.
+
+Install the Julia wrappers:
+
+```julia
+julia> ] add PetscWrap SlepcWrap
+```
+
+In a driver script, initialize SLEPc once (passing the MUMPS shift-invert options),
+solve with `backend=:slepc`, then finalize:
+
+```julia
+using Cross, PetscWrap, SlepcWrap
+
+Cross.slepc_init!("-eps_gen_non_hermitian -st_type sinvert -st_pc_type lu " *
+                  "-st_pc_factor_mat_solver_type mumps -eps_target_magnitude")
+
+result = solve(problem; backend=:slepc)   # onset, biglobal, triglobal, MHD
+
+# Eigenvalues are valid on every rank; eigenvectors are gathered to rank 0 only:
+using PetscWrap: MPI
+if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+    @show result.eigenvalues
+    # use result.eigenvectors here
+end
+
+Cross.slepc_finalize!()
+```
+
+Launch across `N` ranks:
+
+```
+mpirun -n N julia --project=. driver.jl
+```
+
+Notes: the eigensolve (MUMPS factorization + Krylov iterations) is distributed over
+`COMM_WORLD`; assembly is currently **replicated** (each rank builds the full matrix
+and inserts only its owned rows). Eigenvectors are gathered to **rank 0** (workers
+get empty eigenvectors); eigenvalues are identical on all ranks. Call `slepc_init!`
+/`slepc_finalize!` **once per process** (not per solve). If the extension is not
+loaded or `slepc_init!` was not called, `backend=:slepc` raises an actionable error.
 
 ## License
 

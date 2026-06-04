@@ -1900,13 +1900,23 @@ function solve_block_eigenvalue_problem(A::SparseMatrixCSC{Complex{T},Int},
                                          B::SparseMatrixCSC{Complex{T},Int},
                                          σ_target::Real,
                                          nev::Int,
-                                         verbose::Bool) where {T<:Real}
+                                         verbose::Bool;
+                                         backend::Symbol=:krylovkit) where {T<:Real}
     n = size(A, 1)
 
     # Shift-invert: (A - σ B)^{-1} B
     # Eigenvalues of this operator are 1/(λ - σ), so λ = σ + 1/μ
     # Use a small imaginary shift to avoid singularity from boundary conditions
     shift = Complex{T}(T(σ_target), T(1e-6))
+    if backend === :slepc
+        vals_s, vecs_s, _ = _solve_generalized_eigen_slepc(
+            A, B; nev=nev, sigma=shift, which=:LR, selection=:maxreal,
+            tol=T(1e-8), maxiter=200, verbosity=0)
+        perm = sortperm(real.(vals_s); rev=true)
+        # Workers get an n×0 eigenvector matrix (gather is rank-0 only); never index
+        # it with the nev-length perm.
+        return vals_s[perm], (size(vecs_s, 2) == 0 ? vecs_s : vecs_s[:, perm])
+    end
     A_shifted = A - shift * B
 
     if verbose
@@ -1986,7 +1996,8 @@ Returns:
 - `eigenvectors` - Corresponding eigenmodes (columns of matrix)
 """
 function solve_triglobal_eigenvalue_problem(params::TriglobalParams{T};
-                                            σ_target=0.0, nev=6, verbose=true) where T
+                                            σ_target=0.0, nev=6, verbose=true,
+                                            backend::Symbol=:krylovkit) where T
     # Setup problem structure
     problem = setup_coupled_mode_problem(params)
 
@@ -2028,7 +2039,7 @@ function solve_triglobal_eigenvalue_problem(params::TriglobalParams{T};
     end
 
     eigenvalues, eigenvectors = solve_block_eigenvalue_problem(
-        A_coupled, B_coupled, σ_target, nev, verbose
+        A_coupled, B_coupled, σ_target, nev, verbose; backend=backend
     )
 
     if verbose

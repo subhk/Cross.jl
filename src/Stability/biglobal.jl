@@ -344,6 +344,7 @@ function solve_biglobal_problem(params::BiglobalParams{T};
                                  maxiter::Int=1000,
                                  which::Symbol=:LR,
                                  sigma=nothing,
+                                 backend::Symbol=:krylovkit,
                                  verbose::Bool=false) where T
 
     if verbose
@@ -376,7 +377,7 @@ function solve_biglobal_problem(params::BiglobalParams{T};
 
     # Solve eigenvalue problem
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op;
-        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma)
+        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
 
     if verbose
         println("  Solved: $(length(eigenvalues)) eigenvalues found")

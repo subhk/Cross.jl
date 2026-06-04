@@ -605,6 +605,7 @@ the constrained shift-invert solver.
 """
 function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   nev::Int=6,
+                                  backend::Symbol=:krylovkit,
                                   tol::Float64=1e-10,
                                   maxiter::Int=1000,
                                   which::Symbol=:LR,
@@ -616,7 +617,7 @@ function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
     # Default shift for onset problems: small positive real value (near Re(λ)=0)
     return _krylov_eigensolve_optimized(A_full, B_full, op, interior_dofs, boundary_dofs;
                                         nev=nev, tol=tol, maxiter=maxiter,
-                                        which=which, sigma=sigma)
+                                        which=which, sigma=sigma, backend=backend)
 end
 
 
@@ -640,7 +641,8 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
                                        tol::Float64,
                                        maxiter::Int,
                                        which::Symbol,
-                                       sigma::Union{Nothing,Number}=nothing) where {T<:Real}
+                                       sigma::Union{Nothing,Number}=nothing,
+                                       backend::Symbol=:krylovkit) where {T<:Real}
     """
     OPTIMIZED shift-invert solver using KrylovKit.
     Automatically selects shift based on 'which' parameter for onset problems.
@@ -664,6 +666,19 @@ function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
         end
     else
         σ = Complex{T}(sigma)
+    end
+
+    if backend === :slepc
+        vals_s, vecs_s, info_s = _solve_generalized_eigen_slepc(
+            sparse(A), sparse(B); nev=nev, sigma=σ, which=which,
+            selection=:maxreal, tol=tol, maxiter=maxiter, verbosity=0)
+        vecs_full = [_reconstruct_full_vector(reduction, vecs_s[:, j]) for j in 1:size(vecs_s, 2)]
+        ordering = which == :LR ? sortperm(real.(vals_s); rev=true) :
+                   which == :LM ? sortperm(abs.(vals_s); rev=true) :
+                   collect(1:length(vals_s))
+        ordering = ordering[1:min(nev, length(ordering))]
+        # On workers vecs_full is empty (rank-0-only gather); don't index it by ordering.
+        return vals_s[ordering], (isempty(vecs_full) ? vecs_full : vecs_full[ordering]), info_s
     end
 
     lu_factor = lu(A - σ * B)

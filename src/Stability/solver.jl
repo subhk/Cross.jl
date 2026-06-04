@@ -15,6 +15,96 @@
 
 using Logging
 
+# ---------------------------------------------------------------------------
+# Pluggable eigensolver backends. The SLEPc backend lives in an optional package
+# extension (CrossSlepcExt) and registers itself here on load; core never
+# references PETSc/SLEPc symbols, keeping `using Cross` PETSc-free.
+# ---------------------------------------------------------------------------
+const _SLEPC_SOLVER = Ref{Union{Nothing,Function}}(nothing)
+const _SLEPC_INIT     = Ref{Union{Nothing,Function}}(nothing)
+const _SLEPC_FINALIZE = Ref{Union{Nothing,Function}}(nothing)
+
+"""Initialize SLEPc once per process (collective). Pass a PETSc/SLEPc option string.
+Requires the CrossSlepcExt extension (`using PetscWrap, SlepcWrap`)."""
+function slepc_init!(opts::AbstractString="")
+    f = _SLEPC_INIT[]
+    f === nothing && error(
+        "slepc_init! requires the SLEPc extension: `using PetscWrap, SlepcWrap` " *
+        "(complex-scalar PETSc build with PETSC_DIR/SLEPC_DIR set).")
+    return f(opts)
+end
+
+"""Finalize SLEPc once at process end. Requires the CrossSlepcExt extension."""
+function slepc_finalize!()
+    f = _SLEPC_FINALIZE[]
+    f === nothing && error(
+        "slepc_finalize! requires the SLEPc extension: `using PetscWrap, SlepcWrap`.")
+    return f()
+end
+
+"""
+    _petsc_owned_nnz(M, rstart, rend) -> (d_nnz, o_nnz)
+
+Per-row diagonal/off-diagonal nonzero counts for the owned PETSc row block
+`[rstart, rend)` (0-based, half-open) of a replicated `SparseMatrixCSC`, for
+`MatMPIAIJSetPreallocation`. Assumes the column-ownership band equals the row band
+`[rstart, rend)` (PETSc default for square MPIAIJ with matching layout). Returns two
+`Vector{Int}` of length `rend - rstart`.
+"""
+function _petsc_owned_nnz(M::SparseMatrixCSC, rstart::Int, rend::Int)
+    nloc = rend - rstart
+    d = zeros(Int, nloc)
+    o = zeros(Int, nloc)
+    rows = rowvals(M)
+    for col in 1:size(M, 2)
+        c0 = col - 1
+        for k in nzrange(M, col)
+            r0 = rows[k] - 1
+            if rstart <= r0 < rend
+                i = r0 - rstart + 1
+                if rstart <= c0 < rend
+                    d[i] += 1
+                else
+                    o[i] += 1
+                end
+            end
+        end
+    end
+    return d, o
+end
+
+"""Solve `A x = σ B x` with SLEPc. Requires the CrossSlepcExt extension (load
+`PetscWrap` and `SlepcWrap`, with a complex-scalar PETSc build)."""
+function _solve_generalized_eigen_slepc(A::SparseMatrixCSC, B::SparseMatrixCSC; kwargs...)
+    solver = _SLEPC_SOLVER[]
+    solver === nothing && error(
+        "backend=:slepc requires the SLEPc extension. Load it with " *
+        "`using PetscWrap, SlepcWrap` (needs a complex-scalar PETSc build with " *
+        "PETSC_DIR/PETSC_ARCH and SLEPC_DIR set)." *
+        " Also call Cross.slepc_init!() once before solving.")
+    return solver(A, B; kwargs...)
+end
+
+"""Dispatch a sparse generalized eigensolve to the selected backend, returning the
+common `(eigenvalues::Vector{Complex}, eigenvectors::Matrix{Complex}, info::Dict)`."""
+function _dispatch_eigen(A::SparseMatrixCSC, B::SparseMatrixCSC;
+                         backend::Symbol=:krylovkit,
+                         nev::Int, sigma, which::Symbol, selection::Symbol,
+                         tol::Float64, maxiter::Int,
+                         krylovdim::Union{Nothing,Int}, verbosity::Int)
+    if backend === :krylovkit
+        return _krylov_eigensolve(A, B; nev=nev, sigma=sigma, which=which,
+                                  selection=selection, tol=tol, maxiter=maxiter,
+                                  krylovdim=krylovdim, verbosity=verbosity)
+    elseif backend === :slepc
+        return _solve_generalized_eigen_slepc(A, B; nev=nev, sigma=sigma, which=which,
+                                              selection=selection, tol=tol, maxiter=maxiter,
+                                              verbosity=verbosity)
+    else
+        throw(ArgumentError("Unknown eigensolver backend $(backend); use :krylovkit or :slepc"))
+    end
+end
+
 
 struct ShiftInvertLinearMap{LUType,MatType,VecType,SolveVecType}
     lu::LUType
@@ -95,6 +185,7 @@ with shift-invert method.
 """
 function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                                  nev::Int=1,
+                                 backend::Symbol=:krylovkit,
                                  sigma::Union{Nothing,Number}=nothing,
                                  which::Symbol=:LR,  # Determines shift selection (not eigsolve target)
                                  selection::Symbol=:maxreal,
@@ -109,17 +200,18 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
     size(A, 1) == size(A, 2) || throw(DimensionMismatch(
         "Matrices must be square, got $(size(A))"))
 
-    @info "Solving eigenvalue problem" solver="KrylovKit shift-invert" size="$n × $n" A_nnz=nnz(A) B_nnz=nnz(B) nev=nev which=which selection=selection
+    @info "Solving eigenvalue problem" solver=backend size="$n × $n" A_nnz=nnz(A) B_nnz=nnz(B) nev=nev which=which selection=selection
 
-    eigenvalues, eigenvectors, info = _krylov_eigensolve(A, B;
-                                                         nev = nev,
-                                                         sigma = sigma,
-                                                         which = which,
-                                                         selection = selection,
-                                                         tol = tol,
-                                                         maxiter = maxiter,
-                                                         krylovdim = krylovdim,
-                                                         verbosity = verbosity)
+    eigenvalues, eigenvectors, info = _dispatch_eigen(A, B;
+                                                      backend = backend,
+                                                      nev = nev,
+                                                      sigma = sigma,
+                                                      which = which,
+                                                      selection = selection,
+                                                      tol = tol,
+                                                      maxiter = maxiter,
+                                                      krylovdim = krylovdim,
+                                                      verbosity = verbosity)
 
     @info "Eigensolve converged" selected=eigenvalues[1] growth_rate=real(eigenvalues[1]) frequency=imag(eigenvalues[1]) selection=selection
     return eigenvalues, eigenvectors, info

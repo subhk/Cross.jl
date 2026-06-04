@@ -96,14 +96,15 @@ function solve(problem::OnsetProblem{T};
                sigma=nothing,
                tol::Float64=1e-10,
                maxiter::Int=1000,
-               which::Symbol=:LR) where T
+               which::Symbol=:LR,
+               backend::Symbol=:krylovkit) where T
 
     _warn_if_large(problem, "OnsetProblem")
 
     onset_params = OnsetConvectionParams(problem.params)
 
     eigenvalues, eigenvectors, op, info = solve_onset_problem(onset_params;
-        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma)
+        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
 
     # Convert eigenvectors from Vector{Vector{ComplexF64}} to Matrix{Complex{T}}
     evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
@@ -134,6 +135,7 @@ function solve(problem::BiglobalProblem{T};
                tol::Float64=1e-10,
                maxiter::Int=1000,
                which::Symbol=:LR,
+               backend::Symbol=:krylovkit,
                verbose::Bool=false) where T
 
     _warn_if_large(problem, "BiglobalProblem")
@@ -148,7 +150,7 @@ function solve(problem::BiglobalProblem{T};
     )
 
     eigenvalues, eigenvectors, op, info = solve_biglobal_problem(biglobal_params;
-        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, verbose=verbose)
+        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend, verbose=verbose)
 
     evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
 
@@ -176,6 +178,7 @@ in a `StabilityResult`.
 function solve(problem::TriglobalProblem{T};
                nev::Int=6,
                sigma=nothing,
+               backend::Symbol=:krylovkit,
                verbose::Bool=true) where T
 
     _warn_if_large(problem, "TriglobalProblem")
@@ -191,7 +194,7 @@ function solve(problem::TriglobalProblem{T};
 
     σ_target = sigma === nothing ? 0.0 : sigma
     eigenvalues, eigenvectors = solve_triglobal_eigenvalue_problem(triglobal_params;
-        σ_target=σ_target, nev=nev, verbose=verbose)
+        σ_target=σ_target, nev=nev, verbose=verbose, backend=backend)
 
     # eigenvectors is already a Matrix from the triglobal solver
     evec_matrix = Matrix{Complex{T}}(eigenvectors)
@@ -222,7 +225,8 @@ function solve(problem::MHDProblem{T, BS};
                sigma=nothing,
                tol::Float64=1e-10,
                maxiter::Int=1000,
-               which::Symbol=:LR) where {T, BS}
+               which::Symbol=:LR,
+               backend::Symbol=:krylovkit) where {T, BS}
 
     _warn_if_large(problem, "MHDProblem")
 
@@ -239,16 +243,26 @@ function solve(problem::MHDProblem{T, BS};
         # spectrum (no Krylov fragility). The dipole case still routes through the
         # tau path below (Galerkin dipole not implemented — see galerkin_assembly.jl).
         A_gal, B_gal, layout = assemble_mhd_galerkin(op)
-        F = eigen(A_gal, B_gal)
-        keep = findall(isfinite, F.values)
-        vals = F.values[keep]
-        order = sigma !== nothing ? sortperm(abs.(vals .- Complex{T}(sigma))) :
-                which === :LM      ? sortperm(abs.(vals); rev=true) :
-                which === :LI      ? sortperm(imag.(vals); rev=true) :
-                                     sortperm(real.(vals); rev=true)
-        sel = order[1:min(nev, length(order))]
-        eigenvalues = vals[sel]
-        evecs_full = [reconstruct_mhd_galerkin_full(op, layout, F.vectors[:, keep[s]]) for s in sel]
+        if backend === :slepc
+            vals_s, vecs_s, _ = Cross._solve_generalized_eigen_slepc(
+                sparse(A_gal), sparse(B_gal); nev=nev,
+                sigma = sigma === nothing ? zero(Complex{T}) : Complex{T}(sigma),
+                which=:LR, selection=:maxreal, tol=1e-10, maxiter=1000, verbosity=0)
+            eigenvalues = vals_s
+            evecs_full = [reconstruct_mhd_galerkin_full(op, layout, vecs_s[:, j])
+                          for j in 1:size(vecs_s, 2)]
+        else
+            F = eigen(A_gal, B_gal)
+            keep = findall(isfinite, F.values)
+            vals = F.values[keep]
+            order = sigma !== nothing ? sortperm(abs.(vals .- Complex{T}(sigma))) :
+                    which === :LM      ? sortperm(abs.(vals); rev=true) :
+                    which === :LI      ? sortperm(imag.(vals); rev=true) :
+                                         sortperm(real.(vals); rev=true)
+            sel = order[1:min(nev, length(order))]
+            eigenvalues = vals[sel]
+            evecs_full = [reconstruct_mhd_galerkin_full(op, layout, F.vectors[:, keep[s]]) for s in sel]
+        end
         evec_matrix = _eigvecs_to_matrix(eigenvalues, evecs_full, T)
         info = (method = "MHD ultraspherical-Galerkin (hydro)", n_reduced = layout.nred)
         return StabilityResult(
@@ -263,7 +277,7 @@ function solve(problem::MHDProblem{T, BS};
     A, B, interior_dofs, info_assembly = assemble_mhd_matrices(op)
 
     eigenvalues, eigenvectors, info = solve_eigenvalue_problem(
-        A, B; nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma)
+        A, B; nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
 
     evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
 

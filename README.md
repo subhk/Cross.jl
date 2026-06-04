@@ -138,9 +138,11 @@ overwritten on the distributed matrix). **Onset/biglobal** are fully distributed
 rank assembles only its owned interior rows (no rank builds the full matrix), the
 reduction basis `P` is built from per-block tau sub-blocks, and the tau-elimination
 reduction runs as a distributed sparse triple product `S·A·P` via PETSc `MatMatMult`.
-The remaining paths (triglobal, MHD Galerkin) still use **replicated** assembly (each
-rank builds the full matrix and inserts only its owned rows) until later phases.
-Eigenvectors are gathered
+For **triglobal**, the coupled-pencil assembly is distributed (each rank inserts only
+its owned rows of the `n_total×n_total` pencil); the per-m single-mode operators and
+the off-diagonal coupling are still built replicated (their distribution is deferred
+with the planned vector-spherical-harmonic rewrite). The **MHD Galerkin** path still
+uses replicated assembly. Eigenvectors are gathered
 to **rank 0** (workers
 get empty eigenvectors); eigenvalues are identical on all ranks. Call `slepc_init!`
 /`slepc_finalize!` **once per process** (not per solve). If the extension is not

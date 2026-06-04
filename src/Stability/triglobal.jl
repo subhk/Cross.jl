@@ -449,6 +449,53 @@ end
 
 
 """
+    build_single_mode_operator(problem::CoupledModeProblem, m::Int)
+
+Build the single-mode linear stability operator for one azimuthal mode `m`,
+on demand. Produces the identical `SingleModeOperator` that
+[`build_single_mode_operators`](@ref) constructs for that `m`.
+"""
+function build_single_mode_operator(problem::CoupledModeProblem{T}, m::Int) where T
+    params_tri = problem.params
+    basic_state_axis = axisymmetric_basic_state(params_tri.basic_state_3d)
+    has_axisymmetric = _has_nonzero_basic_state(basic_state_axis)
+
+    # Create OnsetParams for this mode
+    params_m = OnsetParams(
+        E = params_tri.E,
+        Pr = params_tri.Pr,
+        Ra = params_tri.Ra,
+        χ = params_tri.χ,
+        m = abs(m),  # m must be non-negative for OnsetParams
+        lmax = params_tri.lmax,
+        Nr = params_tri.Nr,
+        mechanical_bc = params_tri.mechanical_bc,
+        thermal_bc = params_tri.thermal_bc,
+        equatorial_symmetry = params_tri.equatorial_symmetry,
+        basic_state = has_axisymmetric ? basic_state_axis : nothing
+    )
+
+    # Create operator and assemble matrices
+    op_m = LinearStabilityOperator(params_m)
+    A_full, B_full, interior_dofs, boundary_dofs = assemble_matrices(op_m)
+    A_m, B_m, reduction = _constrained_reduced_matrices(
+        A_full, B_full, op_m, interior_dofs, boundary_dofs)
+    expected_dofs = length(problem.block_indices[m])
+    if reduction.n_reduced != expected_dofs
+        error("Reduced DOF count mismatch for m=$m: got $(reduction.n_reduced), expected $expected_dofs")
+    end
+    idx_map = _full_index_map(op_m)
+    if m < 0
+        A_m = conj(A_m)
+        B_m = conj(B_m)
+    end
+
+    return SingleModeOperator(
+        A_m, B_m, op_m, idx_map, interior_dofs, boundary_dofs, reduction)
+end
+
+
+"""
     build_mode_coupling_operators(problem::CoupledModeProblem, single_mode_ops::Dict, verbose::Bool)
 
 Build coupling operators between different azimuthal modes through the 3D basic state.
@@ -1826,10 +1873,10 @@ The structure is:
 
 where A_{mi} are single-mode operators and C_{ij} are coupling operators.
 """
-function assemble_block_matrices(problem::CoupledModeProblem{T},
-                                  single_mode_ops::Dict,
-                                  coupling_ops::Dict,
-                                  verbose::Bool) where T
+function _assemble_block_coo(problem::CoupledModeProblem{T},
+                             single_mode_ops::Dict,
+                             coupling_ops::Dict;
+                             owned_julia_rows=nothing) where T
     n_total = problem.total_dofs
     row_A = Int[]
     col_A = Int[]
@@ -1839,29 +1886,42 @@ function assemble_block_matrices(problem::CoupledModeProblem{T},
     val_B = Complex{T}[]
     tol = T(1e-14)
 
+    owns(rng) = owned_julia_rows === nothing || !isempty(intersect(rng, owned_julia_rows))
+
     # Fill in diagonal blocks (single-mode operators)
     for m in problem.m_range
-        A_m = single_mode_ops[m].A
-        B_m = single_mode_ops[m].B
         block_range = problem.block_indices[m]
-
-        _append_block_entries!(row_A, col_A, val_A, A_m, block_range, block_range, tol)
-        _append_block_entries!(row_B, col_B, val_B, B_m, block_range, block_range, tol)
+        owns(block_range) || continue
+        _append_block_entries!(row_A, col_A, val_A, single_mode_ops[m].A,
+                               block_range, block_range, tol; owned=owned_julia_rows)
+        _append_block_entries!(row_B, col_B, val_B, single_mode_ops[m].B,
+                               block_range, block_range, tol; owned=owned_julia_rows)
     end
 
     # Fill in off-diagonal blocks (coupling operators)
     for ((m_from, m_to), C) in coupling_ops
         isempty(C) && continue
-        range_from = problem.block_indices[m_from]
         range_to = problem.block_indices[m_to]
-        _append_block_entries!(row_A, col_A, val_A, C, range_to, range_from, tol)
+        range_from = problem.block_indices[m_from]
+        owns(range_to) || continue
+        _append_block_entries!(row_A, col_A, val_A, C, range_to, range_from, tol;
+                               owned=owned_julia_rows)
     end
 
-    A_coupled = sparse(row_A, col_A, val_A, n_total, n_total)
-    B_coupled = sparse(row_B, col_B, val_B, n_total, n_total)
+    return (A_rows=row_A, A_cols=col_A, A_vals=val_A,
+            B_rows=row_B, B_cols=col_B, B_vals=val_B, n=n_total)
+end
+
+function assemble_block_matrices(problem::CoupledModeProblem{T},
+                                  single_mode_ops::Dict,
+                                  coupling_ops::Dict,
+                                  verbose::Bool) where T
+    c = _assemble_block_coo(problem, single_mode_ops, coupling_ops)
+    A_coupled = sparse(c.A_rows, c.A_cols, c.A_vals, c.n, c.n)
+    B_coupled = sparse(c.B_rows, c.B_cols, c.B_vals, c.n, c.n)
 
     if verbose
-        println("  Matrix size: $(n_total) × $(n_total)")
+        println("  Matrix size: $(c.n) × $(c.n)")
         println("  nnz(A): $(nnz(A_coupled))  nnz(B): $(nnz(B_coupled))")
     end
 
@@ -1875,8 +1935,10 @@ function _append_block_entries!(row_idx::Vector{Int},
                                  block::AbstractMatrix{Complex{T}},
                                  rows::UnitRange{Int},
                                  cols::UnitRange{Int},
-                                 tol::Real) where {T<:Real}
+                                 tol::Real;
+                                 owned::Union{Nothing,UnitRange{Int}}=nothing) where {T<:Real}
     for (local_i, global_i) in enumerate(rows)
+        (owned === nothing || global_i in owned) || continue
         for (local_j, global_j) in enumerate(cols)
             val = block[local_i, local_j]
             if abs(val) > tol
@@ -2026,21 +2088,28 @@ function solve_triglobal_eigenvalue_problem(params::TriglobalParams{T};
 
     coupling_ops = build_mode_coupling_operators(problem, single_mode_ops, verbose)
 
-    # Step 3: Assemble block-coupled matrices
-    if verbose
-        println("\nAssembling block-coupled matrices...")
-    end
-
-    A_coupled, B_coupled = assemble_block_matrices(problem, single_mode_ops, coupling_ops, verbose)
-
     # Step 4: Solve eigenvalue problem
     if verbose
         println("\nSolving eigenvalue problem (shift-invert, σ=$σ_target)...")
     end
 
-    eigenvalues, eigenvectors = solve_block_eigenvalue_problem(
-        A_coupled, B_coupled, σ_target, nev, verbose; backend=backend
-    )
+    if backend === :slepc
+        # Distributed triglobal path: the extension assembles the block-coupled
+        # pencil directly into distributed PETSc Mats (owned rows only) from
+        # `_assemble_block_coo`, so we never form the dense replicated A/B here.
+        # tol/maxiter match the serial Krylov path below (T(1e-8), 200).
+        eigenvalues, eigenvectors = _solve_triglobal_slepc(problem;
+            σ_target=σ_target, nev=nev, tol=T(1e-8), maxiter=200)
+    else
+        # :krylovkit path: assemble the replicated sparse pencil and solve serially.
+        if verbose
+            println("\nAssembling block-coupled matrices...")
+        end
+        A_coupled, B_coupled = assemble_block_matrices(problem, single_mode_ops, coupling_ops, verbose)
+        eigenvalues, eigenvectors = solve_block_eigenvalue_problem(
+            A_coupled, B_coupled, σ_target, nev, verbose; backend=backend
+        )
+    end
 
     if verbose
         println("\n" * "="^70)

@@ -23,8 +23,20 @@ using Logging
 const _SLEPC_SOLVER = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_MHD_SOLVER = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_CONSTRAINED_SOLVER = Ref{Union{Nothing,Function}}(nothing)
+const _SLEPC_TRIGLOBAL_SOLVER = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_INIT     = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_FINALIZE = Ref{Union{Nothing,Function}}(nothing)
+
+"""Distributed triglobal SLEPc solve directly from a `CoupledModeProblem`. The
+extension assembles the block-coupled pencil `(A, B)` into distributed PETSc form
+(owned rows only, from `_assemble_block_coo`) and runs the EPS shift-invert solve.
+PETSc-free in core; errors if the extension is absent. Returns `(eigenvalues,
+eigenvectors)` (eigenvectors gathered full on rank 0, empty on workers)."""
+function _solve_triglobal_slepc(problem; kwargs...)
+    f = _SLEPC_TRIGLOBAL_SOLVER[]
+    f === nothing && error("backend=:slepc (distributed triglobal) requires `using PetscWrap, SlepcWrap` and Cross.slepc_init!().")
+    return f(problem; kwargs...)
+end
 
 """Distributed constrained-reduction SLEPc solve directly from a
 `LinearStabilityOperator`. The extension assembles the full tau pencil `(A, B)` and

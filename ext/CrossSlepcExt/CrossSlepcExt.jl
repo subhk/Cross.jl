@@ -378,10 +378,40 @@ function _slepc_constrained_solve(op; nev::Int, sigma, which::Symbol, tol::Float
     return vals, vecs_full, info
 end
 
+# ---------------------------------------------------------------------------
+# Distributed triglobal path (CoupledModeProblem)
+# ---------------------------------------------------------------------------
+
+"""Distributed triglobal SLEPc solve from a `CoupledModeProblem`. Builds the
+single-mode and mode-coupling operators (verbose=false), assembles the block-coupled
+pencil `(A, B)` directly into distributed PETSc Mats from owned-row COO triplets
+(`Cross._assemble_block_coo` with `owned_julia_rows`), then runs the shared EPS
+shift-invert solve + rank-0 gather. Uses a small imaginary shift (`σ_target + 1e-6 i`)
+to avoid singularity from boundary-condition rows, mirroring the serial triglobal
+Krylov path. Returns `(eigenvalues, eigenvectors)` (eigenvectors full `n×nout` on rank
+0, empty `n×0` on workers). Requires a complex PETSc build and a prior
+`Cross.slepc_init!()`."""
+function _slepc_triglobal_solve(problem; σ_target, nev::Int, tol::Float64, maxiter::Int)
+    _INITIALIZED[] || error("call Cross.slepc_init!() once before a :slepc solve")
+    PetscScalar <: Real && error("PETSc/SLEPc must be built with complex scalars")
+    single = Cross.build_single_mode_operators(problem, false)
+    coupling = Cross.build_mode_coupling_operators(problem, single, false)
+    n = problem.total_dofs
+    Amat, rs, re = _create_dist_mat(n); Bmat, _, _ = _create_dist_mat(n)
+    coo = Cross._assemble_block_coo(problem, single, coupling; owned_julia_rows=(rs+1):re)
+    _fill_dist_mat!(Amat, coo.A_rows, coo.A_cols, coo.A_vals, rs, re)
+    _fill_dist_mat!(Bmat, coo.B_rows, coo.B_cols, coo.B_vals, rs, re)
+    shift = ComplexF64(σ_target, 1e-6)
+    vals, vecs, _ = _eps_solve_and_gather(Amat, Bmat, n;
+        nev=nev, sigma=shift, which=:LR, selection=:maxreal, tol=tol, maxiter=maxiter)
+    return vals, vecs
+end
+
 function __init__()
     Cross._SLEPC_SOLVER[]             = _slepc_solve
     Cross._SLEPC_MHD_SOLVER[]         = _slepc_mhd_solve
     Cross._SLEPC_CONSTRAINED_SOLVER[] = _slepc_constrained_solve
+    Cross._SLEPC_TRIGLOBAL_SOLVER[]   = _slepc_triglobal_solve
     Cross._SLEPC_INIT[]               = _slepc_init!
     Cross._SLEPC_FINALIZE[]           = _slepc_finalize!
     return nothing

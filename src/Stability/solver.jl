@@ -22,8 +22,23 @@ using Logging
 # ---------------------------------------------------------------------------
 const _SLEPC_SOLVER = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_MHD_SOLVER = Ref{Union{Nothing,Function}}(nothing)
+const _SLEPC_CONSTRAINED_SOLVER = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_INIT     = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_FINALIZE = Ref{Union{Nothing,Function}}(nothing)
+
+"""Distributed constrained-reduction SLEPc solve directly from a
+`LinearStabilityOperator`. The extension assembles the full tau pencil `(A, B)` and
+the sparse constraint-projection matrices `S` (`n_reduced×n_full`) and `P`
+(`n_full×n_reduced`) into distributed PETSc form, forms the reduced pencil
+`Ared = S·A·P`, `Bred = S·B·P` via `MatMatMult`, and runs the EPS shift-invert solve.
+PETSc-free in core; errors if the extension is absent. Returns the common
+`(eigenvalues, eigenvectors, info)` contract (eigenvectors gathered/reconstructed full
+on rank 0, empty on workers)."""
+function _solve_constrained_slepc(op; kwargs...)
+    f = _SLEPC_CONSTRAINED_SOLVER[]
+    f === nothing && error("backend=:slepc (distributed constrained reduction) requires `using PetscWrap, SlepcWrap` and Cross.slepc_init!().")
+    return f(op; kwargs...)
+end
 
 """Initialize SLEPc once per process (collective). Pass a PETSc/SLEPc option string.
 Requires the CrossSlepcExt extension (`using PetscWrap, SlepcWrap`)."""

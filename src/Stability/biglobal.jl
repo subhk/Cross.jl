@@ -376,8 +376,16 @@ function solve_biglobal_problem(params::BiglobalParams{T};
     end
 
     # Solve eigenvalue problem
-    eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op;
-        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
+    if backend === :slepc
+        # Distributed constrained-reduction path (see solve_onset_problem): distributes
+        # the full tau pencil + S/P, forms S·A·P / S·B·P via MatMatMult, runs the EPS
+        # solve, and reconstructs eigenvectors to full DOFs on rank 0.
+        eigenvalues, eigenvectors, info = Cross._solve_constrained_slepc(op;
+            nev=nev, sigma=sigma, which=which, tol=tol, maxiter=maxiter)
+    else
+        eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op;
+            nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
+    end
 
     if verbose
         println("  Solved: $(length(eigenvalues)) eigenvalues found")

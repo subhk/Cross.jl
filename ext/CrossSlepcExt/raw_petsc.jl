@@ -6,6 +6,21 @@
 const CVecScatter = Ptr{Cvoid}
 const SCATTER_FORWARD = Cint(0)
 const _INSERT_VALUES_C = Cint(1)   # PETSc InsertMode INSERT_VALUES
+const MAT_INITIAL_MATRIX = Cint(0)   # PETSc MatReuse
+
+"""Distributed C = A*B via PETSc MatMatMult (unwrapped; PetscWrap 0.1.5 has no
+wrapper). `fill = PETSC_DEFAULT (-2.0)` lets PETSc estimate the product's fill ratio.
+The cconvert for `PetscWrap.CMat` is `mat.ptr[]`, so passing the `PetscMat` wrappers
+`A`/`B` directly into the `CMat` ccall arguments is valid. Returns a freshly created
+`PetscMat` on `A`'s communicator owning the product; caller must `MatDestroy` it."""
+function _mat_mat_mult(A::PetscWrap.PetscMat, B::PetscWrap.PetscMat)
+    C = PetscWrap.PetscMat(A.comm)
+    PR = PetscWrap.PetscReal
+    @assert iszero(ccall((:MatMatMult, PetscWrap.libpetsc), PetscWrap.PetscErrorCode,
+        (PetscWrap.CMat, PetscWrap.CMat, Cint, PR, Ptr{PetscWrap.CMat}),
+        A, B, MAT_INITIAL_MATRIX, PR(-2.0), C.ptr))
+    return C
+end
 
 """Set the requested eigenpair count on an EPS (SlepcWrap 0.1.3 has no wrapper).
 `EPSSetDimensions(eps, nev, ncv=PETSC_DECIDE, mpd=PETSC_DECIDE)`."""

@@ -312,17 +312,35 @@ end
 #  Matrix Assembly
 # -----------------------------------------------------------------------------
 
-"""
-    assemble_matrices(op)
+"""Push dense `block` (length(row_idx)×length(col_idx)) into COO triplets at global
+block position (row_idx, col_idx); keep only rows in `owned` (all if `owned===nothing`)."""
+function _emit_block!(rows, cols, vals, row_idx, col_idx, block;
+                      owned::Union{Nothing,UnitRange{Int}}=nothing)
+    @inbounds for (jc, c) in enumerate(col_idx), (ir, r) in enumerate(row_idx)
+        if owned === nothing || r in owned
+            push!(rows, r); push!(cols, c); push!(vals, block[ir, jc])
+        end
+    end
+    return nothing
+end
 
-Assemble dense hydrodynamic onset or biglobal matrices and return the interior
-and boundary DOF partition used by the constrained eigensolver.
 """
-function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
+    _assemble_onset_radial_coo(op; owned_julia_rows=nothing)
+
+Emit ONLY the pre-boundary-condition interior + coupling (radial-block) assembly of the
+hydrodynamic onset/biglobal generalized eigenproblem as COO triplets. The basic-state
+contribution is NOT included here. When `owned_julia_rows` is a `UnitRange`, only
+triplets whose global row lies in that range are emitted, and per-ℓ blocks whose row
+ranges do not intersect the owned rows are skipped entirely.
+
+Returns a NamedTuple `(A_rows, A_cols, A_vals, B_rows, B_cols, B_vals, n)`.
+"""
+function _assemble_onset_radial_coo(op::LinearStabilityOperator{T};
+                             owned_julia_rows::Union{Nothing,UnitRange{Int}}=nothing) where {T<:Real}
     p = op.params
     n = op.total_dof
-    A = zeros(Complex{T}, n, n)
-    B = zeros(Complex{T}, n, n)
+    A_rows = Int[]; A_cols = Int[]; A_vals = Complex{T}[]
+    B_rows = Int[]; B_cols = Int[]; B_vals = Complex{T}[]
 
     Ek = p.E
     Pr = p.Pr
@@ -359,28 +377,32 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     poloidal_ls = op.l_sets[:P]
     toroidal_ls = op.l_sets[:T]
     for ℓ in poloidal_ls
+        if owned_julia_rows !== nothing
+            rngs = (get(op.index_map,(ℓ,:P),nothing), get(op.index_map,(ℓ,:T),nothing), get(op.index_map,(ℓ,:Θ),nothing))
+            any(rng -> rng !== nothing && !isempty(intersect(rng, owned_julia_rows)), rngs) || continue
+        end
         L = TT(ℓ * (ℓ + 1))
 
         P_idx = op.index_map[(ℓ, :P)]
         Θ_idx = get(op.index_map, (ℓ, :Θ), nothing)
 
-        B[P_idx, P_idx] = -Complex.(L * (L * R2D0 - 2 * R3D1 - R4D2))
+        _emit_block!(B_rows, B_cols, B_vals, P_idx, P_idx, Complex.(-Complex.(L * (L * R2D0 - 2 * R3D1 - R4D2))); owned=owned_julia_rows)
 
         # Poloidal diagonal
         coriolis_p = 2im * m * (-L * R2D0 + 2 * R3D1 + R4D2)
         viscous_p = Ek * L * (-L*(ℓ+2)*(ℓ-1) * R0 + 2*L * R2D2 - 4 * R3D3 - R4D4)
-        A[P_idx, P_idx] .+= Complex.(coriolis_p - viscous_p)
+        _emit_block!(A_rows, A_cols, A_vals, P_idx, P_idx, Complex.(coriolis_p - viscous_p); owned=owned_julia_rows)
 
         # Poloidal ↔ toroidal coupling
         if haskey(op.index_map, (ℓ - 1, :T))
             Cminus = (ℓ^2 - 1) * sqrt(max(zero(TT), ℓ^2 - m^2)) / (2ℓ - 1)
             coupling = 2 * Cminus * ((ℓ - 1) * R3D0 - R4D1)
-            A[P_idx, op.index_map[(ℓ-1, :T)]] .+= Complex.(coupling)
+            _emit_block!(A_rows, A_cols, A_vals, P_idx, op.index_map[(ℓ-1, :T)], Complex.(coupling); owned=owned_julia_rows)
         end
         if haskey(op.index_map, (ℓ + 1, :T))
             Cplus = ℓ*(ℓ+2) * sqrt(max(zero(TT), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
             coupling = 2 * Cplus * (-(ℓ + 2) * R3D0 - R4D1)
-            A[P_idx, op.index_map[(ℓ+1, :T)]] .+= Complex.(coupling)
+            _emit_block!(A_rows, A_cols, A_vals, P_idx, op.index_map[(ℓ+1, :T)], Complex.(coupling); owned=owned_julia_rows)
         end
 
         # Temperature equation blocks for matching Θ ℓ
@@ -397,36 +419,33 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
                 diffusion = -L * R0 + 2 * R1D1 + R2D2
             end
 
-            B[Θ_idx, Θ_idx] = Complex.(B_theta)
+            _emit_block!(B_rows, B_cols, B_vals, Θ_idx, Θ_idx, Complex.(Complex.(B_theta)); owned=owned_julia_rows)
 
             # Temperature gradient coupling: only add if NO basic state
             # (basic state will provide explicit gradient through basic_state_operators)
             if p.basic_state === nothing
                 thermal_adv = (L * adv_coeff) .* adv_matrix
-                A[Θ_idx, P_idx] .+= Complex.(thermal_adv)
+                _emit_block!(A_rows, A_cols, A_vals, Θ_idx, P_idx, Complex.(thermal_adv); owned=owned_julia_rows)
             end
 
-            A[Θ_idx, Θ_idx] .+= Complex.(thermaD * diffusion)
+            _emit_block!(A_rows, A_cols, A_vals, Θ_idx, Θ_idx, Complex.(thermaD * diffusion); owned=owned_julia_rows)
 
             # Buoyancy coupling: temperature → velocity (OFF-DIAGONAL)
             # This term is ALWAYS present regardless of basic state
             buoyancy = beyonce * L * R4D0
-            A[P_idx, Θ_idx] .+= Complex.(buoyancy)
+            _emit_block!(A_rows, A_cols, A_vals, P_idx, Θ_idx, Complex.(buoyancy); owned=owned_julia_rows)
         end
     end
 
-    # Add basic state operators if present (axisymmetric zonal flow stability)
-    if p.basic_state !== nothing
-        @debug "Adding basic state operators for axisymmetric zonal flow..."
-        bs_ops = build_basic_state_operators(p.basic_state, op, p.m)
-        add_basic_state_operators!(A, B, bs_ops, op, p.m)
-    end
-
     for ℓ in toroidal_ls
+        if owned_julia_rows !== nothing
+            rngs = (get(op.index_map,(ℓ,:P),nothing), get(op.index_map,(ℓ,:T),nothing), get(op.index_map,(ℓ,:Θ),nothing))
+            any(rng -> rng !== nothing && !isempty(intersect(rng, owned_julia_rows)), rngs) || continue
+        end
         L = TT(ℓ * (ℓ + 1))
         T_idx = op.index_map[(ℓ, :T)]
 
-        B[T_idx, T_idx] = -Complex.(L * R2D0)
+        _emit_block!(B_rows, B_cols, B_vals, T_idx, T_idx, Complex.(-Complex.(L * R2D0)); owned=owned_julia_rows)
 
         # Toroidal diagonal
         # BUG FIX 2025-10-27: Removed incorrect L factor from Coriolis term
@@ -434,23 +453,83 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
         # The toroidal Coriolis term should NOT have the L factor
         coriolis_t = -2im * m * R2D0
         viscous_t = Ek * L * (-L * R0 + 2 * R1D1 + R2D2)
-        A[T_idx, T_idx] .+= Complex.(coriolis_t - viscous_t)
+        _emit_block!(A_rows, A_cols, A_vals, T_idx, T_idx, Complex.(coriolis_t - viscous_t); owned=owned_julia_rows)
 
         # Toroidal ↔ poloidal coupling
         if haskey(op.index_map, (ℓ - 1, :P))
             Cminus = (ℓ^2 - 1) * sqrt(max(zero(TT), ℓ^2 - m^2)) / (2ℓ - 1)
             coupling = 2 * Cminus * ((ℓ - 1) * R1D0 - R2D1)
-            A[T_idx, op.index_map[(ℓ-1, :P)]] .+= Complex.(coupling)
+            _emit_block!(A_rows, A_cols, A_vals, T_idx, op.index_map[(ℓ-1, :P)], Complex.(coupling); owned=owned_julia_rows)
         end
         if haskey(op.index_map, (ℓ + 1, :P))
             Cplus = ℓ*(ℓ+2) * sqrt(max(zero(TT), (ℓ+m+1)*(ℓ-m+1))) / (2ℓ + 3)
             coupling = 2 * Cplus * (-(ℓ + 2) * R1D0 - R2D1)
-            A[T_idx, op.index_map[(ℓ+1, :P)]] .+= Complex.(coupling)
+            _emit_block!(A_rows, A_cols, A_vals, T_idx, op.index_map[(ℓ+1, :P)], Complex.(coupling); owned=owned_julia_rows)
         end
     end
 
+    return (A_rows=A_rows, A_cols=A_cols, A_vals=A_vals,
+            B_rows=B_rows, B_cols=B_cols, B_vals=B_vals, n=n)
+end
+
+"""
+    _assemble_onset_coo(op; owned_julia_rows=nothing)
+
+Emit the full pre-boundary-condition assembly of the hydrodynamic onset/biglobal
+generalized eigenproblem as COO triplets. This is the radial-block assembly
+(`_assemble_onset_radial_coo`) plus, when `op.params.basic_state !== nothing`, the
+basic-state coupling contribution (`add_basic_state_operators_coo!`). When
+`owned_julia_rows` is a `UnitRange`, only triplets whose global row lies in that range
+are emitted, so the assembly is row-distributable.
+
+Returns a NamedTuple `(A_rows, A_cols, A_vals, B_rows, B_cols, B_vals, n)`.
+"""
+function _assemble_onset_coo(op::LinearStabilityOperator{T};
+                             owned_julia_rows::Union{Nothing,UnitRange{Int}}=nothing) where {T<:Real}
+    c = _assemble_onset_radial_coo(op; owned_julia_rows=owned_julia_rows)
+    A_rows = c.A_rows; A_cols = c.A_cols; A_vals = c.A_vals
+    B_rows = c.B_rows; B_cols = c.B_cols; B_vals = c.B_vals
+
+    if op.params.basic_state !== nothing
+        bs_ops = build_basic_state_operators(op.params.basic_state, op, op.params.m)
+        add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, B_vals,
+                                       bs_ops, op, op.params.m; owned_julia_rows=owned_julia_rows)
+    end
+
+    return (A_rows=A_rows, A_cols=A_cols, A_vals=A_vals,
+            B_rows=B_rows, B_cols=B_cols, B_vals=B_vals, n=c.n)
+end
+
+"""
+    assemble_matrices(op)
+
+Assemble dense hydrodynamic onset or biglobal matrices and return the interior
+and boundary DOF partition used by the constrained eigensolver.
+"""
+function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
+    # The COO assembly already includes the basic-state contribution (if any),
+    # so the densified matrices are complete before boundary conditions.
+    c = _assemble_onset_coo(op)
+    n = c.n
+    A = Matrix(sparse(c.A_rows, c.A_cols, c.A_vals, n, n))
+    B = Matrix(sparse(c.B_rows, c.B_cols, c.B_vals, n, n))
+
     impose_boundary_conditions!(A, B, op)
 
+    interior_dofs, boundary_dofs = _onset_boundary_interior_dofs(op)
+
+    return A, B, interior_dofs, boundary_dofs
+end
+
+"""
+    _onset_boundary_interior_dofs(op) -> (interior_dofs, boundary_dofs)
+
+Compute the boundary/interior DOF partition for the tau-constrained eigenproblem
+directly from the index map, without assembling `A`. The boundary DOFs are the
+tau rows overwritten by `impose_boundary_conditions!`.
+"""
+function _onset_boundary_interior_dofs(op::LinearStabilityOperator{T}) where {T<:Real}
+    n = op.total_dof
     is_boundary = falses(n)
     for ℓ in op.l_sets[:P]
         P_idx = op.index_map[(ℓ, :P)]
@@ -469,8 +548,13 @@ function assemble_matrices(op::LinearStabilityOperator{T}) where {T<:Real}
     end
     boundary_dofs = findall(is_boundary)
     interior_dofs = findall(!, is_boundary)
+    return interior_dofs, boundary_dofs
+end
 
-    return A, B, interior_dofs, boundary_dofs
+"""Interior DOFs of the tau-constrained eigenproblem, without assembling `A`."""
+function _onset_interior_dofs(op::LinearStabilityOperator{T}) where {T<:Real}
+    interior_dofs, _ = _onset_boundary_interior_dofs(op)
+    return interior_dofs
 end
 
 """Constraint basis for one field block after eliminating tau boundary rows."""
@@ -547,6 +631,111 @@ function _constraint_reduction(A::Matrix{Complex{T}},
     return ConstraintReduction{T}(blocks, n_full, n_reduced)
 end
 
+"""
+    _constraint_subblock(op, ℓ, field) -> Matrix{Complex{T}}
+
+Build the `(#tau-rows × Nr)` block of boundary-condition rows for the `(ℓ, field)`
+block directly from the BC formulas (`op.cd.D1`, `op.cd.D2`, `op.r`,
+`op.params.mechanical_bc`, `op.params.thermal_bc`), without materializing the full
+matrix `A`. This reproduces exactly the rows written by
+`impose_boundary_conditions!`, sliced to the block columns, in the same row order
+used by `_constraint_reduction`:
+
+- `:P`  → `[ri, inner_tau, outer_tau, ro]`
+- `:T`  → `[riT, roT]`
+- `:Θ`  → `[riΘ, roΘ]`
+"""
+function _constraint_subblock(op::LinearStabilityOperator{T}, ℓ::Int,
+                              field::Symbol) where {T<:Real}
+    p = op.params
+    D1 = op.cd.D1
+    D2 = op.cd.D2
+    r = op.r
+    idx = op.index_map[(ℓ, field)]
+    Nr = length(idx)
+
+    if field === :P
+        block = zeros(Complex{T}, 4, Nr)
+        # ri (local row 1): Dirichlet e_1
+        block[1, 1] = one(Complex{T})
+        # ro (local row 4): Dirichlet e_Nr
+        block[4, Nr] = one(Complex{T})
+        if p.mechanical_bc == :no_slip
+            block[2, :] .= D1[1, :]
+            block[3, :] .= D1[end, :]
+        else
+            block[2, :] .= r[1] .* D2[1, :]
+            block[3, :] .= r[end] .* D2[end, :]
+        end
+        return block
+    elseif field === :T
+        block = zeros(Complex{T}, 2, Nr)
+        if p.mechanical_bc == :no_slip
+            block[1, 1] = one(Complex{T})
+            block[2, Nr] = one(Complex{T})
+        else
+            block[1, :] .= (-r[1]) .* D1[1, :]
+            block[2, :] .= (-r[end]) .* D1[end, :]
+            block[1, 1] += one(Complex{T})
+            block[2, Nr] += one(Complex{T})
+        end
+        return block
+    elseif field === :Θ
+        block = zeros(Complex{T}, 2, Nr)
+        if p.thermal_bc == :fixed_temperature
+            block[1, 1] = one(Complex{T})
+            block[2, Nr] = one(Complex{T})
+        else
+            block[1, :] .= D1[1, :]
+            block[2, :] .= D1[end, :]
+        end
+        return block
+    else
+        throw(ArgumentError("Unknown field $field for constraint sub-block"))
+    end
+end
+
+"""
+    _constraint_reduction_from_subblocks(op) -> ConstraintReduction
+
+Build the same per-field nullspace reduction as `_constraint_reduction`, but
+compute each block's constraint matrix from `_constraint_subblock` (the BC
+formulas) instead of slicing the assembled matrix `A`. Column bookkeeping mirrors
+`_constraint_reduction` exactly.
+"""
+function _constraint_reduction_from_subblocks(op::LinearStabilityOperator{T}) where {T<:Real}
+    n_full = op.total_dof
+    _, boundary_dofs = _onset_boundary_interior_dofs(op)
+    n_reduced = n_full - length(boundary_dofs)
+    blocks = ConstraintBasisBlock{T}[]
+    col = 1
+
+    for ℓ in op.l_sets[:P]
+        P_idx = op.index_map[(ℓ, :P)]
+        basis = nullspace(_constraint_subblock(op, ℓ, :P))
+        cols = col:(col + size(basis, 2) - 1)
+        push!(blocks, ConstraintBasisBlock{T}(P_idx, cols, basis))
+        col += size(basis, 2)
+    end
+    for ℓ in op.l_sets[:T]
+        T_idx = op.index_map[(ℓ, :T)]
+        basis = nullspace(_constraint_subblock(op, ℓ, :T))
+        cols = col:(col + size(basis, 2) - 1)
+        push!(blocks, ConstraintBasisBlock{T}(T_idx, cols, basis))
+        col += size(basis, 2)
+    end
+    for ℓ in op.l_sets[:Θ]
+        Θ_idx = op.index_map[(ℓ, :Θ)]
+        basis = nullspace(_constraint_subblock(op, ℓ, :Θ))
+        cols = col:(col + size(basis, 2) - 1)
+        push!(blocks, ConstraintBasisBlock{T}(Θ_idx, cols, basis))
+        col += size(basis, 2)
+    end
+
+    col == n_reduced + 1 || error("Constraint basis size mismatch")
+    return ConstraintReduction{T}(blocks, n_full, n_reduced)
+end
+
 """Project full tau-form matrices into the reduced interior coordinate system."""
 function _constrained_reduced_matrices(A_full::Matrix{Complex{T}},
                                        B_full::Matrix{Complex{T}},
@@ -582,6 +771,35 @@ function _reconstruct_full_vector(reduction::ConstraintReduction{T},
              view(reduced_vec, block.reduced_indices))
     end
     return full_vec
+end
+
+"""
+    _constraint_projection_matrices(reduction, interior_dofs) -> (S, P)
+
+Express the block-wise constraint reduction as two sparse matrices: `P`
+(`n_full × n_reduced`, block-diagonal nullspace basis) and `S` (`n_reduced × n_full`,
+interior-row selector), such that `S * A_full * P == _constrained_reduced_matrices(...)`.
+"""
+function _constraint_projection_matrices(reduction::ConstraintReduction{T},
+                                         interior_dofs::Vector{Int}) where {T<:Real}
+    length(interior_dofs) == reduction.n_reduced ||
+        error("interior_dofs length $(length(interior_dofs)) != n_reduced $(reduction.n_reduced)")
+
+    Pi = Int[]; Pj = Int[]; Pv = Complex{T}[]
+    for block in reduction.blocks
+        fr = block.full_indices
+        rc = block.reduced_indices
+        @inbounds for (cj, c) in enumerate(rc), (ri, r) in enumerate(fr)
+            push!(Pi, r); push!(Pj, c); push!(Pv, block.basis[ri, cj])
+        end
+    end
+    P = sparse(Pi, Pj, Pv, reduction.n_full, reduction.n_reduced)
+
+    S = sparse(collect(1:reduction.n_reduced), interior_dofs,
+               ones(Complex{T}, reduction.n_reduced),
+               reduction.n_reduced, reduction.n_full)
+
+    return S, P
 end
 
 # -----------------------------------------------------------------------------

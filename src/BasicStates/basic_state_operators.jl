@@ -731,3 +731,131 @@ function add_basic_state_operators!(A::Matrix, B::Matrix,
 
     return nothing
 end
+
+"""
+    add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, B_vals,
+                                   basic_state_ops, op, m; owned_julia_rows=nothing)
+
+COO-emitting counterpart of [`add_basic_state_operators!`](@ref). Mirrors it exactly,
+but instead of dense `A[out_idx, in_idx] .+= block` accumulation it pushes each block
+into the COO triplet arrays via `_emit_block!`. When `owned_julia_rows` is a `UnitRange`,
+only triplets whose global row lies in that range are emitted (non-owned rows dropped by
+`_emit_block!`). The basic-state contribution writes only to the A arrays (the B arrays
+are accepted for symmetry/future use but unmodified).
+"""
+function add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, B_vals,
+                                        basic_state_ops::BasicStateOperators,
+                                        op,
+                                        m::Int;
+                                        owned_julia_rows::Union{Nothing,UnitRange{Int}}=nothing)
+
+    @debug "Adding basic state operators to A COO arrays..."
+
+    # Loop over all coupling pairs (ℓ_output, ℓ_input)
+    for (ℓ_output, ℓ_input) in basic_state_ops.coupling_structure
+
+        # Get indices for output and input modes
+        if !haskey(op.index_map, (ℓ_output, :P)) || !haskey(op.index_map, (ℓ_input, :P))
+            continue
+        end
+
+        # Output mode indices (row indices in A)
+        P_out_idx = op.index_map[(ℓ_output, :P)]
+        Θ_out_idx = haskey(op.index_map, (ℓ_output, :Θ)) ? op.index_map[(ℓ_output, :Θ)] : nothing
+        T_out_idx = haskey(op.index_map, (ℓ_output, :T)) ? op.index_map[(ℓ_output, :T)] : nothing
+
+        # Input mode indices (column indices in A)
+        P_in_idx = op.index_map[(ℓ_input, :P)]
+        Θ_in_idx = haskey(op.index_map, (ℓ_input, :Θ)) ? op.index_map[(ℓ_input, :Θ)] : nothing
+        T_in_idx = haskey(op.index_map, (ℓ_input, :T)) ? op.index_map[(ℓ_input, :T)] : nothing
+
+        # =====================================================================
+        # 1. Add advection operator to scalar fields (P, T, Θ)
+        #    (ū_φ/(r sin θ)) ∂/∂φ acts as im·m × ū_φ/(r sin θ)
+        # =====================================================================
+        if haskey(basic_state_ops.advection_blocks, (ℓ_output, ℓ_input))
+            adv_block = basic_state_ops.advection_blocks[(ℓ_output, ℓ_input)]
+            if P_out_idx !== nothing && P_in_idx !== nothing
+                _emit_block!(A_rows, A_cols, A_vals, P_out_idx, P_in_idx, Complex.(adv_block); owned=owned_julia_rows)
+            end
+            if T_out_idx !== nothing && T_in_idx !== nothing
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, T_in_idx, Complex.(adv_block); owned=owned_julia_rows)
+            end
+            if Θ_out_idx !== nothing && Θ_in_idx !== nothing
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, Θ_in_idx, Complex.(adv_block); owned=owned_julia_rows)
+            end
+        end
+
+        # =====================================================================
+        # 2. Add radial temperature gradient term
+        #    ∂θ'_ℓ_output/∂t term: -u'_r,ℓ_input × ∂θ̄/∂r
+        #    This couples P_ℓ_input → θ'_ℓ_output (u_r from poloidal)
+        # =====================================================================
+        if Θ_out_idx !== nothing
+            if haskey(basic_state_ops.temp_grad_radial_blocks, (ℓ_output, ℓ_input))
+                temp_grad_block = basic_state_ops.temp_grad_radial_blocks[(ℓ_output, ℓ_input)]
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, P_in_idx, Complex.(temp_grad_block); owned=owned_julia_rows)
+            end
+        end
+
+        # =====================================================================
+        # 2b. Add meridional temperature gradient term
+        #     ∂θ'_ℓ_output/∂t term: -(u'_θ/r) × ∂θ̄/∂θ
+        # =====================================================================
+        if Θ_out_idx !== nothing
+            if haskey(basic_state_ops.temp_grad_theta_blocks, (ℓ_output, ℓ_input))
+                temp_grad_theta_block = basic_state_ops.temp_grad_theta_blocks[(ℓ_output, ℓ_input)]
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, P_in_idx, Complex.(temp_grad_theta_block); owned=owned_julia_rows)
+            end
+            if T_in_idx !== nothing && haskey(basic_state_ops.temp_grad_theta_toroidal_blocks, (ℓ_output, ℓ_input))
+                temp_grad_theta_t_block = basic_state_ops.temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)]
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, T_in_idx, Complex.(temp_grad_theta_t_block); owned=owned_julia_rows)
+            end
+        end
+
+        # =====================================================================
+        # 3. Add radial shear to toroidal equation
+        #    ∂u'_φ,ℓ_output/∂t term: -u'_r,ℓ_input × ∂ū_φ/∂r
+        #    This couples P_ℓ_input → T_ℓ_output
+        # =====================================================================
+        if T_out_idx !== nothing
+            if haskey(basic_state_ops.shear_radial_blocks, (ℓ_output, ℓ_input))
+                shear_block = basic_state_ops.shear_radial_blocks[(ℓ_output, ℓ_input)]
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, P_in_idx, Complex.(shear_block); owned=owned_julia_rows)
+            end
+        end
+
+        # =====================================================================
+        # 3b. Add meridional shear to toroidal equation
+        #     ∂u'_φ,ℓ_output/∂t term: -(u'_θ/r) × ∂ū_φ/∂θ
+        # =====================================================================
+        if T_out_idx !== nothing
+            if haskey(basic_state_ops.shear_theta_blocks, (ℓ_output, ℓ_input))
+                shear_theta_block = basic_state_ops.shear_theta_blocks[(ℓ_output, ℓ_input)]
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, P_in_idx, Complex.(shear_theta_block); owned=owned_julia_rows)
+            end
+            if T_in_idx !== nothing && haskey(basic_state_ops.shear_theta_toroidal_blocks, (ℓ_output, ℓ_input))
+                shear_theta_t_block = basic_state_ops.shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)]
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, T_in_idx, Complex.(shear_theta_t_block); owned=owned_julia_rows)
+            end
+        end
+
+        # =====================================================================
+        # 4. Add metric terms to poloidal equation (curvilinear vector advection)
+        #    The metric terms from (ū · ∇)u' couple T (toroidal) to P (poloidal):
+        #      (ū · ∇)u'_r contains: -ū_φ u'_φ / r
+        #      (ū · ∇)u'_θ contains: -ū_φ u'_φ cot(θ) / r
+        #    These are essential for correct momentum advection by mean flow.
+        # =====================================================================
+        if P_out_idx !== nothing && T_in_idx !== nothing
+            if haskey(basic_state_ops.metric_poloidal_blocks, (ℓ_output, ℓ_input))
+                metric_block = basic_state_ops.metric_poloidal_blocks[(ℓ_output, ℓ_input)]
+                _emit_block!(A_rows, A_cols, A_vals, P_out_idx, T_in_idx, Complex.(metric_block); owned=owned_julia_rows)
+            end
+        end
+    end
+
+    @debug "Basic state operators added to COO successfully"
+
+    return nothing
+end

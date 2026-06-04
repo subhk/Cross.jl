@@ -134,9 +134,13 @@ mpirun -n N julia --project=. driver.jl
 Notes: the eigensolve (MUMPS factorization + Krylov iterations) is distributed over
 `COMM_WORLD`. For **MHD** problems the tau-method assembly is also distributed — each
 rank computes and inserts only its owned interior rows (boundary-condition rows are
-overwritten on the distributed matrix). The other problem types (onset, biglobal,
-triglobal, MHD Galerkin) still use **replicated** assembly (each rank builds the full
-matrix and inserts only its owned rows) until later phases. Eigenvectors are gathered
+overwritten on the distributed matrix). **Onset/biglobal** are fully distributed: each
+rank assembles only its owned interior rows (no rank builds the full matrix), the
+reduction basis `P` is built from per-block tau sub-blocks, and the tau-elimination
+reduction runs as a distributed sparse triple product `S·A·P` via PETSc `MatMatMult`.
+The remaining paths (triglobal, MHD Galerkin) still use **replicated** assembly (each
+rank builds the full matrix and inserts only its owned rows) until later phases.
+Eigenvectors are gathered
 to **rank 0** (workers
 get empty eigenvectors); eigenvalues are identical on all ranks. Call `slepc_init!`
 /`slepc_finalize!` **once per process** (not per solve). If the extension is not

@@ -53,6 +53,34 @@ function _to_petsc_dist(M::SparseMatrixCSC, n::Int)
     return mat
 end
 
+# Build a distributed (possibly RECTANGULAR) `nrows×ncols` PETSc matrix from the full
+# (replicated) Julia CSC, inserting only this rank's owned rows. Used for the sparse
+# constraint-projection matrices S (n_reduced×n_full) and P (n_full×n_reduced), whose
+# row/column ownership bands do not coincide, so the exact d/o split used by the square
+# path does not apply. These matrices are built once and are tiny relative to the EPS
+# factorization, so we use `MatSetUp` (type-agnostic default preallocation) plus
+# `MAT_NEW_NONZERO_ALLOCATION_ERR=false` to allow dynamic allocation rather than compute
+# an exact preallocation. (Perf detail only — correctness is unaffected.)
+function _to_petsc_dist(M::SparseMatrixCSC, nrows::Int, ncols::Int)
+    mat = MatCreate(MPI.COMM_WORLD)
+    MatSetSizes(mat, PETSC_DECIDE, PETSC_DECIDE, nrows, ncols)
+    MatSetFromOptions(mat)
+    MatSetUp(mat)                                       # default preallocation (any type)
+    MatSetOption(mat, PetscWrap.MAT_NEW_NONZERO_ALLOCATION_ERR, false)
+    rstart, rend = MatGetOwnershipRange(mat)            # 0-based, half-open (rows)
+    rows = rowvals(M); vals = nonzeros(M)
+    @inbounds for col in 1:size(M, 2)
+        for k in nzrange(M, col)
+            r0 = rows[k] - 1
+            if rstart <= r0 < rend
+                MatSetValue(mat, r0, col - 1, PetscScalar(vals[k]), INSERT_VALUES)
+            end
+        end
+    end
+    MatAssemblyBegin(mat, MAT_FINAL_ASSEMBLY); MatAssemblyEnd(mat, MAT_FINAL_ASSEMBLY)
+    return mat
+end
+
 """
 Distributed SLEPc solve of `A x = σ B x` over `MPI.COMM_WORLD`. Replicated Julia
 assembly (each rank holds full `A`/`B`, inserts only owned rows). MUMPS shift-invert
@@ -298,11 +326,64 @@ function _slepc_mhd_solve(op; nev::Int, sigma, which::Symbol, tol::Float64, maxi
                                  selection=:maxreal, tol=tol, maxiter=maxiter)
 end
 
+# ---------------------------------------------------------------------------
+# Distributed constrained-reduction path (LinearStabilityOperator)
+# ---------------------------------------------------------------------------
+
+"""Form the distributed reduced matrix `S·A·P` via two `MatMatMult`s, destroying the
+intermediate `S·A` product. `Smat`/`Amat`/`Pmat` are caller-owned and untouched."""
+function _reduce_dist(Amat, Smat, Pmat)
+    SA = _mat_mat_mult(Smat, Amat)
+    red = _mat_mat_mult(SA, Pmat)
+    MatDestroy(SA)
+    return red
+end
+
+"""Distributed constrained-reduction SLEPc solve from a `LinearStabilityOperator`.
+
+Builds the constraint reduction `S` (`n_reduced×n_full`) / `P` (`n_full×n_reduced`)
+WITHOUT ever forming the full `A` (via `Cross._constraint_reduction_from_subblocks`
+plus `Cross._constraint_projection_matrices`), assembles the tau pencil `(A, B)`
+directly into distributed PETSc Mats from owned-row COO triplets
+(`Cross._assemble_onset_coo`), distributes the sparse `S`/`P` as PETSc Mats, forms the
+reduced pencil `Ared = S·A·P`, `Bred = S·B·P` via `MatMatMult`, then runs the shared
+EPS shift-invert solve + rank-0 gather on the small reduced pencil. Reduced
+eigenvectors are mapped back to full DOF coordinates with `P` on rank 0. Returns the
+Cross contract `(eigenvalues, eigenvectors, info)`. Requires a complex PETSc build and
+a prior `Cross.slepc_init!()`."""
+function _slepc_constrained_solve(op; nev::Int, sigma, which::Symbol, tol::Float64, maxiter::Int)
+    _INITIALIZED[] || error("call Cross.slepc_init!() once before a :slepc solve")
+    PetscScalar <: Real && error("PETSc/SLEPc must be built with complex scalars")
+    red = Cross._constraint_reduction_from_subblocks(op)        # no full A
+    idofs = Cross._onset_interior_dofs(op)
+    S, P = Cross._constraint_projection_matrices(red, idofs)
+    nfull = red.n_full; nred = red.n_reduced
+    # distributed owned-row assembly of A, B
+    Amat, rs, re = _create_dist_mat(nfull)
+    Bmat, _, _ = _create_dist_mat(nfull)
+    coo = Cross._assemble_onset_coo(op; owned_julia_rows=(rs+1):re)
+    _fill_dist_mat!(Amat, coo.A_rows, coo.A_cols, coo.A_vals, rs, re)
+    _fill_dist_mat!(Bmat, coo.B_rows, coo.B_cols, coo.B_vals, rs, re)
+    # distribute S, P; reduce; solve; reconstruct on rank 0
+    Sdist = _to_petsc_dist(S, nred, nfull)
+    Pdist = _to_petsc_dist(P, nfull, nred)
+    Ared = _reduce_dist(Amat, Sdist, Pdist)
+    Bred = _reduce_dist(Bmat, Sdist, Pdist)
+    MatDestroy(Amat); MatDestroy(Bmat); MatDestroy(Sdist); MatDestroy(Pdist)
+    vals, vecs_red, info = _eps_solve_and_gather(Ared, Bred, nred;
+        nev=nev, sigma=sigma, which=which, selection=:maxreal, tol=tol, maxiter=maxiter)
+    rank = MPI.Comm_rank(MPI.COMM_WORLD)
+    vecs_full = (rank == 0 && size(vecs_red, 2) > 0) ?
+        Matrix{ComplexF64}(P * vecs_red) : Matrix{ComplexF64}(undef, nfull, 0)
+    return vals, vecs_full, info
+end
+
 function __init__()
-    Cross._SLEPC_SOLVER[]     = _slepc_solve
-    Cross._SLEPC_MHD_SOLVER[] = _slepc_mhd_solve
-    Cross._SLEPC_INIT[]       = _slepc_init!
-    Cross._SLEPC_FINALIZE[]   = _slepc_finalize!
+    Cross._SLEPC_SOLVER[]             = _slepc_solve
+    Cross._SLEPC_MHD_SOLVER[]         = _slepc_mhd_solve
+    Cross._SLEPC_CONSTRAINED_SOLVER[] = _slepc_constrained_solve
+    Cross._SLEPC_INIT[]               = _slepc_init!
+    Cross._SLEPC_FINALIZE[]           = _slepc_finalize!
     return nothing
 end
 

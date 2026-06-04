@@ -147,8 +147,17 @@ function solve_onset_problem(params::OnsetConvectionParams{T};
 
     # Build operator and solve
     op = LinearStabilityOperator(internal_params)
-    eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op;
-        nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
+    if backend === :slepc
+        # Distributed constrained-reduction path: the SLEPc extension distributes the
+        # full tau pencil and the S/P projection matrices, forms the reduced pencil
+        # S·A·P / S·B·P via MatMatMult, and runs the EPS solve. Avoids the in-process
+        # dense reduction; eigenvectors come back reconstructed to full DOFs on rank 0.
+        eigenvalues, eigenvectors, info = Cross._solve_constrained_slepc(op;
+            nev=nev, sigma=sigma, which=which, tol=tol, maxiter=maxiter)
+    else
+        eigenvalues, eigenvectors, info = solve_eigenvalue_problem(op;
+            nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
+    end
 
     return eigenvalues, eigenvectors, op, info
 end

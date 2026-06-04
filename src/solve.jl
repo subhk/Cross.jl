@@ -274,10 +274,21 @@ function solve(problem::MHDProblem{T, BS};
         )
     end
 
-    A, B, interior_dofs, info_assembly = assemble_mhd_matrices(op)
+    if backend === :slepc
+        # Distributed MHD tau path: the SLEPc extension assembles (A, B) in
+        # distributed PETSc form (owned rows only), applies the tau boundary
+        # conditions on the distributed Mats, and runs the EPS solve. Avoids ever
+        # materializing the full sparse pencil on a single rank.
+        eigenvalues, eigenvectors, info = Cross._solve_mhd_slepc(
+            op; nev=nev, sigma=sigma, which=which, tol=tol, maxiter=maxiter)
+        interior_dofs = Int[]
+        info_assembly = info
+    else
+        A, B, interior_dofs, info_assembly = assemble_mhd_matrices(op)
 
-    eigenvalues, eigenvectors, info = solve_eigenvalue_problem(
-        A, B; nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
+        eigenvalues, eigenvectors, info = solve_eigenvalue_problem(
+            A, B; nev=nev, tol=tol, maxiter=maxiter, which=which, sigma=sigma, backend=backend)
+    end
 
     evec_matrix = _eigvecs_to_matrix(eigenvalues, eigenvectors, T)
 

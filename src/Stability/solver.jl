@@ -21,6 +21,7 @@ using Logging
 # references PETSc/SLEPc symbols, keeping `using Cross` PETSc-free.
 # ---------------------------------------------------------------------------
 const _SLEPC_SOLVER = Ref{Union{Nothing,Function}}(nothing)
+const _SLEPC_MHD_SOLVER = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_INIT     = Ref{Union{Nothing,Function}}(nothing)
 const _SLEPC_FINALIZE = Ref{Union{Nothing,Function}}(nothing)
 
@@ -71,6 +72,19 @@ function _petsc_owned_nnz(M::SparseMatrixCSC, rstart::Int, rend::Int)
         end
     end
     return d, o
+end
+
+"""Distributed MHD-aware SLEPc solve directly from an `MHDStabilityOperator`. The
+extension assembles the (A, B) tau matrices in distributed PETSc form (owned rows
+only), applies the boundary conditions on the distributed Mats, and runs the EPS
+shift-invert solve. PETSc-free in core; errors if the extension is absent. Returns
+the common `(eigenvalues, eigenvectors, info)` contract."""
+function _solve_mhd_slepc(op; kwargs...)
+    f = _SLEPC_MHD_SOLVER[]
+    f === nothing && error(
+        "backend=:slepc (distributed MHD) requires `using PetscWrap, SlepcWrap` " *
+        "and Cross.slepc_init!().")
+    return f(op; kwargs...)
 end
 
 """Solve `A x = σ B x` with SLEPc. Requires the CrossSlepcExt extension (load

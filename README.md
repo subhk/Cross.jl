@@ -132,8 +132,12 @@ mpirun -n N julia --project=. driver.jl
 ```
 
 Notes: the eigensolve (MUMPS factorization + Krylov iterations) is distributed over
-`COMM_WORLD`; assembly is currently **replicated** (each rank builds the full matrix
-and inserts only its owned rows). Eigenvectors are gathered to **rank 0** (workers
+`COMM_WORLD`. For **MHD** problems the tau-method assembly is also distributed — each
+rank computes and inserts only its owned interior rows (boundary-condition rows are
+overwritten on the distributed matrix). The other problem types (onset, biglobal,
+triglobal, MHD Galerkin) still use **replicated** assembly (each rank builds the full
+matrix and inserts only its owned rows) until later phases. Eigenvectors are gathered
+to **rank 0** (workers
 get empty eigenvectors); eigenvalues are identical on all ranks. Call `slepc_init!`
 /`slepc_finalize!` **once per process** (not per solve). If the extension is not
 loaded or `slepc_init!` was not called, `backend=:slepc` raises an actionable error.

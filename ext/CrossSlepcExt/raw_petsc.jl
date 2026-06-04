@@ -51,3 +51,20 @@ function _vec_scatter_to_zero(v::PetscWrap.PetscVec)
     ccall((:VecDestroy, PetscWrap.libpetsc), PetscWrap.PetscErrorCode, (Ptr{PetscWrap.CVec},), seq)
     return out
 end
+
+"""Zero the given **0-based global** rows of a distributed PETSc matrix, leaving the
+diagonal of those rows untouched (`diag = 0` ⇒ no diagonal entry inserted). Wraps
+`MatZeroRows(Mat, PetscInt numRows, const PetscInt rows[], PetscScalar diag, Vec x, Vec b)`
+(PetscWrap 0.1.5 has no wrapper). **COLLECTIVE**: every rank in the matrix's
+communicator must call this the same number of times; each rank passes only the
+rows it owns (the list may be empty). `x`/`b` are passed `C_NULL` (no RHS update).
+The cconvert for `PetscWrap.CMat`/`CVec` is `Ptr{Cvoid}`, so `C_NULL` is a valid
+`CVec` argument and `mat` (a `PetscMat`) cconverts to its handle."""
+function _mat_zero_rows(mat, grows0::Vector{Int})   # 0-based global rows
+    PI = PetscWrap.PetscInt
+    idx = PI.(grows0)
+    @assert iszero(ccall((:MatZeroRows, PetscWrap.libpetsc), PetscWrap.PetscErrorCode,
+        (PetscWrap.CMat, PI, Ptr{PI}, PetscWrap.PetscScalar, PetscWrap.CVec, PetscWrap.CVec),
+        mat, PI(length(idx)), idx, PetscWrap.PetscScalar(0), C_NULL, C_NULL))
+    return nothing
+end

@@ -69,13 +69,30 @@ function _slepc_solve(A::SparseMatrixCSC, B::SparseMatrixCSC;
     size(A) == size(B) || throw(DimensionMismatch("A and B must match"))
     n = size(A, 1)
 
+    Amat = _to_petsc_dist(A, n)
+    Bmat = _to_petsc_dist(B, n)
+
+    return _eps_solve_and_gather(Amat, Bmat, n; nev=nev, sigma=sigma, which=which,
+                                 selection=selection, tol=tol, maxiter=maxiter,
+                                 verbosity=verbosity)
+end
+
+"""
+Shared EPS shift-invert solve + rank-0 eigenvector gather, operating on already-built
+distributed PETSc matrices `Amat`, `Bmat` (`n×n`). Owns the EPS lifecycle and destroys
+`Amat`/`Bmat` before returning (NOT SlepcFinalize — that is the caller's explicit
+lifecycle). Used by both `_slepc_solve` (replicated sparse path) and `_slepc_mhd_solve`
+(distributed MHD path). Returns the Cross contract `(eigenvalues, eigenvectors, info)`:
+eigenvalues identical on all ranks; eigenvectors full `n×nout` on rank 0, empty `n×0`
+on workers.
+"""
+function _eps_solve_and_gather(Amat, Bmat, n::Int;
+                              nev::Int, sigma, which::Symbol, selection::Symbol,
+                              tol::Float64, maxiter::Int, verbosity::Int=0)
     target = sigma === nothing ?
         (which === :LR ? ComplexF64(10, 0) :
          which === :LI ? ComplexF64(0, 10) : ComplexF64(1, 0)) :
         ComplexF64(sigma)
-
-    Amat = _to_petsc_dist(A, n)
-    Bmat = _to_petsc_dist(B, n)
 
     eps = EPSCreate(MPI.COMM_WORLD)
     EPSSetOperators(eps, Amat, Bmat)
@@ -119,10 +136,173 @@ function _sort_indices_local(ev::AbstractVector{<:Complex}, selection::Symbol)
     error("Unknown selection strategy $(selection)")
 end
 
+# ---------------------------------------------------------------------------
+# Distributed MHD assembly path
+# ---------------------------------------------------------------------------
+
+"""Create an empty distributed `n×n` MPIAIJ matrix with PETSc-decided local sizes,
+returning `(mat, rstart, rend)` with the 0-based half-open owned row range."""
+function _create_dist_mat(n::Int)
+    mat = MatCreate(MPI.COMM_WORLD)
+    MatSetSizes(mat, PETSC_DECIDE, PETSC_DECIDE, n, n)
+    MatSetFromOptions(mat)
+    rstart, rend = MatGetOwnershipRange(mat)
+    return mat, Int(rstart), Int(rend)
+end
+
+"""Preallocate and fill the owned rows of a distributed matrix from COO triplets.
+`rows`/`cols` are 1-based Julia indices, `vals` complex. Inserts only entries whose
+row lies in this rank's owned band `[rstart, rend)` (0-based). The preallocation
+counts (`_owned_coo_nnz`) are computed from the SAME triplet stream, so they match
+exactly what is inserted."""
+function _fill_dist_mat!(mat, rows, cols, vals, rstart::Int, rend::Int)
+    PI = PetscWrap.PetscInt
+    d, o = Cross._owned_coo_nnz(rows, cols, rstart, rend)
+    MatMPIAIJSetPreallocation(mat, PI(0), PI.(d), PI(0), PI.(o))
+    @inbounds for k in eachindex(rows)
+        r0 = rows[k] - 1
+        if rstart <= r0 < rend
+            MatSetValue(mat, r0, cols[k] - 1, PetscScalar(vals[k]), INSERT_VALUES)
+        end
+    end
+    MatAssemblyBegin(mat, MAT_FINAL_ASSEMBLY); MatAssemblyEnd(mat, MAT_FINAL_ASSEMBLY)
+    return mat
+end
+
+"""Enumerate the 1-based tau boundary-condition rows that the serial BC functions
+(`apply_velocity_/magnetic_/temperature_boundary_conditions!`) overwrite, in the
+SAME row layout as `_mhd_index_map` (sections u, v, f, g, h, each a contiguous
+`(N+1)` block). Deterministic and identical on every rank.
+
+Per-section rows overwritten (matching the serial code exactly):
+- u: row_base+1, row_base+2, row_base+(N+1)-1, row_base+(N+1)
+- v: row_base+1, row_base+(N+1)
+- f: row_base+1, row_base+(N+1); additionally row_base+(N+1)-1 when bci_magnetic == 2
+      (the perfect-conductor ICB second constraint, `row_icb2 = row_icb - 1`)
+- g: row_base+1, row_base+(N+1)
+- h: row_base+1, row_base+(N+1)
+"""
+function _mhd_bc_rows(op)
+    params = op.params
+    N = params.N
+    n_per_mode = N + 1
+    nb_u = length(op.ll_u); nb_v = length(op.ll_v)
+    nb_f = length(op.ll_f); nb_g = length(op.ll_g); nb_h = length(op.ll_h)
+
+    rows = Int[]
+    # u section
+    for k in 1:nb_u
+        rb = (k - 1) * n_per_mode
+        push!(rows, rb + 1, rb + 2, rb + n_per_mode - 1, rb + n_per_mode)
+    end
+    # v section
+    for k in 1:nb_v
+        rb = (nb_u + k - 1) * n_per_mode
+        push!(rows, rb + 1, rb + n_per_mode)
+    end
+    # f section (poloidal magnetic)
+    for k in 1:nb_f
+        rb = (nb_u + nb_v + k - 1) * n_per_mode
+        push!(rows, rb + 1, rb + n_per_mode)
+        if params.bci_magnetic == 2
+            push!(rows, rb + n_per_mode - 1)   # row_icb2 second perfect-conductor BC
+        end
+    end
+    # g section (toroidal magnetic)
+    for k in 1:nb_g
+        rb = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
+        push!(rows, rb + 1, rb + n_per_mode)
+    end
+    # h section (temperature)
+    for k in 1:nb_h
+        rb = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
+        push!(rows, rb + 1, rb + n_per_mode)
+    end
+    return rows
+end
+
+"""Apply the MHD tau boundary conditions on the distributed matrices `Amat`, `Bmat`,
+mirroring the serial overwrites for this rank's OWNED rows only.
+
+Strategy (value-exact, zero formula duplication): assemble the full *replicated*
+serial sparse pencil with BCs already applied via `Cross.assemble_mhd_matrices(op)`
+— this runs the identical, audited serial BC code. For every BC row the serial code
+zeroed `A[row,:]`/`B[row,:]` and wrote a new A row (the B row stays all-zero). We
+therefore (1) zero the same rows in both distributed Mats and (2) re-insert exactly
+the serial A-row nonzeros, restricted to owned rows.
+
+`MatZeroRows` is COLLECTIVE, so it is called once per matrix on EVERY rank with that
+rank's owned BC-row subset (possibly empty) — guaranteeing uniform collective reach.
+
+CAVEAT: builds the full serial A on each rank (replicated). This keeps BC values
+provably identical to the serial path but does NOT realize a fully memory-distributed
+BC application; the heavy distributed object is still the PETSc Mat/EPS factorization.
+"""
+function _apply_dist_bcs!(Amat, Bmat, op, rstart::Int, rend::Int)
+    # Replicated serial assembly WITH boundary conditions applied (exact serial code).
+    Aser, _Bser, _idofs, _info = Cross.assemble_mhd_matrices(op)
+
+    bc_rows = _mhd_bc_rows(op)                       # 1-based, identical all ranks
+
+    # Owned subset (0-based global rows) for the collective MatZeroRows.
+    owned0 = Int[]
+    for r in bc_rows
+        r0 = r - 1
+        rstart <= r0 < rend && push!(owned0, r0)
+    end
+
+    # COLLECTIVE: every rank calls once per matrix (owned subset may be empty).
+    _mat_zero_rows(Amat, owned0)
+    _mat_zero_rows(Bmat, owned0)
+
+    # The COO interior rows for these BC positions had a different column pattern, and
+    # MatZeroRows preserves the (now-zeroed) pattern; the serial BC entries may land in
+    # columns outside the original preallocation. Allow those extra allocations rather
+    # than error (small one-time cost, BC rows only).
+    PetscWrap.MatSetOption(Amat, PetscWrap.MAT_NEW_NONZERO_ALLOCATION_ERR, false)
+
+    # Re-insert the serial A BC-row entries for owned rows. Transpose once so a row
+    # of Aser becomes a column of AserT, giving O(nnz_row) access via nzrange.
+    AserT = sparse(transpose(Aser))
+    rvals = rowvals(AserT); nzv = nonzeros(AserT)
+    @inbounds for r in bc_rows
+        r0 = r - 1
+        (rstart <= r0 < rend) || continue
+        for p in nzrange(AserT, r)                   # column r of AserT == row r of Aser
+            col0 = rvals[p] - 1                      # 0-based global column
+            MatSetValue(Amat, r0, col0, PetscScalar(nzv[p]), INSERT_VALUES)
+        end
+    end
+    MatAssemblyBegin(Amat, MAT_FINAL_ASSEMBLY); MatAssemblyEnd(Amat, MAT_FINAL_ASSEMBLY)
+    MatAssemblyBegin(Bmat, MAT_FINAL_ASSEMBLY); MatAssemblyEnd(Bmat, MAT_FINAL_ASSEMBLY)
+    return nothing
+end
+
+"""Distributed MHD-aware SLEPc solve directly from an `MHDStabilityOperator`. Builds
+distributed PETSc A/B from the COO triplets (owned rows only), applies the tau BCs on
+the distributed Mats, then runs the shared EPS shift-invert solve + rank-0 gather.
+Returns the Cross contract `(eigenvalues, eigenvectors, info)`. Requires a complex
+PETSc build and a prior `Cross.slepc_init!()`."""
+function _slepc_mhd_solve(op; nev::Int, sigma, which::Symbol, tol::Float64, maxiter::Int)
+    _INITIALIZED[] || error("call Cross.slepc_init!() once before a :slepc solve")
+    PetscScalar <: Real &&
+        error("PETSc/SLEPc must be built with complex scalars (--with-scalar-type=complex)")
+    n = op.matrix_size
+    Amat, rstart, rend = _create_dist_mat(n)
+    Bmat, _, _ = _create_dist_mat(n)
+    coo = Cross._assemble_mhd_coo(op; owned_julia_rows=(rstart + 1):rend)
+    _fill_dist_mat!(Amat, coo.A_rows, coo.A_cols, coo.A_vals, rstart, rend)
+    _fill_dist_mat!(Bmat, coo.B_rows, coo.B_cols, coo.B_vals, rstart, rend)
+    _apply_dist_bcs!(Amat, Bmat, op, rstart, rend)
+    return _eps_solve_and_gather(Amat, Bmat, n; nev=nev, sigma=sigma, which=which,
+                                 selection=:maxreal, tol=tol, maxiter=maxiter)
+end
+
 function __init__()
-    Cross._SLEPC_SOLVER[]   = _slepc_solve
-    Cross._SLEPC_INIT[]     = _slepc_init!
-    Cross._SLEPC_FINALIZE[] = _slepc_finalize!
+    Cross._SLEPC_SOLVER[]     = _slepc_solve
+    Cross._SLEPC_MHD_SOLVER[] = _slepc_mhd_solve
+    Cross._SLEPC_INIT[]       = _slepc_init!
+    Cross._SLEPC_FINALIZE[]   = _slepc_finalize!
     return nothing
 end
 

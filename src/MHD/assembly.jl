@@ -188,6 +188,39 @@ function operator_thermal_advection(op::MHDStabilityOperator{T}, l::Int) where {
     end
 end
 
+"""Row layout of the MHD tau matrix as a Phase-1 index_map: keys `(ℓ, section)` for
+sections `:u,:v,:f,:g,:h` in order, each a contiguous `(N+1)`-row range."""
+function _mhd_index_map(op::MHDStabilityOperator)
+    n_per_mode = op.params.N + 1
+    im = Dict{Tuple{Int,Symbol}, UnitRange{Int}}()
+    off = 0
+    for (sec, ls) in ((:u, op.ll_u), (:v, op.ll_v), (:f, op.ll_f), (:g, op.ll_g), (:h, op.ll_h))
+        for l in ls
+            im[(l, sec)] = (off + 1):(off + n_per_mode)
+            off += n_per_mode
+        end
+    end
+    return im
+end
+
+"""Per-owned-row diagonal/off-diagonal nnz from COO triplets, for the owned PETSc row
+block `[rstart, rend)` (0-based, half-open), diagonal band = same column range. `rows`
+and `cols` are 1-based Julia indices. Returns `(d_nnz, o_nnz)`, length `rend-rstart`."""
+function _owned_coo_nnz(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer},
+                        rstart::Int, rend::Int)
+    nloc = rend - rstart
+    d = zeros(Int, nloc); o = zeros(Int, nloc)
+    @inbounds for k in eachindex(rows)
+        r0 = rows[k] - 1
+        if rstart <= r0 < rend
+            c0 = cols[k] - 1
+            i = r0 - rstart + 1
+            (rstart <= c0 < rend) ? (d[i] += 1) : (o[i] += 1)
+        end
+    end
+    return d, o
+end
+
 """
     assemble_mhd_matrices(op::MHDStabilityOperator)
 
@@ -213,7 +246,7 @@ Magnetic → Magnetic: Magnetic diffusion
 Velocity → Temperature: Thermal advection
 Temperature → Velocity: Buoyancy
 """
-function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
+function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{Nothing,UnitRange{Int}}=nothing) where {T}
     params = op.params
     E = params.E
     Pr = params.Pr
@@ -257,9 +290,10 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
     function add_block!(rows, cols, vals, block, row_offset, col_offset)
         Is, Js, Vs = findnz(block)
         @inbounds for k in eachindex(Vs)
-            push!(rows, Is[k] + row_offset)
-            push!(cols, Js[k] + col_offset)
-            push!(vals, Vs[k])
+            grow = Is[k] + row_offset
+            if owned_julia_rows === nothing || grow in owned_julia_rows
+                push!(rows, grow); push!(cols, Js[k] + col_offset); push!(vals, Vs[k])
+            end
         end
         return nothing
     end
@@ -271,6 +305,10 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
     for (k, l) in enumerate(op.ll_u)
         row_base = (k - 1) * n_per_mode
+        if owned_julia_rows !== nothing &&
+           isempty(intersect((row_base+1):(row_base+n_per_mode), owned_julia_rows))
+            continue
+        end
         col_base = (k - 1) * n_per_mode
 
         # ---------------------------------------------------------------------
@@ -351,6 +389,10 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
     for (k, l) in enumerate(op.ll_v)
         row_base = (nb_u + k - 1) * n_per_mode
+        if owned_julia_rows !== nothing &&
+           isempty(intersect((row_base+1):(row_base+n_per_mode), owned_julia_rows))
+            continue
+        end
         col_base = (nb_u + k - 1) * n_per_mode
 
         # ---------------------------------------------------------------------
@@ -415,6 +457,10 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
         for (k, l) in enumerate(op.ll_f)
             row_base = (nb_u + nb_v + k - 1) * n_per_mode
+            if owned_julia_rows !== nothing &&
+               isempty(intersect((row_base+1):(row_base+n_per_mode), owned_julia_rows))
+                continue
+            end
             col_base = (nb_u + nb_v + k - 1) * n_per_mode
 
             # -----------------------------------------------------------------
@@ -469,6 +515,10 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
         for (k, l) in enumerate(op.ll_g)
             row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
+            if owned_julia_rows !== nothing &&
+               isempty(intersect((row_base+1):(row_base+n_per_mode), owned_julia_rows))
+                continue
+            end
             col_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
 
             # -----------------------------------------------------------------
@@ -519,6 +569,10 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
     for (k, l) in enumerate(op.ll_h)
         row_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
+        if owned_julia_rows !== nothing &&
+           isempty(intersect((row_base+1):(row_base+n_per_mode), owned_julia_rows))
+            continue
+        end
         col_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
 
         # ---------------------------------------------------------------------
@@ -541,12 +595,31 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
         add_block!(A_rows, A_cols, A_vals, thermal_adv, row_base, vel_col_base)
     end
 
+    return (A_rows=A_rows, A_cols=A_cols, A_vals=A_vals,
+            B_rows=B_rows, B_cols=B_cols, B_vals=B_vals,
+            n=n, interior_dofs=Int[], info=Dict{String,Any}())
+end
+
+"""Assemble the MHD tau (A, B) sparse matrices with boundary conditions applied."""
+function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
+    params = op.params
+    N = params.N
+    m = params.m
+
+    nb_u = length(op.ll_u)
+    nb_v = length(op.ll_v)
+    nb_f = length(op.ll_f)
+    nb_g = length(op.ll_g)
+    nb_h = length(op.ll_h)
+
+    c = _assemble_mhd_coo(op)
+    n = c.n
     # =========================================================================
     # Convert to sparse CSC format
     # =========================================================================
     @debug "Converting to CSC format..."
-    A = sparse(A_rows, A_cols, A_vals, n, n)
-    B = sparse(B_rows, B_cols, B_vals, n, n)
+    A = sparse(c.A_rows, c.A_cols, c.A_vals, n, n)
+    B = sparse(c.B_rows, c.B_cols, c.B_vals, n, n)
 
     @debug "Matrix sparsity" A_nnz=nnz(A) B_nnz=nnz(B) A_pct="$(round(100*nnz(A)/n^2; digits=1))%" B_pct="$(round(100*nnz(B)/n^2; digits=1))%"
 

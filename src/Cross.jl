@@ -8,7 +8,6 @@ module Cross
 
     using Parameters
 
-    using KrylovKit
     using LinearMaps
     using WignerSymbols
     using SpecialFunctions

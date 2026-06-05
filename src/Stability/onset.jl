@@ -128,7 +128,7 @@ function solve_onset_problem(params::OnsetConvectionParams{T};
                              maxiter::Int=1000,
                              which::Symbol=:LR,
                              sigma=nothing,
-                             backend::Symbol=:krylovkit) where T
+                             backend::Symbol=:slepc) where T
 
     # Convert to internal OnsetParams (no basic_state → pure conduction)
     internal_params = OnsetParams(

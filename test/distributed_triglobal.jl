@@ -56,7 +56,7 @@ end
         @info "PETSC_DIR unset — skipping distributed triglobal test (validate under mpirun; see README)"
         @test true
     else
-        @info "Run the mpirun triglobal :slepc-vs-:krylovkit spectrum comparison manually; see README."
+        @info "Run the mpirun triglobal :slepc spectrum check manually; see README."
         @test true
     end
 end

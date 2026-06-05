@@ -117,7 +117,7 @@ end
         @info "PETSC_DIR unset — skipping distributed onset/biglobal test (validate under mpirun; see README)"
         @test true
     else
-        @info "Run the mpirun onset/biglobal :slepc-vs-:krylovkit spectrum comparison manually; see README."
+        @info "Run the mpirun onset/biglobal :slepc spectrum check manually; see README."
         @test true
     end
 end

@@ -97,7 +97,7 @@ function solve(problem::OnsetProblem{T};
                tol::Float64=1e-10,
                maxiter::Int=1000,
                which::Symbol=:LR,
-               backend::Symbol=:krylovkit) where T
+               backend::Symbol=:slepc) where T
 
     _warn_if_large(problem, "OnsetProblem")
 
@@ -135,7 +135,7 @@ function solve(problem::BiglobalProblem{T};
                tol::Float64=1e-10,
                maxiter::Int=1000,
                which::Symbol=:LR,
-               backend::Symbol=:krylovkit,
+               backend::Symbol=:slepc,
                verbose::Bool=false) where T
 
     _warn_if_large(problem, "BiglobalProblem")
@@ -178,7 +178,7 @@ in a `StabilityResult`.
 function solve(problem::TriglobalProblem{T};
                nev::Int=6,
                sigma=nothing,
-               backend::Symbol=:krylovkit,
+               backend::Symbol=:slepc,
                verbose::Bool=true) where T
 
     _warn_if_large(problem, "TriglobalProblem")
@@ -226,7 +226,7 @@ function solve(problem::MHDProblem{T, BS};
                tol::Float64=1e-10,
                maxiter::Int=1000,
                which::Symbol=:LR,
-               backend::Symbol=:krylovkit) where {T, BS}
+               backend::Symbol=:slepc) where {T, BS}
 
     _warn_if_large(problem, "MHDProblem")
 

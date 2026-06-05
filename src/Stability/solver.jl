@@ -127,70 +127,28 @@ function _solve_generalized_eigen_slepc(A::SparseMatrixCSC, B::SparseMatrixCSC; 
 end
 
 """Dispatch a sparse generalized eigensolve to the selected backend, returning the
-common `(eigenvalues::Vector{Complex}, eigenvectors::Matrix{Complex}, info::Dict)`."""
+common `(eigenvalues::Vector{Complex}, eigenvectors::Matrix{Complex}, info::Dict)`.
+SLEPc is the sole supported backend."""
 function _dispatch_eigen(A::SparseMatrixCSC, B::SparseMatrixCSC;
-                         backend::Symbol=:krylovkit,
+                         backend::Symbol=:slepc,
                          nev::Int, sigma, which::Symbol, selection::Symbol,
                          tol::Float64, maxiter::Int,
                          krylovdim::Union{Nothing,Int}, verbosity::Int)
-    if backend === :krylovkit
-        return _krylov_eigensolve(A, B; nev=nev, sigma=sigma, which=which,
-                                  selection=selection, tol=tol, maxiter=maxiter,
-                                  krylovdim=krylovdim, verbosity=verbosity)
-    elseif backend === :slepc
+    if backend === :slepc
         return _solve_generalized_eigen_slepc(A, B; nev=nev, sigma=sigma, which=which,
                                               selection=selection, tol=tol, maxiter=maxiter,
                                               verbosity=verbosity)
     else
-        throw(ArgumentError("Unknown eigensolver backend $(backend); use :krylovkit or :slepc"))
+        throw(ArgumentError("Unknown eigensolver backend $(backend); only :slepc is supported"))
     end
-end
-
-
-struct ShiftInvertLinearMap{LUType,MatType,VecType,SolveVecType}
-    lu::LUType
-    B::MatType
-    temp::VecType
-    solve_rhs::SolveVecType
-    solve_sol::SolveVecType
-end
-
-function (M::ShiftInvertLinearMap)(y, x)
-    mul!(M.temp, M.B, x)
-    copyto!(M.solve_rhs, M.temp)
-    ldiv!(M.solve_sol, M.lu, M.solve_rhs)
-    copyto!(y, M.solve_sol)
-    return y
-end
-
-function _solver_real_eltype(::Type{T}) where {T<:Real}
-    return float(T)
-end
-function _solver_real_eltype(::Type{Complex{T}}) where {T<:Real}
-    return T
-end
-
-function construct_linear_map(A_shifted::SparseMatrixCSC{T,Int},
-                              B::SparseMatrixCSC{T,Int}) where {T<:Complex}
-    lu_factor = lu(A_shifted)
-    tmp = Vector{T}(undef, size(B, 1))
-    solve_tmp = Vector{eltype(lu_factor)}(undef, size(B, 1))
-    solve_sol = similar(solve_tmp)
-    return LinearMap{T}(ShiftInvertLinearMap(lu_factor, B, tmp, solve_tmp, solve_sol),
-                        size(B, 1); ismutating=true)
-end
-
-function _is_krylov_convergence_error(err)
-    return isdefined(KrylovKit, :ConvergenceError) &&
-           err isa getfield(KrylovKit, :ConvergenceError)
 end
 
 """
     solve_eigenvalue_problem(A, B; nev=20, sigma=nothing, which=:LR,
                              selection=:maxreal, tol=1e-10)
 
-Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices using KrylovKit
-with shift-invert method.
+Solve the generalized eigenvalue problem A·x = σ·B·x for sparse matrices using the
+SLEPc backend with shift-invert method.
 
 # Arguments
 - `A::SparseMatrixCSC`: Operator matrix (physics terms)
@@ -205,7 +163,7 @@ with shift-invert method.
 - `tol::Float64=1e-10`: Convergence tolerance
 - `maxiter::Int=1000`: Maximum number of iterations
 - `krylovdim::Union{Nothing,Int}=nothing`: Krylov subspace dimension
-- `verbosity::Int=0`: Verbosity level for KrylovKit
+- `verbosity::Int=0`: Verbosity level for the eigensolver
 
 # Returns
 - `eigenvalues::Vector{Complex}`: Computed eigenvalues σ = σ_r + iω
@@ -226,7 +184,7 @@ with shift-invert method.
 """
 function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
                                  nev::Int=1,
-                                 backend::Symbol=:krylovkit,
+                                 backend::Symbol=:slepc,
                                  sigma::Union{Nothing,Number}=nothing,
                                  which::Symbol=:LR,  # Determines shift selection (not eigsolve target)
                                  selection::Symbol=:maxreal,
@@ -258,116 +216,6 @@ function solve_eigenvalue_problem(A::SparseMatrixCSC, B::SparseMatrixCSC;
     return eigenvalues, eigenvectors, info
 end
 
-function _sort_indices(eigenvalues::AbstractVector{<:Complex}, selection::Symbol)
-    select_values = real.(eigenvalues)
-    if selection == :maxreal
-        return sortperm(select_values, rev=true)
-    elseif selection == :minabs
-        return sortperm(abs.(eigenvalues))
-    elseif selection == :closest_real
-        return sortperm(abs.(select_values))
-    else
-        error("Unknown selection strategy $(selection)")
-    end
-end
-
-function _krylov_eigensolve(A::SparseMatrixCSC, B::SparseMatrixCSC;
-                            nev::Int,
-                            sigma::Union{Nothing,Number},
-                            which::Symbol,
-                            selection::Symbol,
-                            tol::Float64,
-                            maxiter::Int,
-                            krylovdim::Union{Nothing,Int},
-                            verbosity::Int,
-                            _allow_retry::Bool=true)
-
-    n = size(A, 1)
-    T = promote_type(_solver_real_eltype(eltype(A)), _solver_real_eltype(eltype(B)))
-    C = Complex{T}
-
-    # Smart shift selection for onset problems (matching linear_stability.jl)
-    if sigma === nothing
-        if which == :LR
-            σ_eff = C(T(10), zero(T))
-        elseif which == :LI
-            σ_eff = C(zero(T), T(10))
-        else
-            σ_eff = C(one(T), zero(T))
-        end
-        @debug "Auto-selected shift" σ=σ_eff which=which
-    else
-        σ_eff = C(sigma)
-        @debug "User-specified shift" σ=σ_eff
-    end
-
-    A_complex = SparseMatrixCSC{C, Int}(A)
-    B_complex = SparseMatrixCSC{C, Int}(B)
-    shift_matrix = A_complex - σ_eff * B_complex
-
-    linmap = construct_linear_map(shift_matrix, B_complex)
-    x0 = randn(C, n)
-
-    kdim = krylovdim === nothing ? 300 : krylovdim
-
-    try
-        # IMPORTANT: For shift-invert with LinearMap, we must use :LM (Largest Magnitude)
-        # to find eigenvalues closest to the shift σ_eff. The 'which' parameter only
-        # determines the shift selection, NOT the eigsolve target.
-        values, vectors, history = eigsolve(
-            linmap, x0, nev, :LM;  # Always use :LM for shift-invert!
-            tol = tol,
-            maxiter = maxiter,
-            krylovdim = kdim,
-            verbosity = verbosity
-        )
-
-        keep = [abs(val) > eps(T) for val in values]
-        any(keep) || error("No finite eigenvalues returned by Krylov solver")
-        values = values[keep]
-        vectors = vectors[keep]
-
-        eigenvalues = C.(σ_eff .+ inv.(values))
-        eigenvectors = hcat(map(v -> C.(v), vectors)...)
-
-        perm = _sort_indices(eigenvalues, selection)
-        eigenvalues = eigenvalues[perm]
-        eigenvectors = eigenvectors[:, perm]
-
-        info = Dict(
-            "solver" => :krylovkit,
-            "strategy" => :shift_invert,
-            "shift" => σ_eff,
-            "krylovdim" => kdim,
-            "iterations" => history.numiter,
-            "operator_applications" => history.numops,
-            "converged" => history.converged,
-            "residuals" => history.residual,
-            "residual_norms" => history.normres,
-            "selected" => eigenvalues[1],
-            "selection" => selection
-        )
-
-        return eigenvalues, eigenvectors, info
-    catch err
-        if sigma !== nothing && _allow_retry && _is_krylov_convergence_error(err)
-            @warn "Shift-invert Krylov solver failed to converge; retrying without shift" exception=(err, catch_backtrace())
-            return _krylov_eigensolve(A, B;
-                                      nev = nev,
-                                      sigma = nothing,
-                                      which = which,
-                                      selection = selection,
-                                      tol = tol,
-                                      maxiter = maxiter,
-                                      krylovdim = krylovdim,
-                                      verbosity = verbosity,
-                                      _allow_retry = false)
-        else
-            @error "Eigenvalue solver failed" exception=(err, catch_backtrace())
-            rethrow()
-        end
-    end
-end
 
 """
     find_critical_rayleigh(operator_builder, E, χ, m;

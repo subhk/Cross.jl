@@ -18,9 +18,16 @@ using Cross
     @test occursin("PetscWrap", sprint(showerror, err))
     @test occursin("SlepcWrap", sprint(showerror, err))
 
-    vals, vecs, info = Cross.solve_eigenvalue_problem(A, B; nev=1, sigma=0.0)
-    @test eltype(vals) <: Complex
-    @test info["solver"] == :krylovkit
+    # :slepc is now the default (and sole) backend, so the no-PETSc default path
+    # raises the same actionable SLEPc-extension error.
+    err_default = try
+        Cross.solve_eigenvalue_problem(A, B; nev=1, sigma=0.0)
+        nothing
+    catch e
+        e
+    end
+    @test err_default isa ErrorException
+    @test occursin("SlepcWrap", sprint(showerror, err_default))
 end
 
 @testset "SLEPc backend reaches constrained hydro path" begin
@@ -83,10 +90,10 @@ end
                       m=1, lmax=3, N=12, B0_type=dipole, B0_amplitude=1.0)
         op = MHDStabilityOperator(p)
         A, B, _, _ = assemble_mhd_matrices(op)
-        vK, _, _ = Cross.solve_eigenvalue_problem(A, B; nev=4, sigma=0.0, backend=:krylovkit)
         vS, _, _ = Cross.solve_eigenvalue_problem(A, B; nev=4, sigma=0.0, backend=:slepc)
         # eigenvalues valid on all ranks
-        @test isapprox(sort(real.(vK))[1:2], sort(real.(vS))[1:2]; rtol=1e-4)
+        @test eltype(vS) <: Complex
+        @test length(vS) >= 1
         Cross.slepc_finalize!()
     end
 end

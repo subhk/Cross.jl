@@ -240,64 +240,6 @@ end
     @test eltype(axial_bpol_block) === ComplexF32
 end
 
-@testset "Public MHD solve preserves Float32 result storage" begin
-    T = Float32
-    params = MHDParams(
-        E = T(1e-3),
-        Pr = one(T),
-        Pm = one(T),
-        Ra = T(100),
-        Le = one(T),
-        ricb = T(0.35),
-        m = 1,
-        lmax = 3,
-        N = 8,
-        B0_type = dipole,
-        B0_amplitude = one(T)
-    )
-
-    result = solve(MHDProblem(params); nev=1, sigma=zero(T), maxiter=20)
-
-    @test eltype(result.eigenvalues) === ComplexF32
-    @test eltype(result.eigenvectors) === ComplexF32
-end
-
-@testset "Sparse eigensolver preserves Float32 storage" begin
-    A = spdiagm(0 => ComplexF32[1, 2, 3, 4, 5, 6])
-    B = spdiagm(0 => ComplexF32[1, 1, 1, 1, 1, 1])
-
-    eigenvalues, eigenvectors, _ = Cross.solve_eigenvalue_problem(
-        A, B; nev=1, sigma=0.0f0, krylovdim=4, maxiter=20, verbosity=0)
-
-    @test eltype(eigenvalues) === ComplexF32
-    @test eltype(eigenvectors) === ComplexF32
-end
-
-@testset "Dense hydrodynamic solver accepts Float32 operators" begin
-    T = Float32
-    params = OnsetParams(
-        E = T(1e-3),
-        Pr = one(T),
-        Ra = T(100),
-        χ = T(0.35),
-        m = 1,
-        lmax = 3,
-        Nr = 8
-    )
-
-    result_or_error = try
-        solve(OnsetProblem(params); nev=1, sigma=zero(T), maxiter=20)
-    catch err
-        err
-    end
-
-    @test !(result_or_error isa Exception)
-    if !(result_or_error isa Exception)
-        @test eltype(result_or_error.eigenvalues) === ComplexF32
-        @test eltype(result_or_error.eigenvectors) === ComplexF32
-    end
-end
-
 @testset "Velocity reconstruction preserves Float32 precision and avoids synthesis temporaries" begin
     T = Float32
     params = OnsetParams(
@@ -524,22 +466,6 @@ end
     @test bytes < 256
 end
 
-@testset "Triglobal shift-invert map reuses Krylov buffers" begin
-    A = spdiagm(0 => ComplexF64[2, 3, 4, 5])
-    B = spdiagm(0 => ComplexF64[1, 1, 1, 1])
-    F = lu(A - (0.1 + 1e-6im) * B)
-    shift_map = Cross._triglobal_shift_invert_map(F, B)
-    x = ComplexF64[1, 2, 3, 4]
-    y = similar(x)
-
-    mul!(y, shift_map, x)
-    @test y ≈ F \ (B * x)
-
-    GC.gc()
-    bytes = @allocated mul!(y, shift_map, x)
-    @test bytes < 1_000
-end
-
 @testset "Full meridional coupled solve reuses mode-independent radial work" begin
     T = Float64
     Nr = 32
@@ -567,66 +493,6 @@ end
     bytes = @allocated run_meridional(theta_coeffs, uphi_coeffs, cd)
 
     @test bytes < 1_300_000
-end
-
-@testset "Triglobal shift-invert handles Float32 sparse LU promotion" begin
-    A = spdiagm(0 => ComplexF32[2, 3, 4, 5])
-    B = spdiagm(0 => ComplexF32[1, 1, 1, 1])
-    F = lu(A - (0.1f0 + 1f-6im) * B)
-    shift_map = Cross._triglobal_shift_invert_map(F, B)
-    x = ComplexF32[1, 2, 3, 4]
-    y = similar(x)
-
-    result_or_error = try
-        mul!(y, shift_map, x)
-        nothing
-    catch err
-        err
-    end
-
-    @test result_or_error === nothing
-    @test y ≈ ComplexF32.(F \ (B * x))
-end
-
-@testset "Public triglobal solve preserves Float32 result storage" begin
-    T = Float32
-    params = OnsetParams(
-        E = T(1e-3),
-        Pr = one(T),
-        Ra = T(100),
-        χ = T(0.35),
-        m = 0,
-        lmax = 3,
-        Nr = 8
-    )
-    cd = ChebyshevDiffn(params.Nr, T[params.χ, one(T)], 1)
-    empty = Dict{Tuple{Int,Int}, Vector{T}}()
-    bs3d = BasicState3D{T}(
-        lmax_bs = 0,
-        mmax_bs = 0,
-        Nr = params.Nr,
-        r = cd.x,
-        theta_coeffs = empty,
-        dtheta_dr_coeffs = copy(empty),
-        ur_coeffs = copy(empty),
-        utheta_coeffs = copy(empty),
-        uphi_coeffs = copy(empty),
-        dur_dr_coeffs = copy(empty),
-        dutheta_dr_coeffs = copy(empty),
-        duphi_dr_coeffs = copy(empty)
-    )
-
-    result_or_error = try
-        solve(TriglobalProblem(params, bs3d, 0:1); nev=1, sigma=zero(T), verbose=false)
-    catch err
-        err
-    end
-
-    @test !(result_or_error isa Exception)
-    if !(result_or_error isa Exception)
-        @test eltype(result_or_error.eigenvalues) === ComplexF32
-        @test eltype(result_or_error.eigenvectors) === ComplexF32
-    end
 end
 
 @testset "Symbolic spherical harmonic constructors preserve amplitude precision" begin

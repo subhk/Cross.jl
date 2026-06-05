@@ -5,7 +5,6 @@ authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
 
 [deps]
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
-KrylovKit = "0b1a1467-8014-51b9-945f-bf0ae24f4b77"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
@@ -30,7 +29,6 @@ CrossSlepcExt = ["PetscWrap", "SlepcWrap"]
 [compat]
 BenchmarkTools = "1"
 JLD2 = "0.4, 0.5"
-KrylovKit = "0.6"
 LinearMaps = "3"
 Makie = "0.21, 0.22"
 Parameters = "0.12"

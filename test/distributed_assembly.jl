@@ -57,7 +57,7 @@ end
         @info "PETSC_DIR unset — skipping distributed MHD assembly test (validate under mpirun; see README)"
         @test true
     else
-        @info "Run the mpirun :slepc-vs-:krylovkit MHD spectrum comparison manually; see README."
+        @info "Run the mpirun :slepc MHD spectrum check manually; see README."
         @test true
     end
 end

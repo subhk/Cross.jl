@@ -1,5 +1,5 @@
 # =============================================================================
-#  Linear Stability Operator (chebyshev + KrylovKit)
+#  Linear Stability Operator (chebyshev + SLEPc)
 #
 #  This implementation uses sparse spectral methods
 #  Fortran/C code: the matrices are assembled explicitly from Chebyshev
@@ -8,7 +8,7 @@
 # =============================================================================
 
 # Dependencies provided by Cross module:
-# LinearAlgebra, KrylovKit, LinearMaps, Parameters, Random
+# LinearAlgebra, LinearMaps, Parameters, Random
 # ChebyshevDiffn is available in the Cross namespace
 
 const _fourπ = 4π
@@ -806,36 +806,28 @@ end
 #  Eigenvalue solve
 # -----------------------------------------------------------------------------
 
-"""Mutable shift-invert map `(A - sigma B) \\ (B*x)` used by KrylovKit."""
-struct ShiftInvertMap{TF,TB,Ttmp}
-    lu::TF
-    B::TB
-    tmp::Ttmp
-end
-
-(M::ShiftInvertMap)(y, x) = (mul!(M.tmp, M.B, x); ldiv!(y, M.lu, M.tmp); y)
-
 """
     solve_eigenvalue_problem(op; nev, tol, maxiter, which, sigma)
 
-Assemble the dense linear-stability problem and compute leading eigenpairs with
-the constrained shift-invert solver.
+Compute the leading eigenpairs of the constrained linear-stability problem with
+the SLEPc backend (the sole supported backend). The distributed
+constrained-reduction path assembles the full tau pencil and the S/P projection
+matrices, forms the reduced pencil `S·A·P` / `S·B·P`, runs the EPS shift-invert
+solve, and reconstructs eigenvectors to full DOFs on rank 0.
 """
 function solve_eigenvalue_problem(op::LinearStabilityOperator{T};
                                   nev::Int=6,
-                                  backend::Symbol=:krylovkit,
+                                  backend::Symbol=:slepc,
                                   tol::Float64=1e-10,
                                   maxiter::Int=1000,
                                   which::Symbol=:LR,
                                   sigma::Union{Nothing,Number}=nothing) where {T<:Real}
 
-    A_full, B_full, interior_dofs, boundary_dofs = assemble_matrices(op)
+    backend === :slepc || throw(ArgumentError(
+        "Unknown eigensolver backend $(backend); only :slepc is supported"))
 
-    # Use KrylovKit shift-invert with optimized shift
-    # Default shift for onset problems: small positive real value (near Re(λ)=0)
-    return _krylov_eigensolve_optimized(A_full, B_full, op, interior_dofs, boundary_dofs;
-                                        nev=nev, tol=tol, maxiter=maxiter,
-                                        which=which, sigma=sigma, backend=backend)
+    return Cross._solve_constrained_slepc(op;
+        nev=nev, sigma=sigma, which=which, tol=tol, maxiter=maxiter)
 end
 
 
@@ -847,91 +839,6 @@ function find_growth_rate(op::LinearStabilityOperator; kwargs...)
     σ = real(λ)
     ω = imag(λ)
     return σ, ω, eigenvectors[idx]
-end
-
-"""Constrained KrylovKit shift-invert solve with automatic shift selection."""
-function _krylov_eigensolve_optimized(A_full::Matrix{Complex{T}},
-                                       B_full::Matrix{Complex{T}},
-                                       op::LinearStabilityOperator{T},
-                                       interior_dofs::Vector{Int},
-                                       boundary_dofs::Vector{Int};
-                                       nev::Int,
-                                       tol::Float64,
-                                       maxiter::Int,
-                                       which::Symbol,
-                                       sigma::Union{Nothing,Number}=nothing,
-                                       backend::Symbol=:krylovkit) where {T<:Real}
-    """
-    OPTIMIZED shift-invert solver using KrylovKit.
-    Automatically selects shift based on 'which' parameter for onset problems.
-    """
-    A, B, reduction = _constrained_reduced_matrices(A_full, B_full, op,
-                                                    interior_dofs, boundary_dofs)
-
-    # Smart shift selection based on what eigenvalues we're targeting
-    if isnothing(sigma)
-        if which == :LR
-            # For onset problems: target eigenvalues with largest real part
-            # Critical Rayleigh number is when Re(λ) ≈ 0
-            # Use small positive shift to find eigenvalues near onset
-            σ = Complex{T}(10.0, 0.0)  # Much better than 0.1+0.1i!
-        elseif which == :LI
-            # Target largest imaginary part
-            σ = Complex{T}(0.0, 10.0)
-        else
-            # Default: near origin
-            σ = Complex{T}(1.0, 0.0)
-        end
-    else
-        σ = Complex{T}(sigma)
-    end
-
-    if backend === :slepc
-        vals_s, vecs_s, info_s = _solve_generalized_eigen_slepc(
-            sparse(A), sparse(B); nev=nev, sigma=σ, which=which,
-            selection=:maxreal, tol=tol, maxiter=maxiter, verbosity=0)
-        vecs_full = [_reconstruct_full_vector(reduction, vecs_s[:, j]) for j in 1:size(vecs_s, 2)]
-        ordering = which == :LR ? sortperm(real.(vals_s); rev=true) :
-                   which == :LM ? sortperm(abs.(vals_s); rev=true) :
-                   collect(1:length(vals_s))
-        ordering = ordering[1:min(nev, length(ordering))]
-        # On workers vecs_full is empty (rank-0-only gather); don't index it by ordering.
-        return vals_s[ordering], (isempty(vecs_full) ? vecs_full : vecs_full[ordering]), info_s
-    end
-
-    lu_factor = lu(A - σ * B)
-    tmp = zeros(Complex{T}, size(A, 1))
-    shift_map = LinearMap{Complex{T}}(ShiftInvertMap(lu_factor, B, tmp),
-                                      size(A, 1); ismutating=true)
-
-    krylovdim = min(size(A, 1), max(nev * 8, 60))
-    x0 = randn(Complex{T}, size(A, 1))
-
-    vals_inv, vecs_int, info = eigsolve(shift_map,
-                                        x0, nev, :LM;
-                                        tol=tol,
-                                        maxiter=maxiter,
-                                        krylovdim=krylovdim,
-                                        verbosity=0)
-
-    keep = findall(λ -> abs(λ) > eps(T), vals_inv)
-    isempty(keep) && error("No finite eigenvalues returned by eigensolver")
-    vals_inv = vals_inv[keep]
-    vecs_int = vecs_int[keep]
-
-    eigenvalues = Complex{T}[σ + inv(λ) for λ in vals_inv]
-
-    vecs_full = Vector{Vector{Complex{T}}}(undef, length(vecs_int))
-    for (i, v_int) in enumerate(vecs_int)
-        vecs_full[i] = _reconstruct_full_vector(reduction, v_int)
-    end
-
-    ordering = which == :LR ? sortperm(real.(eigenvalues); rev=true) :
-               which == :LM ? sortperm(abs.(eigenvalues); rev=true) :
-               collect(1:length(eigenvalues))
-    ordering = ordering[1:min(nev, length(ordering))]
-
-    return eigenvalues[ordering], vecs_full[ordering], info
 end
 
 """

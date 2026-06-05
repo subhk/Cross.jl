@@ -344,7 +344,7 @@ function solve_biglobal_problem(params::BiglobalParams{T};
                                  maxiter::Int=1000,
                                  which::Symbol=:LR,
                                  sigma=nothing,
-                                 backend::Symbol=:krylovkit,
+                                 backend::Symbol=:slepc,
                                  verbose::Bool=false) where T
 
     if verbose

@@ -13,7 +13,7 @@
 # =============================================================================
 
 # Dependencies provided by Cross module:
-# Parameters, LinearAlgebra, SparseArrays, Printf, KrylovKit, WignerSymbols
+# Parameters, LinearAlgebra, SparseArrays, Printf, WignerSymbols
 # LinearStabilityOperator, OnsetParams, BasicState, assemble_matrices
 # are available in the Cross namespace
 
@@ -1752,17 +1752,6 @@ function compute_sh_coupling_unweighted(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
     return integral
 end
 
-"""Build a mutating triglobal shift-invert map `(A - σB) \\ (B*x)`."""
-function _triglobal_shift_invert_map(F, B::SparseMatrixCSC{Complex{T},Int}) where {T<:Real}
-    C = Complex{T}
-    tmp = Vector{C}(undef, size(B, 1))
-    solve_rhs = Vector{eltype(F)}(undef, size(B, 1))
-    solve_sol = similar(solve_rhs)
-    return LinearMap{C}(ShiftInvertLinearMap(F, B, tmp, solve_rhs, solve_sol),
-                        size(B, 1); ismutating=true)
-end
-
-
 """
     _normalized_associated_legendre(ℓ, m, x)
 
@@ -1951,87 +1940,6 @@ function _append_block_entries!(row_idx::Vector{Int},
 end
 
 
-"""
-    solve_block_eigenvalue_problem(A, B, σ_target, nev, verbose)
-
-Solve the generalized eigenvalue problem A x = λ B x using shift-invert.
-
-Uses KrylovKit for iterative solution.
-"""
-function solve_block_eigenvalue_problem(A::SparseMatrixCSC{Complex{T},Int},
-                                         B::SparseMatrixCSC{Complex{T},Int},
-                                         σ_target::Real,
-                                         nev::Int,
-                                         verbose::Bool;
-                                         backend::Symbol=:krylovkit) where {T<:Real}
-    n = size(A, 1)
-
-    # Shift-invert: (A - σ B)^{-1} B
-    # Eigenvalues of this operator are 1/(λ - σ), so λ = σ + 1/μ
-    # Use a small imaginary shift to avoid singularity from boundary conditions
-    shift = Complex{T}(T(σ_target), T(1e-6))
-    if backend === :slepc
-        vals_s, vecs_s, _ = _solve_generalized_eigen_slepc(
-            A, B; nev=nev, sigma=shift, which=:LR, selection=:maxreal,
-            tol=T(1e-8), maxiter=200, verbosity=0)
-        perm = sortperm(real.(vals_s); rev=true)
-        # Workers get an n×0 eigenvector matrix (gather is rank-0 only); never index
-        # it with the nev-length perm.
-        return vals_s[perm], (size(vecs_s, 2) == 0 ? vecs_s : vecs_s[:, perm])
-    end
-    A_shifted = A - shift * B
-
-    if verbose
-        println("  Factorizing shifted matrix (size $(n))...")
-    end
-
-    F = try
-        lu(A_shifted)
-    catch err
-        if verbose
-            println("  Warning: LU factorization failed ($err), adding diagonal regularization...")
-        end
-        A_reg = copy(A_shifted)
-        A_reg += T(1e-12) * I
-        lu(A_reg)
-    end
-
-    if verbose
-        println("  Running Krylov iteration...")
-    end
-
-    # Define the mutating linear map for shift-invert
-    shift_invert_map = _triglobal_shift_invert_map(F, B)
-
-    # Create a random initial vector
-    x0 = randn(Complex{T}, n)
-
-    # Use KrylovKit to find eigenvalues
-    # We want the largest magnitude eigenvalues of the shift-invert operator
-    vals, vecs, info = KrylovKit.eigsolve(
-        shift_invert_map,
-        x0, nev, :LM;
-        krylovdim = max(2*nev + 10, 30),
-        tol = T(1e-8),
-        maxiter = 200
-    )
-
-    if verbose
-        println("  Converged: $(info.converged) eigenvalues")
-    end
-
-    # Transform back: λ = σ + 1/μ
-    eigenvalues = Complex{T}[shift + one(T)/μ for μ in vals]
-
-    # Sort by real part (descending)
-    perm = sortperm(real.(eigenvalues), rev=true)
-    eigenvalues = eigenvalues[perm]
-    eigenvectors = hcat([vecs[i] for i in perm]...)
-
-    return eigenvalues, eigenvectors
-end
-
-
 # =============================================================================
 #  Main Solver Functions
 # =============================================================================
@@ -2059,7 +1967,7 @@ Returns:
 """
 function solve_triglobal_eigenvalue_problem(params::TriglobalParams{T};
                                             σ_target=0.0, nev=6, verbose=true,
-                                            backend::Symbol=:krylovkit) where T
+                                            backend::Symbol=:slepc) where T
     # Setup problem structure
     problem = setup_coupled_mode_problem(params)
 
@@ -2093,23 +2001,14 @@ function solve_triglobal_eigenvalue_problem(params::TriglobalParams{T};
         println("\nSolving eigenvalue problem (shift-invert, σ=$σ_target)...")
     end
 
-    if backend === :slepc
-        # Distributed triglobal path: the extension assembles the block-coupled
-        # pencil directly into distributed PETSc Mats (owned rows only) from
-        # `_assemble_block_coo`, so we never form the dense replicated A/B here.
-        # tol/maxiter match the serial Krylov path below (T(1e-8), 200).
-        eigenvalues, eigenvectors = _solve_triglobal_slepc(problem;
-            σ_target=σ_target, nev=nev, tol=T(1e-8), maxiter=200)
-    else
-        # :krylovkit path: assemble the replicated sparse pencil and solve serially.
-        if verbose
-            println("\nAssembling block-coupled matrices...")
-        end
-        A_coupled, B_coupled = assemble_block_matrices(problem, single_mode_ops, coupling_ops, verbose)
-        eigenvalues, eigenvectors = solve_block_eigenvalue_problem(
-            A_coupled, B_coupled, σ_target, nev, verbose; backend=backend
-        )
-    end
+    backend === :slepc || throw(ArgumentError(
+        "Unknown eigensolver backend $(backend); only :slepc is supported"))
+
+    # Distributed triglobal path: the SLEPc extension assembles the block-coupled
+    # pencil directly into distributed PETSc Mats (owned rows only) from
+    # `_assemble_block_coo`, so we never form the dense replicated A/B here.
+    eigenvalues, eigenvectors = _solve_triglobal_slepc(problem;
+        σ_target=σ_target, nev=nev, tol=T(1e-8), maxiter=200)
 
     if verbose
         println("\n" * "="^70)

@@ -692,7 +692,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         add_block!(A_rows, A_cols, A_vals, -visc_op, row_base, col_base)
 
         # Coriolis coupling to toroidal velocity (l±1)
-        for offset in [-1, 1]
+        for offset in (-1, 1)
             l_coupled = l + offset
             if l_coupled in op.ll_bot
                 k_coupled = findfirst(==(l_coupled), op.ll_bot)
@@ -742,7 +742,7 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # Coriolis coupling from toroidal to poloidal velocity (v → u, l±1)
         # This coupling goes in the TOROIDAL equation (v-rows), coupling to POLOIDAL variable (u-columns)
         # Physical meaning: Coriolis force in toroidal equation depends on poloidal velocity
-        for offset in [-1, 1]
+        for offset in (-1, 1)
             l_coupled = l + offset
             if l_coupled in op.ll_top
                 k_coupled = findfirst(==(l_coupled), op.ll_top)
@@ -792,19 +792,23 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     end
 
     # =========================================================================
-    # Convert to sparse CSC format
+    # Apply boundary conditions at the COO stage, then build CSC once
     # =========================================================================
+    # Tau BCs overwrite whole boundary rows. Doing that on the assembled CSC
+    # forces O(nnz) structural insertions per row (~63 MB/assembly here). Instead
+    # drop the operator entries on the boundary rows and append the BC functionals
+    # to the triplets, so the single sparse() build carries the BCs with no churn.
+    @debug "Applying boundary conditions (COO stage)..."
+    bc_rows, bcA = _compute_sparse_bc(op)
+    _filter_coo_rows!(A_rows, A_cols, A_vals, bc_rows)
+    _filter_coo_rows!(B_rows, B_cols, B_vals, bc_rows)  # B boundary rows are zeroed
+    @inbounds for (r, c, v) in bcA
+        push!(A_rows, r); push!(A_cols, c); push!(A_vals, v)
+    end
+
     @debug "Converting to CSC format..."
     A = sparse(A_rows, A_cols, A_vals, n, n)
     B = sparse(B_rows, B_cols, B_vals, n, n)
-
-    @debug "Matrix sparsity" A_nnz=nnz(A) B_nnz=nnz(B) A_pct="$(round(100*nnz(A)/n^2; digits=1))%" B_pct="$(round(100*nnz(B)/n^2; digits=1))%"
-
-    # =========================================================================
-    # Apply boundary conditions
-    # =========================================================================
-    @debug "Applying boundary conditions..."
-    apply_sparse_boundary_conditions!(A, B, op)
 
     @debug "Post-BC sparsity" A_nnz=nnz(A) B_nnz=nnz(B)
 
@@ -825,6 +829,98 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
     )
 
     return A, B, interior_dofs, info
+end
+
+"""
+    _filter_coo_rows!(rows, cols, vals, drop::Set{Int})
+
+In-place compaction of a COO triplet: keep only entries whose row is not in
+`drop`. Used to clear operator contributions to tau boundary rows before the BC
+functionals are appended and the matrix is built.
+"""
+function _filter_coo_rows!(rows::Vector{Int}, cols::Vector{Int}, vals::Vector,
+                           drop::Set{Int})
+    w = 0
+    @inbounds for i in eachindex(rows)
+        if !(rows[i] in drop)
+            w += 1
+            rows[w] = rows[i]; cols[w] = cols[i]; vals[w] = vals[i]
+        end
+    end
+    resize!(rows, w); resize!(cols, w); resize!(vals, w)
+    return nothing
+end
+
+"""
+    _compute_sparse_bc(op) -> (bc_rows::Set{Int}, bcA::Vector{Tuple{Int,Int,Complex{T}}})
+
+Tau boundary-condition specification for the sparse hydro+temperature operator,
+as data rather than matrix mutation: `bc_rows` are the rows overwritten by BCs
+(zeroed in B, replaced in A) and `bcA` are the (row, col, value) entries of the
+replacement A rows. Mirrors `apply_sparse_boundary_conditions!` exactly; the two
+share `_bc_row_values` for the dirichlet/neumann/neumann2 functionals.
+"""
+function _compute_sparse_bc(op::SparseStabilityOperator{T}) where {T}
+    params = op.params
+    N = params.N
+    n_per_mode = N + 1
+    ri = params.ricb
+    ro = one(T)
+    nb_top = length(op.ll_top)
+    nb_bot = length(op.ll_bot)
+
+    bc_rows = Set{Int}()
+    bcA = Tuple{Int,Int,Complex{T}}[]
+
+    push_row! = (row, bc_type) -> begin
+        push!(bc_rows, row)
+        rng, vals = _bc_row_values(bc_type, row, N, ri, ro, T)
+        @inbounds for (j, c) in enumerate(rng)
+            push!(bcA, (row, c, Complex{T}(vals[j])))
+        end
+    end
+    push_explicit! = (row, row_base, rowvec) -> begin
+        push!(bc_rows, row)
+        @inbounds for i in 0:N
+            push!(bcA, (row, row_base + 1 + i, Complex{T}(rowvec[i + 1])))
+        end
+    end
+
+    # Poloidal velocity BCs
+    for (k, l) in enumerate(op.ll_top)
+        row_base = (k - 1) * n_per_mode
+        push_row!(row_base + 1, :dirichlet)
+        push_row!(row_base + 2, params.bco == 1 ? :neumann : :neumann2)
+        push_row!(row_base + n_per_mode, :dirichlet)
+        push_row!(row_base + n_per_mode - 1, params.bci == 1 ? :neumann : :neumann2)
+    end
+
+    # Toroidal velocity BCs (stress-free uses explicit row functionals)
+    scale = _radial_scale(ri, ro)
+    outer_vals = _chebyshev_boundary_values(N, :outer, T)
+    inner_vals = _chebyshev_boundary_values(N, :inner, T)
+    outer_deriv = _chebyshev_boundary_derivative(N, :outer, T)
+    inner_deriv = _chebyshev_boundary_derivative(N, :inner, T)
+    r_outer = _boundary_radius(ri, ro, :outer)
+    r_inner = _boundary_radius(ri, ro, :inner)
+    outer_row = @. -r_outer * scale * outer_deriv + outer_vals
+    inner_row = @. -r_inner * scale * inner_deriv + inner_vals
+    for (k, l) in enumerate(op.ll_bot)
+        row_base = (nb_top + k - 1) * n_per_mode
+        params.bco == 1 ? push_row!(row_base + 1, :dirichlet) :
+                          push_explicit!(row_base + 1, row_base, outer_row)
+        params.bci == 1 ? push_row!(row_base + n_per_mode, :dirichlet) :
+                          push_explicit!(row_base + n_per_mode, row_base, inner_row)
+    end
+
+    # Temperature BCs
+    for (k, l) in enumerate(op.ll_top)
+        row_base = (nb_top + nb_bot + k - 1) * n_per_mode
+        push_row!(row_base + 1, params.bco_thermal == 0 ? :dirichlet : :neumann)
+        push_row!(row_base + n_per_mode, params.bci_thermal == 0 ? :dirichlet : :neumann)
+    end
+
+    return bc_rows, bcA
 end
 
 """
@@ -913,8 +1009,8 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + 1
-            A[row, :] .= zero(Complex{T})
-            B[row, :] .= zero(Complex{T})
+            _zero_row!(A, row)
+            _zero_row!(B, row)
             block_start = row_base + 1
             A[row, block_start:(block_start + N)] = Complex{T}.(outer_row)
         end
@@ -927,8 +1023,8 @@ function apply_sparse_boundary_conditions!(A::SparseMatrixCSC,
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + n_per_mode
-            A[row, :] .= zero(Complex{T})
-            B[row, :] .= zero(Complex{T})
+            _zero_row!(A, row)
+            _zero_row!(B, row)
             block_start = row_base + 1
             A[row, block_start:(block_start + N)] = Complex{T}.(inner_row)
         end

@@ -313,11 +313,11 @@ function operator_lorentz_poloidal_diagonal(op::MHDStabilityOperator{T},
     bo(p, h, d) = background_operator(op, p + shift, h, d)
 
     terms = [
-        (-1.0, bo(1, 0, 0)),
+        (-1, bo(1, 0, 0)),
         (-(l^2 + l - 1), bo(2, 1, 0)),
-        (1.0, bo(2, 0, 1)),
-        (1.0, bo(3, 1, 1)),
-        (1.0, bo(3, 0, 2)),
+        (1, bo(2, 0, 1)),
+        (1, bo(3, 1, 1)),
+        (1, bo(3, 0, 2)),
     ]
 
     combo = combine_terms(terms)
@@ -345,7 +345,7 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
             (-(3 - 3l - 2l^2), bo(1, 0, 0)),
             (-(l - 3), bo(2, 0, 1)),
             ((3 - 2l - l^2), bo(2, 1, 0)),
-            (3.0, bo(3, 0, 2)),
+            (3, bo(3, 0, 2)),
             (-(l - 3), bo(3, 1, 1)),
             (-l, bo(3, 2, 0)),
         ]
@@ -359,7 +359,7 @@ function operator_lorentz_poloidal_offdiag(op::MHDStabilityOperator{T},
             ((-4 + l + 2l^2), bo(1, 0, 0)),
             ((4 + l), bo(2, 0, 1)),
             ((4 - l^2), bo(2, 1, 0)),
-            (3.0, bo(3, 0, 2)),
+            (3, bo(3, 0, 2)),
             ((1 + l), bo(3, 2, 0)),
             ((4 + l), bo(3, 1, 1)),
         ]
@@ -398,8 +398,8 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             ((6 - l), bo(2, 0, 2)),
             (2 * (2 - l), bo(2, 1, 1)),
             ((-2 + l), bo(2, 2, 0)),
-            (-1.0, bo(3, 2, 1)),
-            (3.0, bo(3, 0, 3)),
+            (-1, bo(3, 2, 1)),
+            (3, bo(3, 0, 3)),
             ((3 - l), bo(3, 1, 2)),
             ((-1 + l), bo(3, 3, 0)),
         ]
@@ -414,7 +414,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (L * (l - 4), bo(1, 1, 0)),
             (l, bo(2, 2, 0)),
             (l, bo(3, 3, 0)),
-            (2.0, bo(3, 0, 3)),
+            (2, bo(3, 0, 3)),
             (-2 * (l^2 + 2), bo(1, 0, 1)),
             (-2 * (l - 2), bo(2, 1, 1)),
             ((-l + 4), bo(2, 0, 2)),
@@ -453,7 +453,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (-L * (l + 5), bo(1, 1, 0)),
             (-(l + 1), bo(2, 2, 0)),
             (-(l + 1), bo(3, 3, 0)),
-            (2.0, bo(3, 0, 3)),
+            (2, bo(3, 0, 3)),
         ]
         combo = combine_terms(terms)
         return _scale_sparse(T, coef, combo)
@@ -470,8 +470,8 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
             (2 * (3 + l), bo(2, 1, 1)),
             (-(3 + l), bo(2, 2, 0)),
             (7 + l, bo(2, 0, 2)),
-            (-1.0, bo(3, 2, 1)),
-            (3.0, bo(3, 0, 3)),
+            (-1, bo(3, 2, 1)),
+            (3, bo(3, 0, 3)),
             (4 + l, bo(3, 1, 2)),
             (-(2 + l), bo(3, 3, 0)),
         ]
@@ -517,9 +517,9 @@ function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
         abs(denom) < eps() && return zero_block
         coef = (Le^2) * (3im * m * sqrt(max(l^2 - m^2, 0))) / denom
         combo = combine_terms([
-            (12.0, bo(0, 0, 1)),
+            (12, bo(0, 0, 1)),
             (-2 * (l - 1) * l, bo(0, 1, 0)),
-            (6.0, bo(1, 0, 2)),
+            (6, bo(1, 0, 2)),
             (-(l - 1) * l, bo(1, 2, 0)),
         ])
         return _scale_sparse(T, coef, combo)
@@ -528,9 +528,9 @@ function operator_lorentz_toroidal_from_bpol(op::MHDStabilityOperator{T},
         abs(denom) < eps() && return zero_block
         coef = (Le^2) * (3im * m * sqrt(max((l + 1)^2 - m^2, 0))) / denom
         combo = combine_terms([
-            (12.0, bo(0, 0, 1)),
+            (12, bo(0, 0, 1)),
             (-2 * (l + 1) * (l + 2), bo(0, 1, 0)),
-            (6.0, bo(1, 0, 2)),
+            (6, bo(1, 0, 2)),
             (-(l + 1) * (l + 2), bo(1, 2, 0)),
         ])
         return _scale_sparse(T, coef, combo)
@@ -556,7 +556,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
         coef = (Le^2) * (3 * (l - 2) * (l + 1) * sqrt_factor) / denom
         combo = combine_terms([
             ((-4 + l), bo(0, 0, 0)),
-            (-3.0, bo(1, 0, 1)),
+            (-3, bo(1, 0, 1)),
             ((-1 + l), bo(1, 1, 0)),
         ])
         return _scale_sparse(T, coef, combo)
@@ -567,7 +567,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
         combo = combine_terms([
             ((l - 2), bo(0, 0, 0)),
             (l, bo(1, 1, 0)),
-            (-2.0, bo(1, 0, 1)),
+            (-2, bo(1, 0, 1)),
         ])
         return _scale_sparse(T, coef, combo)
     elseif offset == 0
@@ -587,7 +587,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
         combo = combine_terms([
             ((l + 3), bo(0, 0, 0)),
             ((l + 1), bo(1, 1, 0)),
-            (2.0, bo(1, 0, 1)),
+            (2, bo(1, 0, 1)),
         ])
         return _scale_sparse(T, coef, combo)
     elseif offset == 2
@@ -598,7 +598,7 @@ function operator_lorentz_toroidal_from_btor(op::MHDStabilityOperator{T},
         coef = (Le^2) * (3 * l * (l + 3) * sqrt1 * sqrt2) / denom
         combo = combine_terms([
             (-(5 + l), bo(0, 0, 0)),
-            (-3.0, bo(1, 0, 1)),
+            (-3, bo(1, 0, 1)),
             (-(2 + l), bo(1, 1, 0)),
         ])
         return _scale_sparse(T, coef, combo)
@@ -637,7 +637,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
         C = 3 * (l - 2) * (l + 1) * sqrt_factor / denom
         terms = [
             (l - 4, bo(0, 0, 0)),
-            (-3.0, bo(1, 0, 1)),
+            (-3, bo(1, 0, 1)),
             (l - 1, bo(1, 1, 0))
         ]
         return _scale_sparse(T, C, combine_terms(terms))
@@ -649,7 +649,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
         terms = [
             ((l - 2), bo(0, 0, 0)),
             (l, bo(1, 1, 0)),
-            (-2.0, bo(1, 0, 1))
+            (-2, bo(1, 0, 1))
         ]
         return _scale_sparse(T, C, combine_terms(terms))
 
@@ -671,7 +671,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
         terms = [
             (-(l + 3), bo(0, 0, 0)),
             (-(l + 1), bo(1, 1, 0)),
-            (-2.0, bo(1, 0, 1))
+            (-2, bo(1, 0, 1))
         ]
         return _scale_sparse(T, C, combine_terms(terms))
 
@@ -683,7 +683,7 @@ function operator_induction_poloidal_from_u(op::MHDStabilityOperator{T},
         C = 3 * l * (l + 3) * sqrt1 * sqrt2 / denom
         terms = [
             (-(l + 5), bo(0, 0, 0)),
-            (-3.0, bo(1, 0, 1)),
+            (-3, bo(1, 0, 1)),
             (-(l + 2), bo(1, 1, 0))
         ]
         return _scale_sparse(T, C, combine_terms(terms))
@@ -801,7 +801,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         coef = (3 * (l - 2) * (l + 1) * sqrt_factor) / denom
         combo = combine_terms([
             (l, bo(0, 0, 0)),
-            (-3.0, bo(1, 0, 1)),
+            (-3, bo(1, 0, 1)),
             ((l - 3), bo(1, 1, 0)),
         ])
         return _scale_sparse(T, coef, combo)
@@ -812,7 +812,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         combo = combine_terms([
             (l, bo(0, 0, 0)),
             ((l - 2), bo(1, 1, 0)),
-            (-2.0, bo(1, 0, 1)),
+            (-2, bo(1, 0, 1)),
         ])
         return _scale_sparse(T, coef, combo)
     elseif offset == 0
@@ -832,7 +832,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         combo = combine_terms([
             (-(l + 1), bo(0, 0, 0)),
             (-(l + 3), bo(1, 1, 0)),
-            (-2.0, bo(1, 0, 1)),
+            (-2, bo(1, 0, 1)),
         ])
         return _scale_sparse(T, coef, combo)
     elseif offset == 2
@@ -843,7 +843,7 @@ function operator_induction_toroidal_from_v(op::MHDStabilityOperator{T},
         coef = (3 * l * (l + 3) * sqrt1 * sqrt2) / denom
         combo = combine_terms([
             (-(1 + l), bo(0, 0, 0)),
-            (-3.0, bo(1, 0, 1)),
+            (-3, bo(1, 0, 1)),
             (-(4 + l), bo(1, 1, 0)),
         ])
         return _scale_sparse(T, coef, combo)

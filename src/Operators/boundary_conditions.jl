@@ -606,16 +606,16 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Following Kore: kore-main/bin/assemble.py:1494-1509
 
                 # Zero out row
-                A[row_cmb, :] .= zero(AT)
-                B[row_cmb, :] .= zero(AT)
+                _zero_row!(A, row_cmb)
+                _zero_row!(B, row_cmb)
 
                 # Build constraint: (l+1)·f + ro·f'
                 A[row_cmb, block_range] = AT.((l + 1) * outer_vals + r_outer * outer_deriv)
 
             else
                 # Perfectly conducting: f = 0 (no penetration)
-                A[row_cmb, :] .= zero(AT)
-                B[row_cmb, :] .= zero(AT)
+                _zero_row!(A, row_cmb)
+                _zero_row!(B, row_cmb)
                 A[row_cmb, block_range] = AT.(outer_vals)
             end
 
@@ -629,8 +629,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Following Kore: kore-main/bin/assemble.py:1548-1572
 
                 # Zero out row
-                A[row_icb, :] .= zero(AT)
-                B[row_icb, :] .= zero(AT)
+                _zero_row!(A, row_icb)
+                _zero_row!(B, row_icb)
 
                 # Build constraint: l·f - ri·f'
                 A[row_icb, block_range] = AT.(l * inner_vals - r_inner * inner_deriv)
@@ -645,15 +645,15 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Steady limit of f - k * (j_l' / j_l) * f' = 0:
                 # k * (j_l' / j_l) -> l / ri, so ri * f - l * f' = 0.
                 if iszero(freq)
-                    A[row_icb, :] .= zero(AT)
-                    B[row_icb, :] .= zero(AT)
+                    _zero_row!(A, row_icb)
+                    _zero_row!(B, row_icb)
                     A[row_icb, block_range] = AT.(r_inner .* inner_vals .- l .* inner_deriv)
                 else
                     k_wave = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, k_wave * ri)
 
-                    A[row_icb, :] .= zero(AT)
-                    B[row_icb, :] .= zero(AT)
+                    _zero_row!(A, row_icb)
+                    _zero_row!(B, row_icb)
                     A[row_icb, block_range] = AT.(inner_vals) .-
                                              AT(k_wave * dlog) .* AT.(inner_deriv)
                 end
@@ -667,8 +667,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 L = l * (l + 1)
 
                 # Row 1: f(ri) = 0
-                A[row_icb, :] .= zero(AT)
-                B[row_icb, :] .= zero(AT)
+                _zero_row!(A, row_icb)
+                _zero_row!(B, row_icb)
                 A[row_icb, block_range] = AT.(inner_vals)
 
                 # Row 2: Em·(-f'' - (2/ri)·f' + (L/ri²)·f) = 0
@@ -677,8 +677,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 row_icb2 = row_icb - 1
 
                 # Zero out row
-                A[row_icb2, :] .= zero(AT)
-                B[row_icb2, :] .= zero(AT)
+                _zero_row!(A, row_icb2)
+                _zero_row!(B, row_icb2)
                 value_term = (L / ri^2) .* inner_vals
                 deriv1_term = -(RT(2) / ri) .* inner_deriv
                 deriv2_term = -inner_second
@@ -686,8 +686,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
 
             else
                 # Simple conducting: f = 0 (no penetration)
-                A[row_icb, :] .= zero(AT)
-                B[row_icb, :] .= zero(AT)
+                _zero_row!(A, row_icb)
+                _zero_row!(B, row_icb)
                 A[row_icb, block_range] = AT.(inner_vals)
             end
         end
@@ -703,8 +703,8 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
             # ----------------------------------------------------------------
             # Following Kore: kore-main/bin/assemble.py:1511-1522
             row_cmb = row_base + 1
-            A[row_cmb, :] .= zero(AT)
-            B[row_cmb, :] .= zero(AT)
+            _zero_row!(A, row_cmb)
+            _zero_row!(B, row_cmb)
             A[row_cmb, block_range] = AT.(outer_vals)
 
             # ----------------------------------------------------------------
@@ -714,15 +714,15 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
 
             if params.bci_magnetic == 0
                 # Insulating: g = 0
-                A[row_icb, :] .= zero(AT)
-                B[row_icb, :] .= zero(AT)
+                _zero_row!(A, row_icb)
+                _zero_row!(B, row_icb)
                 A[row_icb, block_range] = AT.(inner_vals)
 
             elseif params.bci_magnetic == 1
                 # No toroidal field is supported outside an insulating or
                 # finitely conducting boundary in this formulation.
-                A[row_icb, :] .= zero(AT)
-                B[row_icb, :] .= zero(AT)
+                _zero_row!(A, row_icb)
+                _zero_row!(B, row_icb)
                 A[row_icb, block_range] = AT.(inner_vals)
 
             elseif params.bci_magnetic == 2
@@ -730,16 +730,16 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                 # Following Kore: kore-main/bin/assemble.py:1631-1641
 
                 # Zero out row
-                A[row_icb, :] .= zero(AT)
-                B[row_icb, :] .= zero(AT)
+                _zero_row!(A, row_icb)
+                _zero_row!(B, row_icb)
                 value_term = -(RT(1) / ri) .* inner_vals
                 deriv1_term = -inner_deriv
                 A[row_icb, block_range] = AT.(params.Em * (value_term + deriv1_term))
 
             else
                 # Default: g = 0
-                A[row_icb, :] .= zero(AT)
-                B[row_icb, :] .= zero(AT)
+                _zero_row!(A, row_icb)
+                _zero_row!(B, row_icb)
                 A[row_icb, block_range] = AT.(inner_vals)
             end
         end

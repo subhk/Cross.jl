@@ -68,9 +68,15 @@ function assemble_mhd_galerkin(op::MHDStabilityOperator{T}) where {T}
     A = zeros(Complex{T}, nred, nred)
     B = zeros(Complex{T}, nred, nred)
 
-    bt(pw, d, q) = banded_radial_term(T, pw, d, q, N, ri, ro)
+    # `banded_radial_term` and the C^0→C^(q) conversion depend only on their
+    # integer args (not ℓ), yet are hit once per ℓ across every section — memoize
+    # so each distinct term/conversion is built exactly once per assembly.
+    _bt_cache = Dict{NTuple{3,Int},SparseMatrixCSC{T,Int}}()
+    bt(pw, d, q) = get!(() -> banded_radial_term(T, pw, d, q, N, ri, ro), _bt_cache, (pw, d, q))
+    _cu_cache = Dict{Int,SparseMatrixCSC{T,Int}}()
+    convup(q) = get!(() -> _convert_up(T, 0, q, N), _cu_cache, q)
     gb(band, fi, fj, ℓj) = galerkin_block(band, Rmap[(fj, ℓj)], Mof[fi])
-    gbC0(blk0, fi, fj, ℓj) = galerkin_block(_convert_up(T, 0, qof[fi], N) * blk0, Rmap[(fj, ℓj)], Mof[fi])
+    gbC0(blk0, fi, fj, ℓj) = galerkin_block(convup(qof[fi]) * blk0, Rmap[(fj, ℓj)], Mof[fi])
 
     Ra_int = Ra / gap^3
     beyonce = -Ra_int * E^2 / Pr

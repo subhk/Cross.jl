@@ -98,29 +98,72 @@ function _sh_dYφ_over_sin(g::SHGrid{T}, ℓ::Int, m::Int, j::Int, k::Int) where
 end
 
 """Synthesize a scalar field on the grid from coeffs `Dict{(ℓ,m),value}` using
-basis function `Yf` (default `_sh_Y`; pass `_sh_dYθ` etc. for derivative fields)."""
+basis function `Yf` (default `_sh_Y`; pass `_sh_dYθ` etc. for derivative fields).
+
+For the three built-in basis functions the per-mode normalization, θ-table row and
+azimuthal factor are hoisted out of the inner `(j,k)` loop (the `Dict` lookups
+`g.N[am]`/`g.P[am]` and the `cos/sin` azimuthal factors are otherwise recomputed
+for every grid point). The arithmetic order is preserved, so the result is
+bit-identical; any other `Yf` falls back to the per-element path."""
 function sh_synthesize(coeffs::AbstractDict{Tuple{Int,Int},T}, g::SHGrid{T};
                        Yf=_sh_Y) where {T}
-    f = zeros(T, _sh_Nθ(g), _sh_Nφ(g))
+    Nθ = _sh_Nθ(g); Nφ = _sh_Nφ(g)
+    f = zeros(T, Nθ, Nφ)
+    kind = Yf === _sh_Y ? 1 : Yf === _sh_dYθ ? 2 : Yf === _sh_dYφ_over_sin ? 3 : 0
+    if kind == 0   # generic fallback, unchanged semantics
+        for ((ℓ, m), a) in coeffs
+            (abs(m) > g.mmax || ℓ > g.lmax) && continue
+            @inbounds for j in 1:Nθ, k in 1:Nφ
+                f[j, k] += a * Yf(g, ℓ, m, j, k)
+            end
+        end
+        return f
+    end
+    φf = Vector{T}(undef, Nφ)
+    θf = Vector{T}(undef, Nθ)
     for ((ℓ, m), a) in coeffs
-        (abs(m) > g.mmax || ℓ > g.lmax) && continue
-        @inbounds for j in 1:_sh_Nθ(g), k in 1:_sh_Nφ(g)
-            f[j, k] += a * Yf(g, ℓ, m, j, k)
+        am = abs(m)
+        (am > g.mmax || ℓ > g.lmax || ℓ < am) && continue
+        kind == 3 && am == 0 && continue          # (1/sinθ)∂φ Ȳ_ℓ0 ≡ 0
+        Nam = g.N[am]; Pam = g.P[am]
+        Nlm = Nam[ℓ - am + 1]; row = ℓ - am + 1
+        if kind == 3
+            @inbounds for k in 1:Nφ; φf[k] = _sh_dφfac(g, m, k); end
+            @inbounds for j in 1:Nθ; θf[j] = Pam[row, j] / _sh_sinθ(g, j); end
+        elseif kind == 2
+            @inbounds for k in 1:Nφ; φf[k] = _sh_φfac(g, m, k); end
+            @inbounds for j in 1:Nθ; θf[j] = _sh_dPdθ(g, ℓ, am, j); end
+        else  # kind == 1
+            @inbounds for k in 1:Nφ; φf[k] = _sh_φfac(g, m, k); end
+            @inbounds for j in 1:Nθ; θf[j] = Pam[row, j]; end
+        end
+        @inbounds for j in 1:Nθ, k in 1:Nφ
+            f[j, k] += a * (Nlm * θf[j] * φf[k])
         end
     end
     f
 end
 
-"""Analyze (project) a scalar grid field onto real-orthonormal SH coefficients."""
+"""Analyze (project) a scalar grid field onto real-orthonormal SH coefficients.
+Per-mode normalization/table/azimuthal factor hoisted out of the inner loop
+(bit-identical to the per-element `_sh_Y` form)."""
 function sh_analyze(f::AbstractMatrix{T}, g::SHGrid{T}) where {T}
+    Nθ = _sh_Nθ(g); Nφ = _sh_Nφ(g)
     coeffs = Dict{Tuple{Int,Int},T}()
-    dφ = T(2) * T(π) / _sh_Nφ(g)
-    for m in -g.mmax:g.mmax, ℓ in abs(m):g.lmax
-        acc = zero(T)
-        @inbounds for j in 1:_sh_Nθ(g), k in 1:_sh_Nφ(g)
-            acc += f[j, k] * _sh_Y(g, ℓ, m, j, k) * g.w[j] * dφ
+    dφ = T(2) * T(π) / Nφ
+    φf = Vector{T}(undef, Nφ)
+    for m in -g.mmax:g.mmax
+        am = abs(m)
+        Nam = g.N[am]; Pam = g.P[am]
+        @inbounds for k in 1:Nφ; φf[k] = _sh_φfac(g, m, k); end
+        for ℓ in am:g.lmax
+            Nlm = Nam[ℓ - am + 1]; row = ℓ - am + 1
+            acc = zero(T)
+            @inbounds for j in 1:Nθ, k in 1:Nφ
+                acc += f[j, k] * (Nlm * Pam[row, j] * φf[k]) * g.w[j] * dφ
+            end
+            coeffs[(ℓ, m)] = acc
         end
-        coeffs[(ℓ, m)] = acc
     end
     coeffs
 end
@@ -134,16 +177,31 @@ components (Vθ, Vφ). Extracts the spheroidal part s_ℓm = (1/√(ℓ(ℓ+1)))
 """
 function sh_horizontal_divergence(Vθ::AbstractMatrix{T}, Vφ::AbstractMatrix{T},
                                   g::SHGrid{T}) where {T}
+    Nθ = _sh_Nθ(g); Nφ = _sh_Nφ(g)
     div = Dict{Tuple{Int,Int},T}()
-    dφ = T(2) * T(π) / _sh_Nφ(g)
-    for m in -g.mmax:g.mmax, ℓ in max(1, abs(m)):g.lmax
-        acc = zero(T)
-        @inbounds for j in 1:_sh_Nθ(g), k in 1:_sh_Nφ(g)
-            acc += (Vθ[j, k] * _sh_dYθ(g, ℓ, m, j, k) +
-                    Vφ[j, k] * _sh_dYφ_over_sin(g, ℓ, m, j, k)) * g.w[j] * dφ
+    dφ = T(2) * T(π) / Nφ
+    φf = Vector{T}(undef, Nφ); dφf = Vector{T}(undef, Nφ)
+    dPθ = Vector{T}(undef, Nθ); Pos = Vector{T}(undef, Nθ)
+    for m in -g.mmax:g.mmax
+        am = abs(m)
+        Nam = g.N[am]; Pam = g.P[am]
+        @inbounds for k in 1:Nφ
+            φf[k] = _sh_φfac(g, m, k); dφf[k] = _sh_dφfac(g, m, k)
         end
-        s_ℓm = acc / sqrt(T(ℓ * (ℓ + 1)))          # spheroidal coefficient
-        div[(ℓ, m)] = -sqrt(T(ℓ * (ℓ + 1))) * s_ℓm  # = -ℓ(ℓ+1)/√(ℓ(ℓ+1)) · s
+        for ℓ in max(1, am):g.lmax
+            Nlm = Nam[ℓ - am + 1]; row = ℓ - am + 1
+            @inbounds for j in 1:Nθ
+                dPθ[j] = _sh_dPdθ(g, ℓ, am, j)
+                Pos[j] = am == 0 ? zero(T) : Pam[row, j] / _sh_sinθ(g, j)
+            end
+            acc = zero(T)
+            @inbounds for j in 1:Nθ, k in 1:Nφ
+                acc += (Vθ[j, k] * (Nlm * dPθ[j] * φf[k]) +
+                        Vφ[j, k] * (Nlm * Pos[j] * dφf[k])) * g.w[j] * dφ
+            end
+            s_ℓm = acc / sqrt(T(ℓ * (ℓ + 1)))          # spheroidal coefficient
+            div[(ℓ, m)] = -sqrt(T(ℓ * (ℓ + 1))) * s_ℓm  # = -ℓ(ℓ+1)/√(ℓ(ℓ+1)) · s
+        end
     end
     div
 end

@@ -500,25 +500,33 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
 
     else
         # Chebyshev case (λ = 0): Toeplitz + Hankel combined in one pass.
+        # Both parts are banded — the Toeplitz band is |i-j| ≤ bw and the Hankel
+        # corner (i+j ≤ bw) lies inside that same band — so build the sparse
+        # triplets directly instead of materializing a dense N×N temporary.
         # Following Kore utils.py lines 1036-1052
         a2 = copy(a0)
         a2[1] *= T(2)  # Double the first coefficient
 
         half = T(0.5)
-        out = zeros(T, N, N)
-        @inbounds for i in 0:N-1
-            for j in 0:N-1
-                t_idx = abs(i - j) + 1
-                val = t_idx <= N ? half * a2[t_idx] : zero(T)
+        rows = Int[]; cols = Int[]; vals = T[]
+        sizehint!(rows, N * (2 * bw + 1)); sizehint!(cols, N * (2 * bw + 1)); sizehint!(vals, N * (2 * bw + 1))
+        @inbounds for j in 0:N-1
+            for i in max(0, j - bw):min(N - 1, j + bw)
+                t_idx = abs(i - j) + 1          # ≤ bw+1 ≤ N within the band
+                val = half * a2[t_idx]
                 if i > 0  # H[1,:] = 0 per Kore line 1040
                     h_idx = i + j + 1
                     h_idx <= N && (val += half * a2[h_idx])
                 end
-                out[i+1, j+1] = val
+                if val != zero(T)
+                    push!(rows, i + 1)
+                    push!(cols, j + 1)
+                    push!(vals, val)
+                end
             end
         end
 
-        return sparse(out)
+        return sparse(rows, cols, vals, N, N)
     end
 end
 
@@ -803,55 +811,80 @@ function sparse_radial_operator(power::Int, deriv_order::Int, N::Int,
 end
 
 """
-    apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
-                               bc_rows::Vector{Int}, bc_type::Symbol)
+    _zero_row!(A::SparseMatrixCSC, r::Int)
 
-Apply boundary conditions by replacing rows in the matrices A and B.
+Zero every stored entry in row `r` *in place*, without touching the sparsity
+structure. `A[r, :] .= 0` on a CSC matrix triggers a full structural rebuild and
+allocates O(nnz) memory per call; this walks the existing nonzeros once and sets
+them to zero (entries are later compacted with `dropzeros!`). Used by the tau
+boundary-condition appliers, which overwrite whole boundary rows.
+"""
+function _zero_row!(A::SparseMatrixCSC, r::Int)
+    rows = rowvals(A)
+    vals = nonzeros(A)
+    z = zero(eltype(A))
+    @inbounds for col in 1:size(A, 2)
+        for k in nzrange(A, col)
+            if rows[k] == r
+                vals[k] = z
+                break
+            end
+        end
+    end
+    return nothing
+end
+
+"""
+    _bc_row_values(bc_type, row, N, ri, ro, ::Type{RT}) -> (block_range, row_vals)
+
+Tau boundary-condition functional for a single row: the column range it occupies
+(its own (N+1) diagonal block) and the dense coefficient vector written there.
+Single source of truth shared by the in-place applier `apply_boundary_conditions!`
+and the COO-stage collectors, so the two never drift.
 
 bc_type can be:
   - :dirichlet → u = 0
   - :neumann → du/dr = 0
   - :neumann2 → r · d²u/dr² = 0 (for stress-free)
 """
+function _bc_row_values(bc_type::Symbol, row::Int, N::Int, ri::Real, ro::Real,
+                        ::Type{RT}) where {RT}
+    scale = _radial_scale(ri, ro)
+    local_idx = (row - 1) % (N + 1) + 1
+    block_start = (row - local_idx) + 1
+    block_range = block_start:(block_start + N)
+    boundary = local_idx <= 2 ? :outer : :inner
+
+    if bc_type == :dirichlet
+        row_vals = _chebyshev_boundary_values(N, boundary, RT)
+    elseif bc_type == :neumann
+        row_vals = scale * _chebyshev_boundary_derivative(N, boundary, RT)
+    elseif bc_type == :neumann2
+        r_boundary = _boundary_radius(ri, ro, boundary)
+        row_vals = r_boundary * scale^2 * _chebyshev_boundary_second_derivative(N, boundary, RT)
+    else
+        throw(ArgumentError("Unsupported boundary condition type: $(bc_type)"))
+    end
+    return block_range, row_vals
+end
+
+"""
+    apply_boundary_conditions!(A::SparseMatrixCSC, B::SparseMatrixCSC,
+                               bc_rows::Vector{Int}, bc_type::Symbol)
+
+Apply boundary conditions by replacing rows in the matrices A and B (tau method).
+See `_bc_row_values` for the supported `bc_type`s.
+"""
 function apply_boundary_conditions!(A::SparseMatrixCSC{T}, B::SparseMatrixCSC{T},
                                    bc_rows::Vector{Int}, bc_type::Symbol,
                                    N::Int, ri::Real, ro::Real) where {T}
-    # Tau method: replace rows corresponding to boundary conditions
-    scale = _radial_scale(ri, ro)
     RT = _real_scalar_type(T)
-
     for row in bc_rows
-        # Zero out the row (using element type of matrix for type consistency)
-        A[row, :] .= zero(T)
-        B[row, :] .= zero(T)
-
-        # Determine local index within the (N+1) block
-        local_idx = (row - 1) % (N + 1) + 1
-        block_start = (row - local_idx) + 1
-        block_range = block_start:(block_start + N)
-        boundary = local_idx <= 2 ? :outer : :inner
-
-        if bc_type == :dirichlet
-            # u(r_boundary) = 0
-            # Set row to evaluation at boundary point
-            row_vals = _chebyshev_boundary_values(N, boundary, RT)
-            A[row, block_range] = row_vals
-
-        elseif bc_type == :neumann
-            # du/dr(r_boundary) = 0
-            row_vals = scale * _chebyshev_boundary_derivative(N, boundary, RT)
-            A[row, block_range] = row_vals
-
-        elseif bc_type == :neumann2
-            # r · d²u/dr²(r_boundary) = 0
-            r_boundary = _boundary_radius(ri, ro, boundary)
-            row_vals = r_boundary * scale^2 * _chebyshev_boundary_second_derivative(N, boundary, RT)
-            A[row, block_range] = row_vals
-
-        else
-            throw(ArgumentError("Unsupported boundary condition type: $(bc_type)"))
-        end
+        # Clear the row in place, then write the BC functional.
+        _zero_row!(A, row)
+        _zero_row!(B, row)
+        block_range, row_vals = _bc_row_values(bc_type, row, N, ri, ro, RT)
+        A[row, block_range] = row_vals
     end
-
     return nothing
 end

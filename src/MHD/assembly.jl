@@ -357,7 +357,7 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
             end
 
             # Off-diagonal: toroidal B at l±1
-            for offset in [-1, 1]
+            for offset in (-1, 1)
                 l_coupled = l + offset
                 if l_coupled in op.ll_g
                     k_coupled = findfirst(==(l_coupled), op.ll_g)
@@ -370,7 +370,7 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
         end
 
         # Coriolis off-diagonal: u ↔ v coupling
-        for offset in [-1, 1]
+        for offset in (-1, 1)
             l_coupled = l + offset
             if l_coupled in op.ll_v
                 k_coupled = findfirst(==(l_coupled), op.ll_v)
@@ -437,7 +437,7 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
         end
 
         # Coriolis reverse coupling: v → u at l±1
-        for offset in [-1, 1]
+        for offset in (-1, 1)
             l_coupled = l + offset
             if l_coupled in op.ll_u
                 k_coupled = findfirst(==(l_coupled), op.ll_u)
@@ -548,7 +548,7 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
                 end
 
                 # From poloidal velocity u (diagonal and off-diagonal)
-                for offset in [-1, 0, 1]
+                for offset in (-1, 0, 1)
                     l_coupled = l + offset
                     if l_coupled in op.ll_u
                         k_coupled = findfirst(==(l_coupled), op.ll_u)
@@ -614,33 +614,25 @@ function assemble_mhd_matrices(op::MHDStabilityOperator{T}) where {T}
 
     c = _assemble_mhd_coo(op)
     n = c.n
+
     # =========================================================================
-    # Convert to sparse CSC format
+    # Apply boundary conditions at the COO stage, then build CSC once
     # =========================================================================
+    # Tau BCs overwrite whole boundary rows across u/v/f/g/h. Applying them on the
+    # assembled CSC forces O(nnz) structural insertions per row; instead drop the
+    # operator entries on the boundary rows and append the BC functionals to the
+    # triplets, so the single sparse() build carries the BCs with no churn.
+    @debug "Applying boundary conditions (COO stage)..."
+    bc_rows, bcA = _compute_mhd_bc(op)
+    _filter_coo_rows!(c.A_rows, c.A_cols, c.A_vals, bc_rows)
+    _filter_coo_rows!(c.B_rows, c.B_cols, c.B_vals, bc_rows)  # B boundary rows are zeroed
+    @inbounds for (r, cc, v) in bcA
+        push!(c.A_rows, r); push!(c.A_cols, cc); push!(c.A_vals, v)
+    end
+
     @debug "Converting to CSC format..."
     A = sparse(c.A_rows, c.A_cols, c.A_vals, n, n)
     B = sparse(c.B_rows, c.B_cols, c.B_vals, n, n)
-
-    @debug "Matrix sparsity" A_nnz=nnz(A) B_nnz=nnz(B) A_pct="$(round(100*nnz(A)/n^2; digits=1))%" B_pct="$(round(100*nnz(B)/n^2; digits=1))%"
-
-    # =========================================================================
-    # Apply boundary conditions
-    # =========================================================================
-    @debug "Applying boundary conditions..."
-
-    # Velocity BCs (same as hydrodynamic)
-    apply_velocity_boundary_conditions!(A, B, op)
-
-    # Magnetic field BCs
-    if nb_f > 0
-        apply_magnetic_boundary_conditions!(A, B, op, :f)
-    end
-    if nb_g > 0
-        apply_magnetic_boundary_conditions!(A, B, op, :g)
-    end
-
-    # Temperature BCs (same as hydrodynamic)
-    apply_temperature_boundary_conditions!(A, B, op)
 
     @debug "Post-BC sparsity" A_nnz=nnz(A) B_nnz=nnz(B)
 
@@ -744,8 +736,8 @@ function apply_velocity_boundary_conditions!(A, B, op::MHDStabilityOperator{T}) 
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + 1
-            A[row, :] .= zero(Complex{T})
-            B[row, :] .= zero(Complex{T})
+            _zero_row!(A, row)
+            _zero_row!(B, row)
             block_start = row_base + 1
             A[row, block_start:(block_start + N)] = Complex{T}.(outer_row)
         end
@@ -758,8 +750,8 @@ function apply_velocity_boundary_conditions!(A, B, op::MHDStabilityOperator{T}) 
         else
             # Stress-free: -r·∂v/∂r + v = 0
             row = row_base + n_per_mode
-            A[row, :] .= zero(Complex{T})
-            B[row, :] .= zero(Complex{T})
+            _zero_row!(A, row)
+            _zero_row!(B, row)
             block_start = row_base + 1
             A[row, block_start:(block_start + N)] = Complex{T}.(inner_row)
         end
@@ -807,4 +799,140 @@ function apply_temperature_boundary_conditions!(A, B, op)
                                        params.ricb, ro)
         end
     end
+end
+
+"""
+    _compute_mhd_bc(op) -> (bc_rows::Set{Int}, bcA::Vector{Tuple{Int,Int,Complex{T}}})
+
+Tau boundary-condition specification for the MHD operator as data: `bc_rows` are
+overwritten by BCs (zeroed in B, replaced in A) and `bcA` are the (row, col, value)
+entries of the replacement A rows. Mirrors apply_velocity/magnetic/temperature_
+boundary_conditions! exactly (poloidal/toroidal velocity, the five magnetic
+branches, fixed-T/flux), so BCs can be applied at the COO stage with no CSC churn.
+"""
+function _compute_mhd_bc(op::MHDStabilityOperator{T}) where {T}
+    params = op.params
+    N = params.N
+    n_per_mode = N + 1
+    ri = params.ricb
+    ro = one(T)
+    nb_u = length(op.ll_u); nb_v = length(op.ll_v)
+    nb_f = length(op.ll_f); nb_g = length(op.ll_g)
+
+    bc_rows = Set{Int}()
+    bcA = Tuple{Int,Int,Complex{T}}[]
+
+    push_row! = (row, bc_type) -> begin
+        push!(bc_rows, row)
+        rng, vals = _bc_row_values(bc_type, row, N, ri, ro, T)
+        @inbounds for (j, c) in enumerate(rng)
+            push!(bcA, (row, c, Complex{T}(vals[j])))
+        end
+    end
+    # Explicit dense functional over a block (length N+1); block starts at row_base+1.
+    push_block! = (row, row_base, vec) -> begin
+        push!(bc_rows, row)
+        @inbounds for i in 0:N
+            push!(bcA, (row, row_base + 1 + i, Complex{T}(vec[i + 1])))
+        end
+    end
+
+    # ---- Velocity: poloidal (section u) ----
+    for (k, l) in enumerate(op.ll_u)
+        row_base = (k - 1) * n_per_mode
+        push_row!(row_base + 1, :dirichlet)
+        push_row!(row_base + 2, params.bco == 1 ? :neumann : :neumann2)
+        push_row!(row_base + n_per_mode, :dirichlet)
+        push_row!(row_base + n_per_mode - 1, params.bci == 1 ? :neumann : :neumann2)
+    end
+
+    # ---- Velocity: toroidal (section v); stress-free uses explicit functionals ----
+    scale = _radial_scale(ri, ro)
+    outer_vals = _chebyshev_boundary_values(N, :outer)
+    inner_vals = _chebyshev_boundary_values(N, :inner)
+    outer_deriv = _chebyshev_boundary_derivative(N, :outer)
+    inner_deriv = _chebyshev_boundary_derivative(N, :inner)
+    r_outer = _boundary_radius(ri, ro, :outer)
+    r_inner = _boundary_radius(ri, ro, :inner)
+    outer_row = @. -r_outer * scale * outer_deriv + outer_vals
+    inner_row = @. -r_inner * scale * inner_deriv + inner_vals
+    for (k, l) in enumerate(op.ll_v)
+        row_base = (nb_u + k - 1) * n_per_mode
+        params.bco == 1 ? push_row!(row_base + 1, :dirichlet) :
+                          push_block!(row_base + 1, row_base, outer_row)
+        params.bci == 1 ? push_row!(row_base + n_per_mode, :dirichlet) :
+                          push_block!(row_base + n_per_mode, row_base, inner_row)
+    end
+
+    # ---- Magnetic (sections f, g) ----
+    if nb_f > 0 || nb_g > 0
+        mscale = _radial_scale(ri, ro)
+        mr_outer = T(_boundary_radius(ri, ro, :outer))
+        mr_inner = T(_boundary_radius(ri, ro, :inner))
+        mouter_vals = _chebyshev_boundary_values(N, :outer, T)
+        minner_vals = _chebyshev_boundary_values(N, :inner, T)
+        mouter_deriv = T(mscale) .* _chebyshev_boundary_derivative(N, :outer, T)
+        minner_deriv = T(mscale) .* _chebyshev_boundary_derivative(N, :inner, T)
+        minner_second = T(mscale)^2 .* _chebyshev_boundary_second_derivative(N, :inner, T)
+
+        # Section f (poloidal magnetic)
+        for (k, l) in enumerate(op.ll_f)
+            row_base = (nb_u + nb_v + k - 1) * n_per_mode
+            row_cmb = row_base + 1
+            if params.bco_magnetic == 0   # insulating CMB: (l+1)f + ro f' = 0
+                push_block!(row_cmb, row_base, (l + 1) .* mouter_vals .+ mr_outer .* mouter_deriv)
+            else                           # perfectly conducting CMB: f = 0
+                push_block!(row_cmb, row_base, mouter_vals)
+            end
+            row_icb = row_base + n_per_mode
+            if params.bci_magnetic == 0    # insulating ICB: l f - ri f' = 0
+                push_block!(row_icb, row_base, l .* minner_vals .- mr_inner .* minner_deriv)
+            elseif params.bci_magnetic == 1
+                freq = params.forcing_frequency
+                Em = params.Em
+                if Em <= 0
+                    error("Conducting magnetic BC requires Em > 0")
+                end
+                if iszero(freq)            # steady limit: ri f - l f' = 0
+                    push_block!(row_icb, row_base, mr_inner .* minner_vals .- l .* minner_deriv)
+                else                       # finite frequency: Bessel log-derivative
+                    k_wave = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
+                    dlog = spherical_bessel_j_logderiv(l, k_wave * ri)
+                    push_block!(row_icb, row_base, minner_vals .- (k_wave * dlog) .* minner_deriv)
+                end
+            elseif params.bci_magnetic == 2  # perfect conductor ICB: two rows
+                L = l * (l + 1)
+                push_block!(row_icb, row_base, minner_vals)             # f = 0
+                vt = (L / ri^2) .* minner_vals
+                d1 = -(T(2) / ri) .* minner_deriv
+                d2 = -minner_second
+                push_block!(row_icb - 1, row_base, params.Em .* (vt .+ d1 .+ d2))
+            else                            # simple conducting: f = 0
+                push_block!(row_icb, row_base, minner_vals)
+            end
+        end
+
+        # Section g (toroidal magnetic): g = 0 at CMB for all BC types
+        for (k, l) in enumerate(op.ll_g)
+            row_base = (nb_u + nb_v + nb_f + k - 1) * n_per_mode
+            push_block!(row_base + 1, row_base, mouter_vals)
+            row_icb = row_base + n_per_mode
+            if params.bci_magnetic == 2     # perfect conductor: Em(-g' - g/ri) = 0
+                vt = -(T(1) / ri) .* minner_vals
+                d1 = -minner_deriv
+                push_block!(row_icb, row_base, params.Em .* (vt .+ d1))
+            else                            # insulating / conducting / default: g = 0
+                push_block!(row_icb, row_base, minner_vals)
+            end
+        end
+    end
+
+    # ---- Temperature (section h) ----
+    for (k, l) in enumerate(op.ll_h)
+        row_base = (nb_u + nb_v + nb_f + nb_g + k - 1) * n_per_mode
+        push_row!(row_base + 1, params.bco_thermal == 0 ? :dirichlet : :neumann)
+        push_row!(row_base + n_per_mode, params.bci_thermal == 0 ? :dirichlet : :neumann)
+    end
+
+    return bc_rows, bcA
 end

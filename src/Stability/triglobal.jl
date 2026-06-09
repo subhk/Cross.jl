@@ -1057,6 +1057,7 @@ function add_temperature_gradient_coupling!(C::Matrix{Complex{T}},
 
     # The coupling is: u'_r × ∂θ̄_bs/∂r with the same radial weighting
     # used in the single-mode operator assembly.
+    r2_dtheta_dr = (r .^ 2) .* dtheta_dr_bs
 
     for (ℓ_from, field_from) in keys(op_from.index_map)
         if field_from != :P
@@ -1067,6 +1068,9 @@ function add_temperature_gradient_coupling!(C::Matrix{Complex{T}},
         end
 
         L_from = ℓ_from * (ℓ_from + 1)
+        # Match the sparse radial weighting used by the single-mode
+        # temperature equation before projection (invariant in ℓ_to).
+        temp_grad_coeff = -L_from .* r2_dtheta_dr
 
         for (ℓ_to, field_to) in keys(op_to.index_map)
             if field_to != :Θ
@@ -1088,10 +1092,6 @@ function add_temperature_gradient_coupling!(C::Matrix{Complex{T}},
             # Get index ranges
             idx_from = idx_map_from[(ℓ_from, :P)]
             idx_to = idx_map_to[(ℓ_to, :Θ)]
-
-            # Match the sparse radial weighting used by the single-mode
-            # temperature equation before projection.
-            temp_grad_coeff = -L_from .* ((r .^ 2) .* dtheta_dr_bs)
 
             for i in 1:Nr
                 row = idx_to[i]
@@ -1143,6 +1143,8 @@ function add_shear_coupling!(C::Matrix{Complex{T}},
         end
 
         L_from = ℓ_from * (ℓ_from + 1)
+        # Coupling: -L_from × ∂ū_φ/∂r (invariant in ℓ_to)
+        shear_coeff = -L_from .* duphi_dr_bs
 
         for (ℓ_to, field_to) in keys(op_to.index_map)
             if field_to != :T
@@ -1163,9 +1165,6 @@ function add_shear_coupling!(C::Matrix{Complex{T}},
 
             idx_from = idx_map_from[(ℓ_from, :P)]
             idx_to = idx_map_to[(ℓ_to, :T)]
-
-            # Coupling: -L_from × ∂ū_φ/∂r
-            shear_coeff = -L_from .* duphi_dr_bs
 
             for i in 1:Nr
                 row = idx_to[i]
@@ -1506,6 +1505,7 @@ function add_radial_velocity_shear!(C::Matrix{Complex{T}},
         end
 
         L_from = ℓ_from * (ℓ_from + 1)
+        shear_profile = -L_from .* dur_dr_bs   # invariant in ℓ_to
 
         for (ℓ_to, field_to) in keys(op_to.index_map)
             if field_to != :P || ℓ_to < m_pert_to
@@ -1522,7 +1522,6 @@ function add_radial_velocity_shear!(C::Matrix{Complex{T}},
 
             idx_from = idx_map_from[(ℓ_from, :P)]
             idx_to = idx_map_to[(ℓ_to, :P)]
-            shear_profile = -L_from .* dur_dr_bs
 
             for i in 1:Nr
                 row = idx_to[i]
@@ -1557,6 +1556,7 @@ function add_meridional_velocity_shear!(C::Matrix{Complex{T}},
         end
 
         L_from = ℓ_from * (ℓ_from + 1)
+        shear_profile = -L_from .* dutheta_dr_bs   # invariant in ℓ_to
 
         for (ℓ_to, field_to) in keys(op_to.index_map)
             if field_to != :P || ℓ_to < m_pert_to
@@ -1573,7 +1573,6 @@ function add_meridional_velocity_shear!(C::Matrix{Complex{T}},
 
             idx_from = idx_map_from[(ℓ_from, :P)]
             idx_to = idx_map_to[(ℓ_to, :P)]
-            shear_profile = -L_from .* dutheta_dr_bs
 
             for i in 1:Nr
                 row = idx_to[i]
@@ -1619,21 +1618,26 @@ function compute_sh_coupling_coefficient(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
         return 0.0
     end
 
-    # Compute Gaunt coefficient using simplified formula
-    # For small ℓ values, use analytical approximation
-    norm_factor = sqrt((2*ℓ1 + 1) * (2*ℓ2 + 1) * (2*ℓ3 + 1) / (4*π))
+    # Pure function of the indices, requested repeatedly for the same (ℓ,m)
+    # combinations across coupling blocks; the two exact-rational Wigner-3j
+    # evaluations dominate, so memoize past the (cheap) selection-rule exits.
+    return get!(_SH_COUPLING_CACHE, (ℓ1, m1, ℓ2, m2, ℓ3, m3)) do
+        # Compute Gaunt coefficient using simplified formula
+        # For small ℓ values, use analytical approximation
+        norm_factor = sqrt((2*ℓ1 + 1) * (2*ℓ2 + 1) * (2*ℓ3 + 1) / (4*π))
 
-    # Wigner 3j symbol (0 0 0)
-    w3j_000 = wigner3j_simple(ℓ1, ℓ2, ℓ3, 0, 0, 0)
+        # Wigner 3j symbol (0 0 0)
+        w3j_000 = wigner3j_simple(ℓ1, ℓ2, ℓ3, 0, 0, 0)
 
-    # Wigner 3j symbol (m1 m2 -m3)
-    w3j_mmm = wigner3j_simple(ℓ1, ℓ2, ℓ3, m1, m2, -m3)
+        # Wigner 3j symbol (m1 m2 -m3)
+        w3j_mmm = wigner3j_simple(ℓ1, ℓ2, ℓ3, m1, m2, -m3)
 
-    phase = isodd(m3) ? -1.0 : 1.0
-    gaunt = phase * norm_factor * w3j_000 * w3j_mmm
-
-    return gaunt
+        phase = isodd(m3) ? -1.0 : 1.0
+        phase * norm_factor * w3j_000 * w3j_mmm
+    end
 end
+
+const _SH_COUPLING_CACHE = Dict{NTuple{6,Int}, Float64}()
 
 
 """
@@ -1703,6 +1707,17 @@ function compute_sh_coupling_unweighted(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
         return 0.0
     end
 
+    # Pure function of indices + n_quad; the 64-point quadrature with per-node
+    # associated-Legendre evaluations is expensive, so memoize like the Gaunt path.
+    return get!(_SH_COUPLING_UNWEIGHTED_CACHE, (ℓ1, m1, ℓ2, m2, ℓ3, m3, n_quad)) do
+        _sh_coupling_unweighted_quadrature(ℓ1, m1, ℓ2, m2, ℓ3, m3, n_quad)
+    end
+end
+
+const _SH_COUPLING_UNWEIGHTED_CACHE = Dict{NTuple{7,Int}, Float64}()
+
+function _sh_coupling_unweighted_quadrature(ℓ1::Int, m1::Int, ℓ2::Int, m2::Int,
+                                            ℓ3::Int, m3::Int, n_quad::Int)
     # Use Gauss-Chebyshev quadrature of the first kind
     # Nodes: x_i = cos((2i-1)π/(2n))
     # Weights: w_i = π/n

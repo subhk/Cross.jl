@@ -694,8 +694,8 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # Coriolis coupling to toroidal velocity (l±1)
         for offset in (-1, 1)
             l_coupled = l + offset
-            if l_coupled in op.ll_bot
-                k_coupled = findfirst(==(l_coupled), op.ll_bot)
+            k_coupled = findfirst(==(l_coupled), op.ll_bot)
+            if k_coupled !== nothing
                 col_coupled = (nb_top + k_coupled - 1) * n_per_mode
 
                 cori_off, _ = operator_coriolis_offdiag(op, l, m, offset)
@@ -744,8 +744,8 @@ function assemble_sparse_matrices(op::SparseStabilityOperator{T}) where {T}
         # Physical meaning: Coriolis force in toroidal equation depends on poloidal velocity
         for offset in (-1, 1)
             l_coupled = l + offset
-            if l_coupled in op.ll_top
-                k_coupled = findfirst(==(l_coupled), op.ll_top)
+            k_coupled = findfirst(==(l_coupled), op.ll_top)
+            if k_coupled !== nothing
                 col_coupled = (k_coupled - 1) * n_per_mode  # Column for u at l_coupled
 
                 # Compute Coriolis v→u coupling operator

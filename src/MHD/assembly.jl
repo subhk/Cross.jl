@@ -339,8 +339,8 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
             # Coupling from poloidal magnetic field (bpol, section f)
             for offset in -2:2
                 l_coupled = l + offset
-                if l_coupled in op.ll_f
-                    k_f = findfirst(==(l_coupled), op.ll_f)
+                k_f = findfirst(==(l_coupled), op.ll_f)
+                if k_f !== nothing
                     f_col_base = (nb_u + nb_v + k_f - 1) * n_per_mode
                     lorentz_bpol = operator_lorentz_poloidal_from_bpol(op, l, m, offset, Le)
                     add_block!(A_rows, A_cols, A_vals, lorentz_bpol, row_base, f_col_base)
@@ -349,8 +349,8 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
 
             # Diagonal: toroidal B at same l (only if such mode exists)
             # For symm=±1, ll_u and ll_g have different parities, so diagonal coupling doesn't exist
-            if l in op.ll_g
-                k_g = findfirst(==(l), op.ll_g)
+            k_g = findfirst(==(l), op.ll_g)
+            if k_g !== nothing
                 lorentz_diag = operator_lorentz_poloidal_diagonal(op, l, Le)
                 g_col_base = (nb_u + nb_v + nb_f + k_g - 1) * n_per_mode
                 add_block!(A_rows, A_cols, A_vals, lorentz_diag, row_base, g_col_base)
@@ -359,8 +359,8 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
             # Off-diagonal: toroidal B at l±1
             for offset in (-1, 1)
                 l_coupled = l + offset
-                if l_coupled in op.ll_g
-                    k_coupled = findfirst(==(l_coupled), op.ll_g)
+                k_coupled = findfirst(==(l_coupled), op.ll_g)
+                if k_coupled !== nothing
                     g_col_coupled = (nb_u + nb_v + nb_f + k_coupled - 1) * n_per_mode
 
                     lorentz_off = operator_lorentz_poloidal_offdiag(op, l, m, offset, Le)
@@ -372,8 +372,8 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
         # Coriolis off-diagonal: u ↔ v coupling
         for offset in (-1, 1)
             l_coupled = l + offset
-            if l_coupled in op.ll_v
-                k_coupled = findfirst(==(l_coupled), op.ll_v)
+            k_coupled = findfirst(==(l_coupled), op.ll_v)
+            if k_coupled !== nothing
                 v_col_coupled = (nb_u + k_coupled - 1) * n_per_mode
 
                 cori_off, _ = operator_coriolis_offdiag(op, l, m, offset)
@@ -439,8 +439,8 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
         # Coriolis reverse coupling: v → u at l±1
         for offset in (-1, 1)
             l_coupled = l + offset
-            if l_coupled in op.ll_u
-                k_coupled = findfirst(==(l_coupled), op.ll_u)
+            k_coupled = findfirst(==(l_coupled), op.ll_u)
+            if k_coupled !== nothing
                 u_col_coupled = (k_coupled - 1) * n_per_mode
 
                 cori_v_to_u = operator_coriolis_v_to_u(op, l, m, offset)
@@ -550,8 +550,8 @@ function _assemble_mhd_coo(op::MHDStabilityOperator{T}; owned_julia_rows::Union{
                 # From poloidal velocity u (diagonal and off-diagonal)
                 for offset in (-1, 0, 1)
                     l_coupled = l + offset
-                    if l_coupled in op.ll_u
-                        k_coupled = findfirst(==(l_coupled), op.ll_u)
+                    k_coupled = findfirst(==(l_coupled), op.ll_u)
+                    if k_coupled !== nothing
                         u_col_coupled = (k_coupled - 1) * n_per_mode
 
                         induct_u_tor = operator_induction_toroidal_from_u(op, l, m, offset)

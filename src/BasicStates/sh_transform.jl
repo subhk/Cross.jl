@@ -100,15 +100,21 @@ end
 """Synthesize a scalar field on the grid from coeffs `Dict{(ℓ,m),value}` using
 basis function `Yf` (default `_sh_Y`; pass `_sh_dYθ` etc. for derivative fields).
 
-For the three built-in basis functions the per-mode normalization, θ-table row and
-azimuthal factor are hoisted out of the inner `(j,k)` loop (the `Dict` lookups
-`g.N[am]`/`g.P[am]` and the `cos/sin` azimuthal factors are otherwise recomputed
-for every grid point). The arithmetic order is preserved, so the result is
-bit-identical; any other `Yf` falls back to the per-element path."""
+For the three built-in basis functions the transform is evaluated in separable
+form: per-m θ-profiles `Gθ[j,m] = Σ_ℓ a_ℓm N_ℓm θbasis_ℓ(j)` are accumulated
+first, then expanded in φ — O(modes·Nθ + M·Nθ·Nφ) instead of O(modes·Nθ·Nφ).
+Same math, reordered summation (equal up to roundoff); any other `Yf` falls
+back to the per-element path."""
 function sh_synthesize(coeffs::AbstractDict{Tuple{Int,Int},T}, g::SHGrid{T};
                        Yf=_sh_Y) where {T}
+    sh_synthesize!(zeros(T, _sh_Nθ(g), _sh_Nφ(g)), coeffs, g; Yf=Yf)
+end
+
+"""In-place [`sh_synthesize`](@ref): overwrites and returns `f` (Nθ×Nφ)."""
+function sh_synthesize!(f::AbstractMatrix{T}, coeffs::AbstractDict{Tuple{Int,Int},T},
+                        g::SHGrid{T}; Yf=_sh_Y) where {T}
     Nθ = _sh_Nθ(g); Nφ = _sh_Nφ(g)
-    f = zeros(T, Nθ, Nφ)
+    fill!(f, zero(T))
     kind = Yf === _sh_Y ? 1 : Yf === _sh_dYθ ? 2 : Yf === _sh_dYφ_over_sin ? 3 : 0
     if kind == 0   # generic fallback, unchanged semantics
         for ((ℓ, m), a) in coeffs
@@ -119,50 +125,70 @@ function sh_synthesize(coeffs::AbstractDict{Tuple{Int,Int},T}, g::SHGrid{T};
         end
         return f
     end
-    φf = Vector{T}(undef, Nφ)
-    θf = Vector{T}(undef, Nθ)
+    M = 2 * g.mmax + 1
+    Gθ = zeros(T, Nθ, M)
+    mused = falses(M)
     for ((ℓ, m), a) in coeffs
         am = abs(m)
         (am > g.mmax || ℓ > g.lmax || ℓ < am) && continue
         kind == 3 && am == 0 && continue          # (1/sinθ)∂φ Ȳ_ℓ0 ≡ 0
         Nam = g.N[am]; Pam = g.P[am]
-        Nlm = Nam[ℓ - am + 1]; row = ℓ - am + 1
+        c = a * Nam[ℓ - am + 1]; row = ℓ - am + 1
+        mi = m + g.mmax + 1
+        mused[mi] = true
+        if kind == 3
+            @inbounds for j in 1:Nθ; Gθ[j, mi] += c * (Pam[row, j] / _sh_sinθ(g, j)); end
+        elseif kind == 2
+            @inbounds for j in 1:Nθ; Gθ[j, mi] += c * _sh_dPdθ(g, ℓ, am, j); end
+        else  # kind == 1
+            @inbounds for j in 1:Nθ; Gθ[j, mi] += c * Pam[row, j]; end
+        end
+    end
+    φf = Vector{T}(undef, Nφ)
+    for mi in 1:M
+        mused[mi] || continue
+        m = mi - g.mmax - 1
         if kind == 3
             @inbounds for k in 1:Nφ; φf[k] = _sh_dφfac(g, m, k); end
-            @inbounds for j in 1:Nθ; θf[j] = Pam[row, j] / _sh_sinθ(g, j); end
-        elseif kind == 2
+        else
             @inbounds for k in 1:Nφ; φf[k] = _sh_φfac(g, m, k); end
-            @inbounds for j in 1:Nθ; θf[j] = _sh_dPdθ(g, ℓ, am, j); end
-        else  # kind == 1
-            @inbounds for k in 1:Nφ; φf[k] = _sh_φfac(g, m, k); end
-            @inbounds for j in 1:Nθ; θf[j] = Pam[row, j]; end
         end
-        @inbounds for j in 1:Nθ, k in 1:Nφ
-            f[j, k] += a * (Nlm * θf[j] * φf[k])
+        @inbounds for k in 1:Nφ, j in 1:Nθ
+            f[j, k] += Gθ[j, mi] * φf[k]
         end
     end
     f
 end
 
 """Analyze (project) a scalar grid field onto real-orthonormal SH coefficients.
-Per-mode normalization/table/azimuthal factor hoisted out of the inner loop
-(bit-identical to the per-element `_sh_Y` form)."""
+Separable evaluation: the weighted φ-projection `Fφ[j] = w_j dφ Σ_k f[j,k] φfac_m(k)`
+is formed once per m, then each ℓ needs only a θ-sum — O(M·Nθ·Nφ + modes·Nθ)
+instead of O(modes·Nθ·Nφ). Same math, reordered summation."""
 function sh_analyze(f::AbstractMatrix{T}, g::SHGrid{T}) where {T}
+    sh_analyze!(Dict{Tuple{Int,Int},T}(), f, g)
+end
+
+"""In-place [`sh_analyze`](@ref): writes every `(ℓ,m)` mode into `coeffs` and returns it."""
+function sh_analyze!(coeffs::AbstractDict{Tuple{Int,Int},T}, f::AbstractMatrix{T},
+                     g::SHGrid{T}) where {T}
     Nθ = _sh_Nθ(g); Nφ = _sh_Nφ(g)
-    coeffs = Dict{Tuple{Int,Int},T}()
     dφ = T(2) * T(π) / Nφ
     φf = Vector{T}(undef, Nφ)
+    Fφ = Vector{T}(undef, Nθ)
     for m in -g.mmax:g.mmax
         am = abs(m)
         Nam = g.N[am]; Pam = g.P[am]
         @inbounds for k in 1:Nφ; φf[k] = _sh_φfac(g, m, k); end
+        @inbounds for j in 1:Nθ
+            s = zero(T)
+            for k in 1:Nφ; s += f[j, k] * φf[k]; end
+            Fφ[j] = s * g.w[j] * dφ
+        end
         for ℓ in am:g.lmax
             Nlm = Nam[ℓ - am + 1]; row = ℓ - am + 1
             acc = zero(T)
-            @inbounds for j in 1:Nθ, k in 1:Nφ
-                acc += f[j, k] * (Nlm * Pam[row, j] * φf[k]) * g.w[j] * dφ
-            end
-            coeffs[(ℓ, m)] = acc
+            @inbounds for j in 1:Nθ; acc += Pam[row, j] * Fφ[j]; end
+            coeffs[(ℓ, m)] = Nlm * acc
         end
     end
     coeffs
@@ -177,28 +203,49 @@ components (Vθ, Vφ). Extracts the spheroidal part s_ℓm = (1/√(ℓ(ℓ+1)))
 """
 function sh_horizontal_divergence(Vθ::AbstractMatrix{T}, Vφ::AbstractMatrix{T},
                                   g::SHGrid{T}) where {T}
+    sh_horizontal_divergence!(Dict{Tuple{Int,Int},T}(), Vθ, Vφ, g)
+end
+
+"""In-place [`sh_horizontal_divergence`](@ref): writes every `(ℓ≥1,m)` mode into
+`div` and returns it. Separable evaluation — per-m weighted φ-projections of
+both components are formed once, then each ℓ needs only a θ-sum."""
+function sh_horizontal_divergence!(div::AbstractDict{Tuple{Int,Int},T},
+                                   Vθ::AbstractMatrix{T}, Vφ::AbstractMatrix{T},
+                                   g::SHGrid{T}) where {T}
     Nθ = _sh_Nθ(g); Nφ = _sh_Nφ(g)
-    div = Dict{Tuple{Int,Int},T}()
     dφ = T(2) * T(π) / Nφ
     φf = Vector{T}(undef, Nφ); dφf = Vector{T}(undef, Nφ)
-    dPθ = Vector{T}(undef, Nθ); Pos = Vector{T}(undef, Nθ)
+    Aφ = Vector{T}(undef, Nθ); Bφ = Vector{T}(undef, Nθ)
     for m in -g.mmax:g.mmax
         am = abs(m)
         Nam = g.N[am]; Pam = g.P[am]
         @inbounds for k in 1:Nφ
             φf[k] = _sh_φfac(g, m, k); dφf[k] = _sh_dφfac(g, m, k)
         end
+        @inbounds for j in 1:Nθ
+            a = zero(T); b = zero(T)
+            for k in 1:Nφ
+                a += Vθ[j, k] * φf[k]
+                b += Vφ[j, k] * dφf[k]
+            end
+            wdφ = g.w[j] * dφ
+            Aφ[j] = a * wdφ
+            Bφ[j] = b * wdφ
+        end
         for ℓ in max(1, am):g.lmax
             Nlm = Nam[ℓ - am + 1]; row = ℓ - am + 1
-            @inbounds for j in 1:Nθ
-                dPθ[j] = _sh_dPdθ(g, ℓ, am, j)
-                Pos[j] = am == 0 ? zero(T) : Pam[row, j] / _sh_sinθ(g, j)
-            end
             acc = zero(T)
-            @inbounds for j in 1:Nθ, k in 1:Nφ
-                acc += (Vθ[j, k] * (Nlm * dPθ[j] * φf[k]) +
-                        Vφ[j, k] * (Nlm * Pos[j] * dφf[k])) * g.w[j] * dφ
+            if am == 0   # (1/sinθ)∂φ Ȳ_ℓ0 ≡ 0: only the θ-component projects
+                @inbounds for j in 1:Nθ
+                    acc += _sh_dPdθ(g, ℓ, am, j) * Aφ[j]
+                end
+            else
+                @inbounds for j in 1:Nθ
+                    acc += _sh_dPdθ(g, ℓ, am, j) * Aφ[j] +
+                           (Pam[row, j] / _sh_sinθ(g, j)) * Bφ[j]
+                end
             end
+            acc *= Nlm
             s_ℓm = acc / sqrt(T(ℓ * (ℓ + 1)))          # spheroidal coefficient
             div[(ℓ, m)] = -sqrt(T(ℓ * (ℓ + 1))) * s_ℓm  # = -ℓ(ℓ+1)/√(ℓ(ℓ+1)) · s
         end
@@ -233,17 +280,33 @@ function vecsh_advection(theta::AbstractDict{Tuple{Int,Int},Vector{T}},
     for m in -mmax:mmax, ℓ in abs(m):lmax
         forcing[(ℓ, m)] = zeros(T, Nr)
     end
-    sliceat(d, i) = Dict{Tuple{Int,Int},T}(k => v[i] for (k, v) in d)
+    # Per-radius scratch, allocated once and reused (the per-radius slice-Dict
+    # rebuilds and synthesized/product grids were the top allocators here).
+    fields = (theta, dtheta_dr, ur, dur_dr, utheta, uphi)
+    slices = ntuple(_ -> Dict{Tuple{Int,Int},T}(), 6)
+    Nθ = _sh_Nθ(g); Nφ = _sh_Nφ(g)
+    grids = ntuple(_ -> Matrix{T}(undef, Nθ, Nφ), 6)
+    Tg, dTr, Urg, dUr, Uθg, Uφg = grids
+    PA = Matrix{T}(undef, Nθ, Nφ); PB = Matrix{T}(undef, Nθ, Nφ)
+    Cr   = Dict{Tuple{Int,Int},T}()
+    CdVr = Dict{Tuple{Int,Int},T}()
+    hdiv = Dict{Tuple{Int,Int},T}()
     for i in 1:Nr
-        Tg  = sh_synthesize(sliceat(theta, i), g)
-        dTr = sh_synthesize(sliceat(dtheta_dr, i), g)
-        Urg = sh_synthesize(sliceat(ur, i), g)
-        dUr = sh_synthesize(sliceat(dur_dr, i), g)
-        Uθg = sh_synthesize(sliceat(utheta, i), g)
-        Uφg = sh_synthesize(sliceat(uphi, i), g)
-        Cr   = sh_analyze(Urg .* Tg, g)                       # SH(u_r T̄)
-        CdVr = sh_analyze(dUr .* Tg .+ Urg .* dTr, g)         # SH(∂_r(u_r T̄))
-        hdiv = sh_horizontal_divergence(Uθg .* Tg, Uφg .* Tg, g)
+        for (s, d) in zip(slices, fields)
+            for (key, v) in d
+                s[key] = v[i]
+            end
+        end
+        for (fg, s) in zip(grids, slices)
+            sh_synthesize!(fg, s, g)
+        end
+        @. PA = Urg * Tg
+        sh_analyze!(Cr, PA, g)                                # SH(u_r T̄)
+        @. PA = dUr * Tg + Urg * dTr
+        sh_analyze!(CdVr, PA, g)                              # SH(∂_r(u_r T̄))
+        @. PA = Uθg * Tg
+        @. PB = Uφg * Tg
+        sh_horizontal_divergence!(hdiv, PA, PB, g)
         ri = r[i]
         for m in -mmax:mmax, ℓ in abs(m):lmax
             forcing[(ℓ, m)][i] = (T(2) / ri) * get(Cr, (ℓ, m), zero(T)) +

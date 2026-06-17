@@ -422,8 +422,10 @@ conditions in spectral methods.
 
 The poloidal magnetic field is represented by scalar f(r) such that:
 ```math
-\\mathbf{B}_{pol} = \\nabla \\times (f(r) \\mathbf{r})
+\\mathbf{B}_{pol} = \\nabla \\times \\nabla \\times (f(r) \\mathbf{r})
 ```
+(Poloidal = double curl: it has a radial component, hence the l-dependent
+potential-field Robin matching at insulating boundaries below.)
 
 ### Insulating Boundaries
 
@@ -480,8 +482,10 @@ f(r_o) = 0
 
 The toroidal magnetic field is:
 ```math
-\\mathbf{B}_{tor} = \\nabla \\times \\nabla \\times (g(r) \\mathbf{r})
+\\mathbf{B}_{tor} = \\nabla \\times (g(r) \\mathbf{r})
 ```
+(Toroidal = single curl: no radial component, so g simply vanishes outside an
+insulator.)
 
 ### Insulating/Conducting (Standard Cases)
 
@@ -642,20 +646,22 @@ function apply_magnetic_boundary_conditions!(A::SparseMatrixCSC,
                     error("Conducting magnetic BC requires Em > 0")
                 end
 
-                # Steady limit of f - k * (j_l' / j_l) * f' = 0:
-                # k * (j_l' / j_l) -> l / ri, so ri * f - l * f' = 0.
+                # Robin matching to the regular interior solution f ~ j_l(kr):
+                #   f'(ri) - k (j_l'/j_l) f(ri) = 0.
+                # Steady limit k(j_l'/j_l) -> l/ri reduces this to the insulating
+                # ICB  l f - ri f' = 0  (identical to bci_magnetic==0 above).
                 if iszero(freq)
                     _zero_row!(A, row_icb)
                     _zero_row!(B, row_icb)
-                    A[row_icb, block_range] = AT.(r_inner .* inner_vals .- l .* inner_deriv)
+                    A[row_icb, block_range] = AT.(l .* inner_vals .- r_inner .* inner_deriv)
                 else
                     k_wave = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, k_wave * ri)
 
                     _zero_row!(A, row_icb)
                     _zero_row!(B, row_icb)
-                    A[row_icb, block_range] = AT.(inner_vals) .-
-                                             AT(k_wave * dlog) .* AT.(inner_deriv)
+                    A[row_icb, block_range] = AT.(inner_deriv) .-
+                                             AT(k_wave * dlog) .* AT.(inner_vals)
                 end
 
             elseif params.bci_magnetic == 2

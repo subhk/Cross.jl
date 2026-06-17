@@ -247,7 +247,7 @@ function solve(problem::MHDProblem{T, BS};
             vals_s, vecs_s, _ = Cross._solve_generalized_eigen_slepc(
                 sparse(A_gal), sparse(B_gal); nev=nev,
                 sigma = sigma === nothing ? zero(Complex{T}) : Complex{T}(sigma),
-                which=:LR, selection=:maxreal, tol=1e-10, maxiter=1000, verbosity=0)
+                which=which, selection=:maxreal, tol=tol, maxiter=maxiter, verbosity=0)
             eigenvalues = vals_s
             evecs_full = [reconstruct_mhd_galerkin_full(op, layout, vecs_s[:, j])
                           for j in 1:size(vecs_s, 2)]

@@ -15,6 +15,7 @@ include("galerkin_radial.jl")
 include("sh_transform.jl")
 include("thermal_wind.jl")
 include("velocity_reconstruction.jl")
+include("audit_fixes.jl")
 
 # v2.0 API tests
 include("test_types.jl")

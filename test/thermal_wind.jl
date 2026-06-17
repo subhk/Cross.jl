@@ -615,6 +615,43 @@ end  # @testset "Thermal Wind Balance"
         @test outer_amplitude > 1e-14
     end
 
+    @testset "Singular stress-free m_bs=1 system returns the minimum-norm solution" begin
+        # For stress-free + m_bs = 1 the geostrophic mode ū_φ ∝ r·Y_1^1 (= r sinθ)
+        # satisfies the interior equations AND the Robin BC, so the coupled system
+        # has an exact null vector. The solver must return the minimum-norm
+        # solution: finite, equations satisfied, no arbitrary null component.
+        m_bs = 1
+        theta_coeffs = Dict(2 => fill(0.1, Nr))
+        uphi_coeffs = Dict{Int,Vector{Float64}}()
+        duphi_dr_coeffs = Dict{Int,Vector{Float64}}()
+
+        @test_logs (:warn, r"minimum-norm") Cross.solve_thermal_wind_coupled!(
+            uphi_coeffs, duphi_dr_coeffs, theta_coeffs, m_bs, cd, r_i, r_o, Ra, Pr;
+            mechanical_bc=:stress_free, E=E)
+
+        @test all(all(isfinite, v) for v in values(uphi_coeffs))
+
+        # null component: projection of U_1 onto the exact null direction r
+        nv = r ./ norm(r)
+        scale = maximum(maximum(abs, v) for v in values(uphi_coeffs))
+        @test abs(LinearAlgebra.dot(uphi_coeffs[1], nv)) < 1e-10 * scale
+
+        # solution still satisfies the coupled equations: spot-check the K=1
+        # Galerkin row Σ_L [A_1L dŪ_L/dr − (1/r)B_1L Ū_L] = F_1 at interior nodes
+        # (only L=2 contributes: A_{1,2}=α_2⁻, B_{1,2}=−3α_2⁻)
+        αm(L) = sqrt((L^2 - m_bs^2) / ((2L - 1) * (2L + 1)))
+        Mp = Cross._dtheta_sphere_projection([1], [2], m_bs, Float64)
+        pref = -(Ra * E^2) / (2 * Pr * r_o)
+        dU2 = cd.D1 * uphi_coeffs[2]
+        res = 0.0; rhsmax = 0.0
+        for i in 5:(Nr - 5)
+            lhs = αm(2) * dU2[i] + 3 * αm(2) * uphi_coeffs[2][i] / r[i]
+            rhs = pref * Mp[(1, 2)] * theta_coeffs[2][i]
+            res = max(res, abs(lhs - rhs)); rhsmax = max(rhsmax, abs(rhs))
+        end
+        @test res / rhsmax < 1e-8
+    end
+
     @testset "Amplitude scaling for 3D" begin
         # Thermal wind should still scale as Ra × E² / Pr for non-axisymmetric
 

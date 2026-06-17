@@ -106,9 +106,13 @@ MHD linear stability analysis or dynamo onset calculations.
   - `axial`: Uniform B₀ = B₀ẑ (simplest MHD case)
   - `dipole`: Dipolar field (requires ricb > 0)
 
-- `B0_amplitude::T`: Dimensionless field strength
-  - Scales the background field
-  - Related to Lehnert number: Le ~ B0_amplitude
+- `B0_amplitude::T`: (Vestigial / no-op) Nominal field-strength tag, kept for
+  backward-compatible construction and display only.
+  - NOTE: this does NOT scale the background field. The dimensionless background
+    field has fixed unit amplitude (its radial shape carries a fixed normalization;
+    see `background_profile_value`). The dynamical field strength is set ENTIRELY
+    by the Lehnert number `Le` (Le² in the Lorentz force, unit induction coupling).
+    To change field strength, set `Le`, not `B0_amplitude`.
 
 # Boundary Conditions
 

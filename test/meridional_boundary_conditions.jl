@@ -2,44 +2,43 @@ using Test
 using LinearAlgebra
 using Cross
 
-function _stress_free_residual(D1, r, u, idx)
-    return dot(D1[idx, :], u) - u[idx] / r[idx]
-end
-
-@testset "Meridional circulation enforces stress-free BCs" begin
+@testset "Meridional circulation enforces only the inner radial BC" begin
+    # The (ẑ·∇) meridional operator is FIRST-ORDER in radius ⇒ exactly ONE radial
+    # BC per mode (inner); the outer boundary is determined by the ODE, not pinned.
+    # (The old solver imposed BOTH boundaries + a Tikhonov diagonal — over-constraint,
+    # audit #3 — and did not satisfy the thermal-wind PDE.)
     cd = ChebyshevDiffn(10, [0.35, 1.0], 2)
-    r = cd.x
-    D1 = cd.D1
-    D2 = cd.D2
-    idx_inner = 1
-    idx_outer = length(r)
+    r = cd.x; D1 = cd.D1; D2 = cd.D2
+    idx_inner = 1; idx_outer = length(r)
 
     theta_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}(
         (1, 1) => 0.2 .+ r .* (1 .- r),
         (2, 1) => 0.1 .* r.^2,
     )
-    uphi_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}()
-    ur_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}()
-    utheta_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}()
-    dur_dr_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}()
-    dutheta_dr_coeffs = Dict{Tuple{Int,Int}, Vector{Float64}}()
-
-    solve_meridional_circulation_toroidal_poloidal!(
-        ur_coeffs, utheta_coeffs, dur_dr_coeffs, dutheta_dr_coeffs,
-        theta_coeffs, uphi_coeffs,
-        r, D1, D2, first(r), last(r),
-        1e5, 1e-3, 1.0, 2, 1;
-        mechanical_bc = :stress_free,
-        include_meridional = true,
-        use_full_coupling = true,
-    )
-
-    for ell in 1:2
-        uθ = utheta_coeffs[(ell, 1)]
-        scale = max(norm(uθ), eps(Float64))
-        @test abs(_stress_free_residual(D1, r, uθ, idx_inner)) / scale < 1e-9
-        @test abs(_stress_free_residual(D1, r, uθ, idx_outer)) / scale < 1e-9
+    function run_bc(bc)
+        ur = Dict{Tuple{Int,Int},Vector{Float64}}(); uθ = Dict{Tuple{Int,Int},Vector{Float64}}()
+        dur = Dict{Tuple{Int,Int},Vector{Float64}}(); dθ = Dict{Tuple{Int,Int},Vector{Float64}}()
+        solve_meridional_circulation_toroidal_poloidal!(
+            ur, uθ, dur, dθ, theta_coeffs, Dict{Tuple{Int,Int},Vector{Float64}}(),
+            r, D1, D2, first(r), last(r), 1e5, 1e-3, 1.0, 2, 1;
+            mechanical_bc = bc, include_meridional = true, use_full_coupling = true)
+        return uθ
     end
+
+    # No-slip (non-singular): inner u_θ = 0 enforced exactly; outer is FREE.
+    uθ = run_bc(:no_slip)
+    outer_free = 0.0
+    for ell in 1:2
+        u = uθ[(ell, 1)]
+        @test abs(u[idx_inner]) < 1e-9 * max(norm(u), eps(Float64))
+        outer_free = max(outer_free, abs(u[idx_outer]))
+    end
+    @test outer_free > 1e-9          # outer boundary unconstrained (one-BC operator)
+
+    # Stress-free at m=1 has an exact geostrophic null mode (∝ r·Y_1^1); the solver
+    # returns the finite minimum-norm solution rather than over-constraining.
+    uθ_sf = run_bc(:stress_free)
+    @test all(all(isfinite, v) for v in values(uθ_sf))
 end
 
 @testset "Meridional sin partner is the φ-rotation of the cos mode" begin

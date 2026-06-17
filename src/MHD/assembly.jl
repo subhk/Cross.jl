@@ -893,12 +893,12 @@ function _compute_mhd_bc(op::MHDStabilityOperator{T}) where {T}
                 if Em <= 0
                     error("Conducting magnetic BC requires Em > 0")
                 end
-                if iszero(freq)            # steady limit: ri f - l f' = 0
-                    push_block!(row_icb, row_base, mr_inner .* minner_vals .- l .* minner_deriv)
-                else                       # finite frequency: Bessel log-derivative
+                if iszero(freq)            # steady limit: l f - ri f' = 0 (== insulating)
+                    push_block!(row_icb, row_base, l .* minner_vals .- mr_inner .* minner_deriv)
+                else                       # finite frequency: f' - k(j'/j) f = 0
                     k_wave = (1 - 1im) * sqrt(complex(freq) / (2 * Em))
                     dlog = spherical_bessel_j_logderiv(l, k_wave * ri)
-                    push_block!(row_icb, row_base, minner_vals .- (k_wave * dlog) .* minner_deriv)
+                    push_block!(row_icb, row_base, minner_deriv .- (k_wave * dlog) .* minner_vals)
                 end
             elseif params.bci_magnetic == 2  # perfect conductor ICB: two rows
                 L = l * (l + 1)

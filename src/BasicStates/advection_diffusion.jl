@@ -332,35 +332,29 @@ Returns (A_minus, A_plus, A_diag) where:
 - A_diag: diagonal contribution (usually small)
 """
 function theta_derivative_coupling(ℓ::Int, m::Int)
-    # From the identity: sinθ ∂Y_ℓm/∂θ = ℓ cosθ Y_ℓm - (ℓ+m) × norm_factor × Y_{ℓ-1,m}
-    # and the cosθ expansion.
-    #
-    # More precisely, using the recurrence:
-    # sin²θ dP_ℓ^m/d(cosθ) = -(ℓ+1) cosθ P_ℓ^m + (ℓ-m+1) P_{ℓ+1}^m
-    #
-    # This gives sinθ ∂Y/∂θ in terms of cosθ Y (which couples ℓ±1) and Y_{ℓ+1}.
+    # Exact, finite two-term identity (verified numerically against the
+    # orthonormal Y_lm; see basic_state.jl:2007-2008 and _dtheta_sphere_projection):
+    #     sinθ ∂Y_ℓm/∂θ = ℓ α⁺_ℓ Y_{ℓ+1,m} − (ℓ+1) α⁻_ℓ Y_{ℓ-1,m}
+    # with α⁺_ℓ = √[((ℓ+1)²−m²)/((2ℓ+1)(2ℓ+3))], α⁻_ℓ = √[(ℓ²−m²)/((2ℓ−1)(2ℓ+1))]
+    # (these α are the orthonormal recurrence coefficients, == sin_theta_coupling).
 
-    # Coefficients from the standard recurrence
-    # The result is: sinθ ∂Y_ℓm/∂θ couples primarily to ℓ±1
-
-    # A⁺: coupling to ℓ+1
+    # A⁺: coupling to ℓ+1  =  +ℓ α⁺_ℓ
     A_plus = 0.0
     if ℓ + 1 >= abs(m)
-        # Coefficient from the derivative recurrence
         num = (ℓ + 1 + m) * (ℓ + 1 - m)
         den = (2ℓ + 1) * (2ℓ + 3)
         if num >= 0 && den > 0
-            A_plus = -(ℓ + 1) * sqrt(num / den)
+            A_plus = ℓ * sqrt(num / den)
         end
     end
 
-    # A⁻: coupling to ℓ-1
+    # A⁻: coupling to ℓ-1  =  −(ℓ+1) α⁻_ℓ
     A_minus = 0.0
     if ℓ - 1 >= abs(m) && ℓ > 0
         num = (ℓ + m) * (ℓ - m)
         den = (2ℓ - 1) * (2ℓ + 1)
         if num >= 0 && den > 0
-            A_minus = ℓ * sqrt(num / den)
+            A_minus = -(ℓ + 1) * sqrt(num / den)
         end
     end
 
@@ -382,28 +376,24 @@ The dominant contribution is diagonal (L = ℓ).
 Returns the coupling coefficient. Non-zero only for specific L values.
 """
 function inv_sin_theta_gaunt(L::Int, ℓ::Int, m::Int)
-    if L < abs(m) || ℓ < abs(m)
-        return 0.0
-    end
+    am = abs(m)
+    (L < am || ℓ < am) && return 0.0
+    # Opposite parity ⇒ integrand odd under x→−x ⇒ exactly zero.
+    (L + ℓ) % 2 != 0 && return 0.0
 
-    # Diagonal term (dominant)
-    if L == ℓ
-        # ⟨Y_ℓm | 1/sinθ | Y_ℓm⟩ ≈ 1 + m²/(ℓ(ℓ+1)) for ℓ > 0
-        if ℓ == 0
-            return 1.0
-        else
-            return 1.0 + m^2 / (ℓ * (ℓ + 1))
-        end
+    # Exact ⟨Y_Lm | 1/sinθ | Y_ℓm⟩ = ∫₀^π P̄_Lm(cosθ) P̄_ℓm(cosθ) dθ — the 1/sinθ
+    # cancels the sinθ of dΩ. This is the Gauss–Chebyshev G(a,b) used by
+    # _dtheta_sphere_projection, so it carries the SAME orthonormal SH convention
+    # as the cosθ / sinθ∂θ operators. Couples all same-parity L (0, ±2, ±4, …).
+    lmax_needed = max(L, ℓ)
+    Nq = lmax_needed + 2
+    s = 0.0
+    for j in 1:Nq
+        x = cos(π * (j - 0.5) / Nq)
+        P = _orthonormal_plm(lmax_needed, am, x)
+        s += P[L + 1] * P[ℓ + 1]
     end
-
-    # L = ℓ ± 2 coupling (weaker)
-    if abs(L - ℓ) == 2 && (L + ℓ) % 2 == 0
-        # Approximate coupling for ℓ ± 2
-        ℓ_avg = (L + ℓ) / 2
-        return 0.25 * m^2 / max(ℓ_avg * (ℓ_avg + 1), 1.0)
-    end
-
-    return 0.0
+    return (π / Nq) * s
 end
 
 
@@ -464,9 +454,11 @@ function solve_meridional_coupled!(
     # drives both. For m_bs ≥ 0, am == m_bs and this path is bit-identical.
     am = abs(m_bs)
 
-    # Non-dimensional parameters
-    two_omega = one(T) / E
-    buoyancy_factor = Ra * E^2 / Pr
+    # Non-dimensional parameters. Match the validated φ-thermal-wind convention
+    # (solve_thermal_wind_coupled!): the curled geostrophic balance is divided by
+    # 2Ω so the (ẑ·∇) operator is bare and the buoyancy carries the 1/(2Ω) (Ω=1 → /2).
+    two_omega = one(T)
+    buoyancy_factor = Ra * E^2 / (2 * Pr)
 
     # Boundary indices
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
@@ -479,136 +471,103 @@ function solve_meridional_coupled!(
     end
 
     # =========================================================================
-    # Build the block-tridiagonal system: A × u_θ_vec = RHS_vec
-    # u_θ_vec = [u_θ,m; u_θ,m+1; ...; u_θ,lmax] (each is Nr points)
+    # θ-thermal-wind balance solved as a coupled Galerkin system, identical in
+    # structure to the validated solve_thermal_wind_coupled!:
+    #     Σ_L [ A_KL dU_L/dr − (1/r) B_KL U_L ] = F_K ,
+    # with A_KL = ⟨Y_Km|cosθ|Y_Lm⟩, B_KL = ⟨Y_Km|sinθ∂θ|Y_Lm⟩ the orthonormal
+    # (ẑ·∇) projection (cos_theta_coupling / theta_derivative_coupling), and the
+    # forcing F_K the projection of the (1/sinθ)∂_φ buoyancy. The operator is
+    # FIRST-ORDER in radius, so exactly ONE radial BC per mode (inner); no
+    # diagonal regularization (the old block-build applied two BCs + a Tikhonov
+    # diagonal and did not satisfy the PDE — see test/audit_fixes.jl residual test).
     # =========================================================================
-
-    total_size = n_ell * Nr
-    A_full = zeros(T, total_size, total_size)
-    RHS_full = zeros(T, total_size)
     r2 = r .* r
+    modes = am:lmax_bs
 
-    for (i_L, L) in enumerate(am:lmax_bs)
-        # Row indices for mode L
-        row_start = (i_L - 1) * Nr + 1
-        row_end = i_L * Nr
-
-        # =================================================================
-        # RHS: -(Ra E²/Pr) × im × Σ_ℓ T̄_ℓm × ⟨Y_Lm|1/(r sinθ)|Y_ℓm⟩
-        # =================================================================
-        for ℓ in am:lmax_bs
-            if !haskey(theta_coeffs, (ℓ, m_bs))
-                continue
-            end
-            T_lm = theta_coeffs[(ℓ, m_bs)]
-
-            # Gaunt coefficient for 1/sinθ coupling
-            gaunt_coeff = inv_sin_theta_gaunt(L, ℓ, am)
-            if abs(gaunt_coeff) > eps(T)
-                RHS_full[row_start:row_end] .+= -buoyancy_factor .* T(am) .* gaunt_coeff .* T_lm ./ r
-            end
+    # cosθ and sinθ∂θ projection matrices: column L → rows L±1.
+    A_mat = zeros(T, n_ell, n_ell)   # ⟨Y_Km|cosθ|Y_Lm⟩
+    B_mat = zeros(T, n_ell, n_ell)   # ⟨Y_Km|sinθ∂θ|Y_Lm⟩
+    for (k2, L) in enumerate(modes)
+        b_minus, b_plus = cos_theta_coupling(L, am)
+        B_minus, B_plus, _ = theta_derivative_coupling(L, am)
+        kp = (L + 1) - am + 1            # row K = L+1
+        if kp <= n_ell
+            A_mat[kp, k2] = T(b_plus);  B_mat[kp, k2] = T(B_plus)
         end
-
-        # =================================================================
-        # LHS: 2Ω × ⟨Y_Lm | (ẑ·∇) | u_θ⟩
-        #
-        # (ẑ·∇) u_θ = Σ_ℓ [cosθ du_θ,ℓ/dr - (sinθ/r) u_θ,ℓ ∂/∂θ] Y_ℓm
-        #
-        # Projecting onto Y_Lm:
-        #   ⟨Y_Lm|cosθ|Y_ℓm⟩ × du_θ,ℓ/dr - (1/r) ⟨Y_Lm|sinθ ∂/∂θ|Y_ℓm⟩ × u_θ,ℓ
-        # =================================================================
-
-        # Loop over source modes ℓ
-        for (i_ell, ℓ) in enumerate(am:lmax_bs)
-            col_start = (i_ell - 1) * Nr + 1
-            col_end = i_ell * Nr
-
-            # cosθ coupling: ⟨Y_Lm|cosθ|Y_ℓm⟩
-            # Non-zero only for L = ℓ±1
-            C_Lell = zero(T)
-            if L == ℓ + 1
-                # cosθ Y_ℓm has component C⁺_ℓm at Y_{ℓ+1,m}
-                _, C_plus = cos_theta_coupling(ℓ, am)
-                C_Lell = T(C_plus)
-            elseif L == ℓ - 1
-                # cosθ Y_ℓm has component C⁻_ℓm at Y_{ℓ-1,m}
-                C_minus, _ = cos_theta_coupling(ℓ, am)
-                C_Lell = T(C_minus)
-            end
-
-            # sinθ ∂/∂θ coupling: ⟨Y_Lm|sinθ ∂/∂θ|Y_ℓm⟩
-            # Non-zero only for L = ℓ±1
-            A_Lell = zero(T)
-            if L == ℓ + 1
-                # sinθ ∂Y_ℓm/∂θ has component A⁺_ℓm at Y_{ℓ+1,m}
-                _, A_plus, _ = theta_derivative_coupling(ℓ, am)
-                A_Lell = T(A_plus)
-            elseif L == ℓ - 1
-                # sinθ ∂Y_ℓm/∂θ has component A⁻_ℓm at Y_{ℓ-1,m}
-                A_minus, _, _ = theta_derivative_coupling(ℓ, am)
-                A_Lell = T(A_minus)
-            end
-
-            # Build the operator block
-            if abs(C_Lell) > eps(T) || abs(A_Lell) > eps(T)
-                # Operator: 2Ω × [C_Lell × D1 - (A_Lell/r)]
-                @views block = A_full[row_start:row_end, col_start:col_end]
-                @inbounds for j in 1:Nr
-                    for i in 1:Nr
-                        block[i, j] = two_omega * C_Lell * D1[i, j]
-                    end
-                    block[j, j] -= two_omega * A_Lell / r[j]
-                end
-            end
-
-            # Diagonal regularization (small term to ensure solvability)
-            if L == ℓ
-                # Add small diagonal term for numerical stability
-                reg_coeff = two_omega * T(0.01) / T(max(L, 1))
-                @inbounds for i in row_start:row_end
-                    A_full[i, i] += reg_coeff
-                end
-            end
-        end
-
-        # =================================================================
-        # Boundary conditions for u_θ at r_i and r_o
-        # =================================================================
-        if mechanical_bc == :no_slip
-            A_full[row_start + idx_inner - 1, :] .= zero(T)
-            A_full[row_start + idx_inner - 1, row_start + idx_inner - 1] = one(T)
-            RHS_full[row_start + idx_inner - 1] = zero(T)
-
-            A_full[row_start + idx_outer - 1, :] .= zero(T)
-            A_full[row_start + idx_outer - 1, row_start + idx_outer - 1] = one(T)
-            RHS_full[row_start + idx_outer - 1] = zero(T)
-        elseif mechanical_bc == :stress_free
-            inner_row = row_start + idx_inner - 1
-            A_full[inner_row, :] .= zero(T)
-            A_full[inner_row, row_start:row_end] .= D1[idx_inner, :]
-            A_full[inner_row, row_start + idx_inner - 1] -= one(T) / r[idx_inner]
-            RHS_full[inner_row] = zero(T)
-
-            outer_row = row_start + idx_outer - 1
-            A_full[outer_row, :] .= zero(T)
-            A_full[outer_row, row_start:row_end] .= D1[idx_outer, :]
-            A_full[outer_row, row_start + idx_outer - 1] -= one(T) / r[idx_outer]
-            RHS_full[outer_row] = zero(T)
-        else
-            throw(ArgumentError("mechanical_bc must be :no_slip or :stress_free, got :$mechanical_bc"))
+        km = (L - 1) - am + 1            # row K = L-1
+        if km >= 1
+            A_mat[km, k2] = T(b_minus); B_mat[km, k2] = T(B_minus)
         end
     end
 
-    # =========================================================================
-    # Solve the coupled system
-    # =========================================================================
-    u_theta_vec = A_full \ RHS_full
+    # Forcing F_K(r) = -(Ra E²/(2 Pr r_o)) · |m| · Σ_ℓ ⟨Y_Km|1/sinθ|Y_ℓm⟩ Θ̄_ℓ,
+    # built directly into the flat RHS vector (no F matrix / permutedims copy).
+    # (Linear gravity g=r/r_o cancels the explicit 1/r → constant 1/r_o.)
+    n_total = n_ell * Nr
+    F_vec = zeros(T, n_total)
+    for (k, K) in enumerate(modes)
+        base = (k - 1) * Nr
+        for ℓ in modes
+            haskey(theta_coeffs, (ℓ, m_bs)) || continue
+            g = inv_sin_theta_gaunt(K, ℓ, am)
+            abs(g) > eps(T) || continue
+            c = -buoyancy_factor * T(am) * g / r_o
+            θℓ = theta_coeffs[(ℓ, m_bs)]
+            @inbounds for i in 1:Nr
+                F_vec[base + i] += c * θℓ[i]
+            end
+        end
+    end
+
+    # Assemble L_op = A ⊗ D1 − diag(1/r)·B ⊗ I.
+    L_op = zeros(T, n_total, n_total)
+    for k1 in 1:n_ell, k2 in 1:n_ell
+        rs = (k1 - 1) * Nr;  cs = (k2 - 1) * Nr
+        if abs(A_mat[k1, k2]) > eps(T)
+            a = A_mat[k1, k2]
+            @inbounds for j in 1:Nr, i in 1:Nr
+                L_op[rs + i, cs + j] += a * D1[i, j]
+            end
+        end
+        if abs(B_mat[k1, k2]) > eps(T)
+            b = B_mat[k1, k2]
+            @inbounds for i in 1:Nr
+                L_op[rs + i, cs + i] -= b / r[i]
+            end
+        end
+    end
+
+    # One radial BC per mode at the inner boundary (first-order operator).
+    for k in 1:n_ell
+        bc = (k - 1) * Nr + idx_inner
+        L_op[bc, :] .= zero(T)
+        if mechanical_bc == :no_slip
+            L_op[bc, bc] = one(T)
+        elseif mechanical_bc == :stress_free
+            cs = (k - 1) * Nr
+            L_op[bc, (cs + 1):(cs + Nr)] .= D1[idx_inner, :]
+            L_op[bc, bc] -= one(T) / r[idx_inner]
+        else
+            throw(ArgumentError("mechanical_bc must be :no_slip or :stress_free, got :$mechanical_bc"))
+        end
+        F_vec[bc] = zero(T)
+    end
+
+    F_lu = lu(L_op; check=false)
+    rcond = issuccess(F_lu) ?
+        LinearAlgebra.LAPACK.gecon!('1', F_lu.factors, opnorm(L_op, 1)) : zero(real(T))
+    if rcond < eps(real(T))
+        # Singular (e.g. a geostrophic null mode): minimum-norm least-squares.
+        u_theta_vec = pinv(L_op) * F_vec
+        @warn "Coupled meridional u_θ system is singular; returning the \
+               minimum-norm solution." rcond m_bs lmax_bs maxlog=1
+    else
+        u_theta_vec = F_lu \ F_vec
+    end
 
     # Extract u_θ for each mode
-    for (i_ell, ℓ) in enumerate(am:lmax_bs)
-        idx_start = (i_ell - 1) * Nr + 1
-        idx_end = i_ell * Nr
-        utheta_ℓ = u_theta_vec[idx_start:idx_end]
+    for (k, ℓ) in enumerate(modes)
+        utheta_ℓ = u_theta_vec[((k - 1) * Nr + 1):(k * Nr)]
         utheta_coeffs[(ℓ, m_bs)] = utheta_ℓ
         dutheta_dr_coeffs[(ℓ, m_bs)] = D1 * utheta_ℓ
     end
@@ -738,8 +697,10 @@ function solve_meridional_simple!(
 ) where T<:Real
 
     Nr = length(r)
-    two_omega = one(T) / E
-    buoyancy_factor = Ra * E^2 / Pr
+    # Same convention as solve_meridional_coupled! / solve_thermal_wind_coupled!:
+    # 2Ω divided out (bare operator), buoyancy carries 1/(2Ω) (Ω=1 → /2).
+    two_omega = one(T)
+    buoyancy_factor = Ra * E^2 / (2 * Pr)
 
     # Boundary indices
     idx_inner = abs(r[1] - r_i) < abs(r[Nr] - r_i) ? 1 : Nr
@@ -786,8 +747,9 @@ function solve_meridional_simple!(
             # For geostrophic flow, use the characteristic value
             β_eff = sqrt(T(ℓ) / T(ℓ + 1))
 
-            # RHS forcing: -(Ra E²/Pr) × im × T̄_ℓm × inv_sin_eff / r
-            forcing = -buoyancy_factor .* T(am) .* T_lm .* inv_sin_eff ./ r
+            # RHS forcing: -(Ra E²/(2Pr r_o)) × im × T̄_ℓm × inv_sin_eff
+            # (linear gravity g=r/r_o cancels the explicit 1/r → 1/r_o)
+            forcing = -buoyancy_factor .* T(am) .* T_lm .* inv_sin_eff ./ r_o
 
             # Simplified equation: 2Ω × β_eff × du_θ/dr = forcing
             # Integrate: u_θ = (1/(2Ω β_eff)) × ∫ forcing dr

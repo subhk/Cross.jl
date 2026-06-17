@@ -1751,12 +1751,11 @@ function _sh_coupling_unweighted_quadrature(ℓ1::Int, m1::Int, ℓ2::Int, m2::I
             P3 = -P3
         end
 
-        # The complex conjugate of Y₃ gives the (-m3) phase
-        # Y*_{ℓ,m} = (-1)^m Y_{ℓ,-m}
-        # For the integral, this combines with the selection rule
-        phase3 = isodd(m3) ? -1.0 : 1.0
-
-        integral += weight * phase3 * P3 * P1 * P2
+        # No extra (-1)^m3 phase here: conjugating Y₃ flips only the e^{imφ}
+        # factor (handled by the m1+m2=m3 selection rule), leaving its real
+        # θ-part P̄₃ unchanged. The Condon-Shortley sign is already inside
+        # _normalized_associated_legendre, so the integrand is simply P̄₃P̄₁P̄₂.
+        integral += weight * P3 * P1 * P2
     end
 
     # Multiply by 2π from the φ integral (δ function gives 2π, not 1)

@@ -430,7 +430,7 @@ For fixed flux at outer:
   - dθ̄/dr|_{r_o} = outer_flux (prescribed heat flux)
 
 The conduction profile for ℓ=0 with fixed flux at outer is:
-  θ̄_0(r) = √(4π) × [1 + outer_flux × r_o² × (1/r - 1/r_i)]
+  θ̄_0(r) = √(4π) × [1 + outer_flux × r_o² × (1/r_i - 1/r)]
 """
 function conduction_basic_state(cd::ChebyshevDiffn{T}, χ::T, lmax_bs::Int;
                                 thermal_bc::Symbol=:fixed_temperature,
@@ -2190,13 +2190,24 @@ function solve_thermal_wind_coupled!(uphi_coeffs::Dict{Int,Vector{T}},
     # method (e.g. marching with re-orthonormalization); basic states are
     # low-degree in practice, so capping lmax is the pragmatic remedy.
 
-    F_lu = lu(L_op)
-    U_vec = F_lu \ F_vec
-
-    rcond = LinearAlgebra.LAPACK.gecon!('1', F_lu.factors, opnorm(L_op, 1))
+    F_lu = lu(L_op; check=false)
+    rcond = issuccess(F_lu) ?
+        LinearAlgebra.LAPACK.gecon!('1', F_lu.factors, opnorm(L_op, 1)) : zero(real(T))
     if rcond < eps(real(T))
-        @warn "Coupled thermal-wind system is ill-conditioned; results may be \
-               unreliable. Reduce the basic-state truncation (lmax)." rcond lmax_vel n_modes maxlog=1
+        # Numerically singular. The thermal-wind balance determines ū_φ only up
+        # to geostrophic modes u_φ = f(r sinθ); for stress-free with m_bs = 1 the
+        # mode ū_φ ∝ r·Y_1^1 (= r sinθ) satisfies the interior equations AND the
+        # Robin boundary condition exactly, so the discrete system has an exact
+        # null vector (higher truncations approach singularity through
+        # near-geostrophic modes). An LU solve would return an arbitrary
+        # null-space component; take the minimum-norm least-squares solution
+        # instead — deterministic and free of the undetermined geostrophic part.
+        U_vec = pinv(L_op) * F_vec
+        @warn "Coupled thermal-wind system is singular (zonal flow determined \
+               only up to a geostrophic mode); returning the minimum-norm \
+               solution." rcond lmax_vel n_modes maxlog=1
+    else
+        U_vec = F_lu \ F_vec
     end
 
     # =========================================================================

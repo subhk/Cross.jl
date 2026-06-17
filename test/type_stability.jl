@@ -592,8 +592,16 @@ end
     # meridional solve now also computes the sin(|m|φ) partner (signed-m), adding
     # one extra block solve per |m| present. The m=0 sector now uses the full
     # coupled thermal-wind operator (a dense block solve) instead of the diagonal
-    # heuristic — correct parity + satisfies the PDE, at ~0.5 MB extra (measured 3.51 MB).
-    @test bytes < 4_000_000
+    # heuristic — correct parity + satisfies the PDE.
+    #
+    # The θ-meridional u_θ solve was rewritten (audit #3) from the broken block-
+    # build (two BCs on a first-order operator + Tikhonov diagonal, PDE residual
+    # ~1e3) to the validated coupled-Galerkin structure (dense L_op + lu/gecon,
+    # pinv min-norm fallback when singular, inner BC only). This satisfies the
+    # thermal-wind PDE (residual ~1e-2, see test/audit_fixes.jl) at ~1 MB extra
+    # for lmax_bs=4 (measured 4.56 MB) — a deliberate correctness-for-allocation
+    # trade, not an accidental regression.
+    @test bytes < 5_000_000
 end
 
 @testset "Poisson mode solve avoids dense diagonal temporaries" begin

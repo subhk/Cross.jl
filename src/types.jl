@@ -100,6 +100,10 @@ Loosely typed to avoid circular dependencies with the `CompleteMHD` module.
 struct MHDProblem{T, BS}
     params::MHDParams{T}
     basic_state::BS
+    function MHDProblem{T, BS}(params::MHDParams{T}, basic_state::BS) where {T, BS}
+        validate_mhd_params(params)   # soft @warn for unusual-but-valid inputs
+        new{T, BS}(params, basic_state)
+    end
 end
 
 """Construct an MHD problem without an explicit basic-state object."""
@@ -211,8 +215,10 @@ end
 Estimate dense hydrodynamic problem size for onset and biglobal wrappers.
 """
 function _hd_total_dof(m::Int, lmax::Int, Nr::Int, symmetry::Symbol)
-    n_l = _count_l_modes(m, lmax, symmetry)
-    return n_l * (Nr + 1) * 3  # 3 fields: poloidal, toroidal, temperature
+    # Real dense layout (LinearStabilityOperator index_map): Nr rows per (l,field)
+    # block, with field-specific l-counts (P,Θ use poloidal parity; T toroidal).
+    nP, nT, nΘ = _triglobal_mode_l_counts(m, lmax, symmetry)
+    return (nP + nT + nΘ) * Nr
 end
 
 """
@@ -238,21 +244,26 @@ Estimate MHD problem size and field-block counts from the selected symmetry and
 background-field configuration.
 """
 function _mhd_total_dof(params)
-    m, lmax, symm, N = params.m, params.lmax, params.symm, params.N
-    if symm == 1
-        n_pol = length(m:2:lmax)
-        n_tor = length((m+1):2:lmax)
-    elseif symm == -1
-        n_pol = length((m+1):2:lmax)
-        n_tor = length(m:2:lmax)
-    else
-        n_pol = length(m:lmax)
-        n_tor = length(m:lmax)
+    # Mirror MHDStabilityOperator exactly: compute_mhd_l_modes drops the
+    # degenerate l=0 mode (filter!(>=(1), …)); ll_h = ll_u; and for axial/dipole
+    # (symmB0 = -1) the magnetic blocks take the OPPOSITE parity (ll_f=ll_v,
+    # ll_g=ll_u). (MHD/types.jl:557-581.)
+    ll_u, ll_v = compute_mhd_l_modes(params.m, params.lmax, params.symm, params.B0_type)
+    n_pol = length(ll_u)
+    n_tor = length(ll_v)
+    n_per_mode = params.N + 1
+    if params.B0_type == no_field
+        n_f = 0
+        n_g = 0
+    elseif params.B0_type == axial || params.B0_type == dipole   # symmB0 = -1
+        n_f = n_tor
+        n_g = n_pol
+    else                                                          # symmB0 = +1
+        n_f = n_pol
+        n_g = n_tor
     end
-    n_per_mode = N + 1
-    n_f = params.B0_type == no_field ? 0 : n_pol
-    n_g = params.B0_type == no_field ? 0 : n_tor
-    total_dof = (n_pol + n_tor + n_f + n_g + n_pol) * n_per_mode
+    n_h = n_pol  # temperature shares poloidal-velocity parity
+    total_dof = (n_pol + n_tor + n_f + n_g + n_h) * n_per_mode
     return total_dof, n_pol, n_tor, n_f, n_g, n_per_mode
 end
 
@@ -266,13 +277,13 @@ Warns when the estimated memory exceeds 8 GB.
 """
 function estimate_size(p::OnsetProblem)
     params = p.params
-    n_l = _count_l_modes(params.m, params.lmax, params.equatorial_symmetry)
+    nP, nT, nΘ = _triglobal_mode_l_counts(params.m, params.lmax, params.equatorial_symmetry)
     total_dof = _hd_total_dof(params.m, params.lmax, params.Nr, params.equatorial_symmetry)
     mem_gb = _mem_gb(total_dof)
 
     println("OnsetProblem size estimate")
-    _tree_row(stdout, "l-modes", "$n_l (m=$(params.m), lmax=$(params.lmax), $(params.equatorial_symmetry))")
-    _tree_row(stdout, "degrees of freedom per mode", "$((params.Nr + 1) * 3) (Nr=$(params.Nr), 3 fields)")
+    _tree_row(stdout, "l-modes", "$nP/$nT/$nΘ P/T/Θ (m=$(params.m), lmax=$(params.lmax), $(params.equatorial_symmetry))")
+    _tree_row(stdout, "degrees of freedom per mode", "$(params.Nr) radial points per (l,field) block")
     _tree_row(stdout, "matrix size", "$total_dof × $total_dof")
     warning = mem_gb > 8.0 ? " (large; reduce lmax or Nr)" : ""
     _tree_row(stdout, "dense storage estimate", @sprintf("~%.1f GB%s", mem_gb, warning); last=true)
@@ -286,13 +297,13 @@ biglobal solve.
 """
 function estimate_size(p::BiglobalProblem)
     params = p.params
-    n_l = _count_l_modes(params.m, params.lmax, params.equatorial_symmetry)
+    nP, nT, nΘ = _triglobal_mode_l_counts(params.m, params.lmax, params.equatorial_symmetry)
     total_dof = _hd_total_dof(params.m, params.lmax, params.Nr, params.equatorial_symmetry)
     mem_gb = _mem_gb(total_dof)
 
     println("BiglobalProblem size estimate")
-    _tree_row(stdout, "l-modes", "$n_l (m=$(params.m), lmax=$(params.lmax), $(params.equatorial_symmetry))")
-    _tree_row(stdout, "degrees of freedom per mode", "$((params.Nr + 1) * 3) (Nr=$(params.Nr), 3 fields)")
+    _tree_row(stdout, "l-modes", "$nP/$nT/$nΘ P/T/Θ (m=$(params.m), lmax=$(params.lmax), $(params.equatorial_symmetry))")
+    _tree_row(stdout, "degrees of freedom per mode", "$(params.Nr) radial points per (l,field) block")
     _tree_row(stdout, "matrix size", "$total_dof × $total_dof")
     warning = mem_gb > 8.0 ? " (large; reduce lmax or Nr)" : ""
     _tree_row(stdout, "dense storage estimate", @sprintf("~%.1f GB%s", mem_gb, warning); last=true)

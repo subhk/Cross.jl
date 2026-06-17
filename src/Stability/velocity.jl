@@ -752,7 +752,7 @@ function _triglobal_velocity_slice(eigenvector::AbstractVector{<:Complex},
                                                    Lθ=grid_m.Lθ,
                                                    r=r,
                                                    sintheta=grid_m.sinθ,
-                                                   m=abs(m))
+                                                   m=m)
 
         # Add contribution with e^{imφ} phase factor
         phase = CT(exp(im * m * φ))
@@ -820,7 +820,7 @@ function _triglobal_velocity_3d(eigenvector::AbstractVector{<:Complex},
                                                    Lθ=grid_m.Lθ,
                                                    r=r,
                                                    sintheta=grid_m.sinθ,
-                                                   m=abs(m))
+                                                   m=m)
 
         # Add to 3D field with e^{imφ} phase
         for k in 1:Nφ

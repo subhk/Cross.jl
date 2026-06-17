@@ -131,23 +131,4 @@ Launch across `N` ranks:
 mpirun -n N julia --project=. driver.jl
 ```
 
-Notes: the eigensolve (MUMPS factorization + Krylov iterations) is distributed over
-`COMM_WORLD`. For **MHD** problems the tau-method assembly is also distributed — each
-rank computes and inserts only its owned interior rows (boundary-condition rows are
-overwritten on the distributed matrix). **Onset/biglobal** are fully distributed: each
-rank assembles only its owned interior rows (no rank builds the full matrix), the
-reduction basis `P` is built from per-block tau sub-blocks, and the tau-elimination
-reduction runs as a distributed sparse triple product `S·A·P` via PETSc `MatMatMult`.
-For **triglobal**, the coupled-pencil assembly is distributed (each rank inserts only
-its owned rows of the `n_total×n_total` pencil); the per-m single-mode operators and
-the off-diagonal coupling are still built replicated (their distribution is deferred
-with the planned vector-spherical-harmonic rewrite). The **MHD Galerkin** path still
-uses replicated assembly. Eigenvectors are gathered
-to **rank 0** (workers
-get empty eigenvectors); eigenvalues are identical on all ranks. Call `slepc_init!`
-/`slepc_finalize!` **once per process** (not per solve). If the extension is not
-loaded or `slepc_init!` was not called, `backend=:slepc` raises an actionable error.
 
-## License
-
-Cross.jl is released under the MIT License.

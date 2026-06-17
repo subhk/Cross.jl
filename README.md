@@ -5,11 +5,9 @@
 
 **Cross.jl** is a Julia package for linear stability analysis of rotating convection and magnetohydrodynamic (MHD) flows in spherical shells. It provides spectral methods to solve eigenvalue problems arising in geophysical and astrophysical fluid dynamics.
 
-It uses the Olver–Townsend ultraspherical (Gegenbauer) spectral method, which yields banded radial operators and 98–99% matrix sparsity, so high-resolution problems stay tractable while retaining spectral accuracy.
-
 ## Features
 
-- **Ultra-sparse spectral discretization** — banded ultraspherical operators; 98–99% sparsity.
+- **Ultra-sparse spectral discretization** — banded ultraspherical operators.
 - **Three analysis modes** — onset convection, biglobal (axisymmetric mean flow), and triglobal (non-axisymmetric, mode-coupled) stability.
 - **MHD extension** — magnetoconvection and kinematic-dynamo problems with `no_field`, `axial`, and `dipole` background fields.
 - **Spurious-free eigenvalues** — a banded Galerkin (BC-recombined) discretization for the onset, hydro, and insulating-axial-MHD pencils eliminates the spurious-mode swarm produced by the tau method; results match the collocation onset benchmark to ~1e-12.

@@ -427,10 +427,6 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
     nonzero_idx = findall(x -> x != 0, a0)
     bw = maximum(nonzero_idx) - 1  # 0-indexed
 
-    # Extend coefficient vector
-    a1 = zeros(T, 2 * N)
-    copyto!(a1, a0)
-
     # Determine row and column ranges based on parity
     if vector_parity != 0
         # Determine parities
@@ -446,13 +442,18 @@ function multiplication_matrix(a0::AbstractVector{T}, λ::Real, N::Int;
         idk = (1 - vector_parity * lamb_parity) ÷ 2
         jrange = idj:2:N-1  # 0-indexed
     else
-        jrange = 0:N-1  # 0-indexed
+        jrange = 0:1:N-1  # 0-indexed (StepRange to match the parity branch's type)
         idk = 0
     end
 
     # Build multiplication matrix
     if λ > 0
-        # Gegenbauer case: use recurrence relations
+        # Gegenbauer case: use recurrence relations.
+        # Extend coefficient vector — only this branch reads `a1`; the λ=0
+        # (Chebyshev) path below uses `a2 = copy(a0)` instead, so allocating
+        # `a1` unconditionally was dead work on every r-power multiply.
+        a1 = zeros(T, 2 * N)
+        copyto!(a1, a0)
         rows = Int[]
         cols = Int[]
         vals = T[]

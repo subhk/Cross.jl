@@ -623,14 +623,14 @@ const MAX_BACKGROUND_H_ORDER = 3
 function background_profile_value(r::Real, B0_type::BackgroundField,
                                   h_order::Int, r_power::Int)
     if B0_type == no_field
-        return 0.0
+        return zero(r)
     elseif B0_type == axial
         if h_order == 0
-            return 0.5 * r^(r_power + 1)
+            return r^(r_power + 1) / 2
         elseif h_order == 1
-            return 0.5 * r^(r_power)
+            return r^(r_power) / 2
         elseif h_order in (2, 3)
-            return 0.0
+            return zero(r)
         else
             error("Unsupported h-order $h_order for axial background field")
         end
@@ -654,7 +654,7 @@ function background_profile_value(r::Real, B0_type::BackgroundField,
             error("Unsupported h-order $h_order for dipole background field")
         end
 
-        return coeff * r^exponent
+        return oftype(r, coeff) * r^exponent
     else
         error("Background field $(B0_type) not implemented")
     end

@@ -776,13 +776,13 @@ function add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, 
         if haskey(basic_state_ops.advection_blocks, (ℓ_output, ℓ_input))
             adv_block = basic_state_ops.advection_blocks[(ℓ_output, ℓ_input)]
             if P_out_idx !== nothing && P_in_idx !== nothing
-                _emit_block!(A_rows, A_cols, A_vals, P_out_idx, P_in_idx, Complex.(adv_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, P_out_idx, P_in_idx, adv_block; owned=owned_julia_rows)
             end
             if T_out_idx !== nothing && T_in_idx !== nothing
-                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, T_in_idx, Complex.(adv_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, T_in_idx, adv_block; owned=owned_julia_rows)
             end
             if Θ_out_idx !== nothing && Θ_in_idx !== nothing
-                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, Θ_in_idx, Complex.(adv_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, Θ_in_idx, adv_block; owned=owned_julia_rows)
             end
         end
 
@@ -794,7 +794,7 @@ function add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, 
         if Θ_out_idx !== nothing
             if haskey(basic_state_ops.temp_grad_radial_blocks, (ℓ_output, ℓ_input))
                 temp_grad_block = basic_state_ops.temp_grad_radial_blocks[(ℓ_output, ℓ_input)]
-                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, P_in_idx, Complex.(temp_grad_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, P_in_idx, temp_grad_block; owned=owned_julia_rows)
             end
         end
 
@@ -805,11 +805,11 @@ function add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, 
         if Θ_out_idx !== nothing
             if haskey(basic_state_ops.temp_grad_theta_blocks, (ℓ_output, ℓ_input))
                 temp_grad_theta_block = basic_state_ops.temp_grad_theta_blocks[(ℓ_output, ℓ_input)]
-                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, P_in_idx, Complex.(temp_grad_theta_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, P_in_idx, temp_grad_theta_block; owned=owned_julia_rows)
             end
             if T_in_idx !== nothing && haskey(basic_state_ops.temp_grad_theta_toroidal_blocks, (ℓ_output, ℓ_input))
                 temp_grad_theta_t_block = basic_state_ops.temp_grad_theta_toroidal_blocks[(ℓ_output, ℓ_input)]
-                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, T_in_idx, Complex.(temp_grad_theta_t_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, Θ_out_idx, T_in_idx, temp_grad_theta_t_block; owned=owned_julia_rows)
             end
         end
 
@@ -821,7 +821,7 @@ function add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, 
         if T_out_idx !== nothing
             if haskey(basic_state_ops.shear_radial_blocks, (ℓ_output, ℓ_input))
                 shear_block = basic_state_ops.shear_radial_blocks[(ℓ_output, ℓ_input)]
-                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, P_in_idx, Complex.(shear_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, P_in_idx, shear_block; owned=owned_julia_rows)
             end
         end
 
@@ -832,11 +832,11 @@ function add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, 
         if T_out_idx !== nothing
             if haskey(basic_state_ops.shear_theta_blocks, (ℓ_output, ℓ_input))
                 shear_theta_block = basic_state_ops.shear_theta_blocks[(ℓ_output, ℓ_input)]
-                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, P_in_idx, Complex.(shear_theta_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, P_in_idx, shear_theta_block; owned=owned_julia_rows)
             end
             if T_in_idx !== nothing && haskey(basic_state_ops.shear_theta_toroidal_blocks, (ℓ_output, ℓ_input))
                 shear_theta_t_block = basic_state_ops.shear_theta_toroidal_blocks[(ℓ_output, ℓ_input)]
-                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, T_in_idx, Complex.(shear_theta_t_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, T_out_idx, T_in_idx, shear_theta_t_block; owned=owned_julia_rows)
             end
         end
 
@@ -850,7 +850,7 @@ function add_basic_state_operators_coo!(A_rows, A_cols, A_vals, B_rows, B_cols, 
         if P_out_idx !== nothing && T_in_idx !== nothing
             if haskey(basic_state_ops.metric_poloidal_blocks, (ℓ_output, ℓ_input))
                 metric_block = basic_state_ops.metric_poloidal_blocks[(ℓ_output, ℓ_input)]
-                _emit_block!(A_rows, A_cols, A_vals, P_out_idx, T_in_idx, Complex.(metric_block); owned=owned_julia_rows)
+                _emit_block!(A_rows, A_cols, A_vals, P_out_idx, T_in_idx, metric_block; owned=owned_julia_rows)
             end
         end
     end

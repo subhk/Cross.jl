@@ -30,6 +30,12 @@ end
 
 @inline function _scale_sparse(::Type{T}, coef, mat) where {T<:Real}
     Tout = (eltype(mat) <: Complex || !(coef isa Real)) ? Complex{T} : T
+    # Skip the conversion copy when `mat` already has the target eltype (the
+    # common real→real path): scalar-multiply directly instead of round-tripping
+    # through `SparseMatrixCSC{Tout}(mat)`.
+    if eltype(mat) === Tout
+        return Tout(coef) * mat
+    end
     return Tout(coef) * _typed_sparse(Tout, mat)
 end
 
@@ -107,14 +113,18 @@ end
 function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
-    nblock = zero_block(op)
+    nblock = real_zero_block(op)
     bg(p, h, d) = background_operator(op, p, h, d)
     L = l * (l + 1)
     Le2 = Le^2
     # Accumulate the radial terms as a sparse sum instead of densifying each
-    # cached background block via `Matrix(...)`. Scaling by a `Complex{T}` factor
-    # keeps the block complex (matching the former dense `Matrix{Complex{T}}` path).
-    scaled(C, terms) = _scale_sparse(T, Complex{T}(Le2 * C), combine_terms(terms))
+    # cached background block via `Matrix(...)`. The poloidal-velocity-from-
+    # poloidal-field Maxwell coupling is purely real (real coefficient × real
+    # background ops), so keep the block real `SparseMatrixCSC{T}`; it promotes
+    # to `Complex{T}` on assignment into A/B. This makes the return type of
+    # `operator_lorentz_poloidal_from_bpol` invariant to `B0_type` (was a
+    # `Union{Sparse{T},Sparse{Complex{T}}}` keyed on the runtime field type).
+    scaled(C, terms) = _scale_sparse(T, Le2 * C, combine_terms(terms))
 
     if offset == -2
         denom = 3 - 8l + 4l^2

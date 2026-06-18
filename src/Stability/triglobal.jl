@@ -673,7 +673,7 @@ end
 
 """Build all off-diagonal mode-coupling blocks induced by the 3D basic state."""
 function build_mode_coupling_operators(problem::CoupledModeProblem{T},
-                                        single_mode_ops::Dict,
+                                        single_mode_ops::Dict{Int,SingleModeOperator{T}},
                                         verbose::Bool) where T
     coupling_ops = Dict{Tuple{Int,Int}, Matrix{Complex{T}}}()
     params = problem.params
@@ -1877,8 +1877,8 @@ The structure is:
 where A_{mi} are single-mode operators and C_{ij} are coupling operators.
 """
 function _assemble_block_coo(problem::CoupledModeProblem{T},
-                             single_mode_ops::Dict,
-                             coupling_ops::Dict;
+                             single_mode_ops::Dict{Int,SingleModeOperator{T}},
+                             coupling_ops::Dict{Tuple{Int,Int},Matrix{Complex{T}}};
                              owned_julia_rows=nothing) where T
     n_total = problem.total_dofs
     row_A = Int[]
@@ -1916,8 +1916,8 @@ function _assemble_block_coo(problem::CoupledModeProblem{T},
 end
 
 function assemble_block_matrices(problem::CoupledModeProblem{T},
-                                  single_mode_ops::Dict,
-                                  coupling_ops::Dict,
+                                  single_mode_ops::Dict{Int,SingleModeOperator{T}},
+                                  coupling_ops::Dict{Tuple{Int,Int},Matrix{Complex{T}}},
                                   verbose::Bool) where T
     c = _assemble_block_coo(problem, single_mode_ops, coupling_ops)
     A_coupled = sparse(c.A_rows, c.A_cols, c.A_vals, c.n, c.n)

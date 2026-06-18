@@ -113,18 +113,14 @@ end
 function lorentz_upol_bpol_axial(op::MHDStabilityOperator{T},
                                  l::Int, m::Int, offset::Int,
                                  Le::T) where {T}
-    nblock = real_zero_block(op)
+    nblock = zero_block(op)
     bg(p, h, d) = background_operator(op, p, h, d)
     L = l * (l + 1)
     Le2 = Le^2
     # Accumulate the radial terms as a sparse sum instead of densifying each
-    # cached background block via `Matrix(...)`. The poloidal-velocity-from-
-    # poloidal-field Maxwell coupling is purely real (real coefficient × real
-    # background ops), so keep the block real `SparseMatrixCSC{T}`; it promotes
-    # to `Complex{T}` on assignment into A/B. This makes the return type of
-    # `operator_lorentz_poloidal_from_bpol` invariant to `B0_type` (was a
-    # `Union{Sparse{T},Sparse{Complex{T}}}` keyed on the runtime field type).
-    scaled(C, terms) = _scale_sparse(T, Le2 * C, combine_terms(terms))
+    # cached background block via `Matrix(...)`. Scaling by a `Complex{T}` factor
+    # keeps the block complex (matching the former dense `Matrix{Complex{T}}` path).
+    scaled(C, terms) = _scale_sparse(T, Complex{T}(Le2 * C), combine_terms(terms))
 
     if offset == -2
         denom = 3 - 8l + 4l^2
@@ -394,13 +390,18 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     bo(p, h, d) = background_operator(op, p + shift, h, d)
     L = l * (l + 1)
     Np1 = op.params.N + 1
-    zero_block = spzeros(T, Np1, Np1)
+    # Complex zero block (and complex-scaled term blocks below) so this function's
+    # return type is invariant to `B0_type`: the axial branch returns a complex
+    # block (locked in by test/mhd_stress_free_bc.jl), so the dipole/no-field
+    # branch must too — otherwise the inferred return is a runtime-keyed
+    # `Union{Sparse{T},Sparse{Complex{T}}}`.
+    zero_block = spzeros(Complex{T}, Np1, Np1)
 
     if offset == -2
         denom = 3 - 8l + 4l^2
         abs(denom) < eps() && return zero_block
         sqrt_factor = sqrt(max((l - m) * (-1 + l + m) * (-1 + l - m) * (l + m), 0))
-        coef = (Le^2) * (3 * (-2 - l + l^2) * sqrt_factor) / denom
+        coef = Complex{T}((Le^2) * (3 * (-2 - l + l^2) * sqrt_factor) / denom)
         terms = [
             (2l + 3l^2 + l^3, bo(0, 0, 0)),
             ((-6 + 7l - 3l^2), bo(1, 0, 1)),
@@ -418,7 +419,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     elseif offset == -1
         denom = 2l - 1
         abs(denom) < eps() && return zero_block
-        coef = (Le^2) * (sqrt(max(l^2 - m^2, 0)) * (l^2 - 1)) / denom
+        coef = Complex{T}((Le^2) * (sqrt(max(l^2 - m^2, 0)) * (l^2 - 1)) / denom)
         terms = [
             (L * (l + 2), bo(0, 0, 0)),
             (L * (l - 4), bo(1, 1, 0)),
@@ -435,7 +436,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     elseif offset == 0
         denom = -3 + 4l * (1 + l)
         abs(denom) < eps() && return zero_block
-        coef = (Le^2) * (3 * (l + l^2 - 3m^2)) / denom
+        coef = Complex{T}((Le^2) * (3 * (l + l^2 - 3m^2)) / denom)
         terms = [
             (3 * l * (1 + l) * (-2 + l + l^2), bo(0, 0, 0)),
             (-3 * L^2, bo(1, 1, 0)),
@@ -453,7 +454,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
     elseif offset == 1
         denom = 2l + 3
         abs(denom) < eps() && return zero_block
-        coef = (Le^2) * (sqrt(max((l + 1 + m) * (l + 1 - m), 0)) * l * (l + 2)) / denom
+        coef = Complex{T}((Le^2) * (sqrt(max((l + 1 + m) * (l + 1 - m), 0)) * l * (l + 2)) / denom)
         terms = [
             (-2 * (l^2 + 2l + 3), bo(1, 0, 1)),
             (2 * (l + 3), bo(2, 1, 1)),
@@ -472,7 +473,7 @@ function operator_lorentz_poloidal_from_bpol(op::MHDStabilityOperator{T},
         abs(denom) < eps() && return zero_block
         sqrt1 = sqrt(max((1 + l - m) * (2 + l + m), 0))
         sqrt2 = sqrt(max((2 + l - m) * (1 + l + m), 0))  # same as sqrt1 but retain symmetry
-        coef = (Le^2) * (3 * l * (l + 3) * sqrt1 * sqrt2) / denom
+        coef = Complex{T}((Le^2) * (3 * l * (l + 3) * sqrt1 * sqrt2) / denom)
         terms = [
             (l - l^3, bo(0, 0, 0)),
             (-(16 + 13l + 3l^2), bo(1, 0, 1)),

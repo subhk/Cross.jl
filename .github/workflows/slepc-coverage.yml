@@ -1,0 +1,93 @@
+name: SLEPc Coverage
+
+# Separate from the main CI: builds a complex-scalar PETSc + SLEPc, loads the
+# CrossSlepcExt extension, and runs real eigensolves so the SLEPc solver paths
+# (src/Stability/{solver,onset,biglobal,triglobal}.jl, src/solve.jl) get covered.
+# Kept isolated so a PETSc build failure never blocks the main test matrix.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/slepc-coverage.yml"
+      - "ext/CrossSlepcExt/**"
+      - "src/Stability/solver.jl"
+      - "src/Stability/triglobal.jl"
+      - "src/Stability/onset.jl"
+      - "src/Stability/biglobal.jl"
+      - "src/solve.jl"
+      - "test/test_slepc_solve_coverage.jl"
+
+jobs:
+  slepc-coverage:
+    runs-on: ubuntu-latest
+    env:
+      PETSC_ARCH: arch-complex
+      PETSC_DIR: ${{ github.workspace }}/petsc
+      SLEPC_DIR: ${{ github.workspace }}/slepc
+      PETSC_REF: v3.22.4
+      SLEPC_REF: v3.22.2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MPI + build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mpich libmpich-dev python3 make git
+
+      - name: Cache complex PETSc + SLEPc
+        id: petsc-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/petsc
+            ${{ github.workspace }}/slepc
+          key: petsc-slepc-complex-${{ env.PETSC_REF }}-${{ env.SLEPC_REF }}-mpich-v1
+
+      - name: Build complex PETSc + SLEPc
+        if: steps.petsc-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          git clone --depth 1 -b "$PETSC_REF" https://gitlab.com/petsc/petsc.git "$PETSC_DIR"
+          cd "$PETSC_DIR"
+          ./configure PETSC_ARCH="$PETSC_ARCH" \
+            --with-cc=mpicc --with-cxx=mpicxx --with-fc=0 \
+            --with-scalar-type=complex --with-precision=double \
+            --with-debugging=0 --with-fortran-bindings=0 \
+            --download-f2cblaslapack \
+            COPTFLAGS=-O1 CXXOPTFLAGS=-O1
+          make PETSC_DIR="$PETSC_DIR" PETSC_ARCH="$PETSC_ARCH" all
+          git clone --depth 1 -b "$SLEPC_REF" https://gitlab.com/slepc/slepc.git "$SLEPC_DIR"
+          cd "$SLEPC_DIR"
+          ./configure
+          make SLEPC_DIR="$SLEPC_DIR" PETSC_DIR="$PETSC_DIR" PETSC_ARCH="$PETSC_ARCH"
+
+      - name: Sanity-check the built libraries
+        run: |
+          ls -la "$PETSC_DIR/$PETSC_ARCH/lib/libpetsc.so"
+          ls -la "$SLEPC_DIR/$PETSC_ARCH/lib/libslepc.so"
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+
+      - name: Configure Julia MPI + PetscWrap/SlepcWrap, run real-solve coverage
+        env:
+          CROSS_SLEPC_TEST: '1'
+          JULIA_NUM_THREADS: '1'
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.add(["MPIPreferences","MPI","PetscWrap","SlepcWrap"])'
+          julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+          julia --project=. -e 'using Pkg; Pkg.build("PetscWrap"); Pkg.precompile()'
+          julia --project=. --code-coverage=user test/test_slepc_solve_coverage.jl
+
+      - uses: julia-actions/julia-processcoverage@v1
+
+      - name: Upload SLEPc coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: slepc
+          fail_ci_if_error: false

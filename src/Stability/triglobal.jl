@@ -798,7 +798,10 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
 
             # Build the coupling matrix in full coordinates, then project the
             # source columns into the same constraint basis used by the diagonal
-            # blocks while keeping target interior equations.
+            # blocks while keeping target interior equations. NB: a Dict/COO
+            # sparse accumulator was tried and measured SLOWER+heavier here — the
+            # Dr-block terms fill dense Nr×Nr radial sub-blocks, so this block is
+            # not sparse and the contiguous dense array is the right structure.
             C = zeros(Complex{T}, n_to, n_from)
 
             # Compute coupling through each relevant basic state mode

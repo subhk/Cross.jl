@@ -73,8 +73,8 @@
 - **Convection Onset**: Evaluate the onset of convection in rotating spherical shells with flexible mechanical and thermal boundary conditions
 - **Critical Rayleigh Numbers**: Find critical parameters using automated bracket search algorithms
 - **Basic States**: Build axisymmetric (`BasicState`) or fully 3-D (`BasicState3D`) basic states and assess their linear stability
-- **Eigenvalue Analysis**: Track leading eigenpairs with KrylovKit via a unified solver interface
-- **MHD Stability**: Study magnetoconvection and kinematic dynamo problems with the `CompleteMHD` module
+- **Eigenvalue Analysis**: Track leading eigenpairs via a unified solver interface (in-process, or distributed SLEPc/PETSc)
+- **MHD Stability**: Study magnetoconvection and kinematic dynamo problems with the `MHD` submodule
 - **Benchmarking**: Validate against published results using provided example scripts
 
 ## Quick Start
@@ -108,14 +108,14 @@ Cross.jl is organized into modular components for flexibility and extensibility.
 | Module | Purpose | Key Types |
 |--------|---------|-----------|
 | `Cross.jl` | Package entry point | Exports public API |
-| `Chebyshev.jl` | Radial discretization | `ChebyshevDiffn` |
-| `linear_stability.jl` | Core stability analysis | `OnsetParams`, `LinearStabilityOperator` |
-| `basic_state.jl` | Base state construction | `BasicState`, `BasicState3D` |
-| `onset_convection.jl` | Mode 1: No mean flow | `OnsetConvectionParams` |
-| `biglobal_stability.jl` | Mode 2: Axisymmetric mean flow | `BiglobalParams` |
-| `triglobal_stability.jl` | Mode 3: Non-axisymmetric | `TriglobalParams`, `CoupledModeProblem` |
-| `SparseOperator.jl` | Sparse ultraspherical method | `SparseOnsetParams` |
-| `CompleteMHD.jl` | MHD dynamo extension | `MHDParams`, `MHDStabilityOperator` |
+| `Spectral/chebyshev.jl` | Radial discretization | `ChebyshevDiffn` |
+| `Stability/linear.jl` | Core stability analysis | `OnsetParams`, `LinearStabilityOperator` |
+| `BasicStates/basic_state.jl` | Basic state construction | `BasicState`, `BasicState3D` |
+| `Stability/onset.jl` | Mode 1: No mean flow | `OnsetProblem` |
+| `Stability/biglobal.jl` | Mode 2: Axisymmetric mean flow | `BiglobalParams` |
+| `Stability/triglobal.jl` | Mode 3: Non-axisymmetric | `TriglobalParams`, `CoupledModeProblem` |
+| `Operators/sparse_operator.jl` | Sparse ultraspherical operators | sparse A/B assembly |
+| `MHD/` | MHD dynamo extension | `MHDParams`, `MHDStabilityOperator` |
 
 ## Physical Problem
 
@@ -198,7 +198,7 @@ This translates to:
 ## Requirements
 
 - **Julia**: 1.10 or newer
-- **Dependencies**: LinearAlgebra, SparseArrays, KrylovKit, JLD2, WignerSymbols
+- **Dependencies**: LinearAlgebra, SparseArrays, LinearMaps, JLD2, WignerSymbols, SpecialFunctions, Parameters
 
 ## Citation
 

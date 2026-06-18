@@ -51,7 +51,8 @@ The first run downloads packages including:
 |---------|---------|
 | `LinearAlgebra` | Standard Julia linear algebra |
 | `SparseArrays` | Sparse matrix operations |
-| `KrylovKit` | Krylov subspace eigenvalue solvers |
+| `LinearMaps` | Linear operator abstractions |
+| `SpecialFunctions` | Special mathematical functions |
 | `JLD2` | HDF5-based file I/O |
 | `WignerSymbols` | Wigner 3j symbols for mode coupling |
 | `Parameters` | Keyword argument macros |
@@ -97,19 +98,15 @@ After installation, the project has the following structure:
 Cross.jl/
 ├── src/                      # Source code
 │   ├── Cross.jl              # Main module entry point
-│   ├── Chebyshev.jl          # Chebyshev differentiation
-│   ├── UltrasphericalSpectral.jl  # Ultraspherical spectral method
-│   ├── linear_stability.jl   # Onset operator assembly (OnsetParams, OnsetProblem)  [v2.0]
-│   ├── basic_state.jl        # Basic state construction
-│   ├── basic_state_operators.jl   # Basic state coupling operators
-│   ├── triglobal_stability.jl    # Tri-global mode coupling
-│   ├── get_velocity.jl       # Field reconstruction
-│   ├── boundary_conditions.jl    # BC enforcement
-│   ├── OnsetEigenvalueSolver.jl  # Eigenvalue solver interface (solve, estimate_size)  [v2.0]
-│   ├── MHDOperator.jl        # MHD operator structure
-│   ├── MHDOperatorFunctions.jl   # MHD operator implementations
-│   ├── MHDAssembly.jl        # MHD matrix assembly
-│   └── CompleteMHD.jl        # Complete MHD module
+│   ├── validation.jl         # Input validation  [v2.0]
+│   ├── types.jl              # Problem/result types, estimate_size  [v2.0]
+│   ├── solve.jl              # Unified solve() API  [v2.0]
+│   ├── show.jl               # Pretty-printing  [v2.0]
+│   ├── Spectral/             # Chebyshev, ultraspherical, Galerkin discretization
+│   ├── BasicStates/          # Basic states, SH transforms, coupling operators
+│   ├── Stability/            # Onset / biglobal / triglobal + eigensolver
+│   ├── Operators/            # Sparse operators + boundary conditions
+│   └── MHD/                  # MHD extension (see Codebase Structure for the full tree)
 ├── example/                  # Example scripts
 │   ├── linear_stability_demo.jl
 │   ├── mhd_dynamo_example.jl

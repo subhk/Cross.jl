@@ -54,11 +54,8 @@ Where:
 ### Basic Hydrodynamic Onset (No Magnetic Field)
 
 ```julia
+using Cross
 using LinearAlgebra, SparseArrays
-
-# Load MHD module
-include("src/CompleteMHD.jl")
-using .CompleteMHD
 
 # Define parameters (Christensen & Wicht 2015, Table 1)
 params = MHDParams(
@@ -371,7 +368,7 @@ println("  Sparsity: ", nnz(A), " / ", size(A,1)^2,
 
 ### Step 4: Solve Eigenvalue Problem
 
-#### Using KrylovKit
+#### Using the eigenvalue solver
 
 ```julia
 # Extract interior problem

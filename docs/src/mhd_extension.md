@@ -12,7 +12,7 @@
 
 ## Overview
 
-The MHD module (`CompleteMHD`) extends the hydrodynamic solver with:
+The MHD submodule (`Cross.MHD`) extends the hydrodynamic solver with:
 
 - **Lorentz force**: Magnetic field effects on fluid motion
 - **Induction equation**: Velocity effects on magnetic field evolution
@@ -68,14 +68,8 @@ The MHD equations in a rotating spherical shell:
 ### Load the MHD Module
 
 ```julia
-# Load MHD extension
-include("src/CompleteMHD.jl")
-using .CompleteMHD
-
-# Also need eigenvalue solver
-include("src/OnsetEigenvalueSolver.jl")
-using .OnsetEigenvalueSolver
-
+# MHD types, operators, assembly and the eigensolver are all exported by Cross
+using Cross
 using LinearAlgebra, SparseArrays
 ```
 
@@ -391,11 +385,7 @@ See `example/mhd_dynamo_example.jl` for a complete working script:
 #!/usr/bin/env julia
 # MHD Dynamo Stability Analysis
 
-include("src/CompleteMHD.jl")
-using .CompleteMHD
-
-include("src/OnsetEigenvalueSolver.jl")
-using .OnsetEigenvalueSolver
+using Cross
 
 using LinearAlgebra, SparseArrays, Printf
 

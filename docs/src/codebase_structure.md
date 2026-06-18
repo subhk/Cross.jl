@@ -12,14 +12,16 @@
 Cross.jl/
 ├── src/                              # Source code
 │   ├── Cross.jl                      # Main module — includes submodules, exports public API
-│   ├── types.jl                      # v2.0: StabilityResult, problem types, estimate_size
 │   ├── validation.jl                 # v2.0: Input validation with errors and warnings
+│   ├── types.jl                      # v2.0: StabilityResult, problem types, estimate_size
+│   ├── solve.jl                      # v2.0: Unified solve() API dispatching on problem type
 │   ├── show.jl                       # v2.0: Pretty-printing for all public types
 │   │
 │   ├── Spectral/
-│   │   ├── Spectral.jl               # Entry point — includes chebyshev + ultraspherical
+│   │   ├── Spectral.jl               # Entry point
 │   │   ├── chebyshev.jl              # ChebyshevDiffn differentiation matrices
-│   │   └── ultraspherical.jl        # Olver-Townsend sparse spectral method
+│   │   ├── ultraspherical.jl        # Olver-Townsend sparse spectral method
+│   │   └── galerkin.jl              # Tau-free ultraspherical-Galerkin radial operators
 │   │
 │   ├── Operators/
 │   │   ├── Operators.jl              # Entry point
@@ -29,13 +31,15 @@ Cross.jl/
 │   ├── BasicStates/
 │   │   ├── BasicStates.jl            # Entry point
 │   │   ├── basic_state.jl           # BasicState, BasicState3D, SphericalHarmonicBC types
-│   │   ├── advection_diffusion.jl   # Self-consistent solver
-│   │   └── basic_state_operators.jl # Coupling operators
+│   │   ├── sh_transform.jl          # Real-orthonormal spherical-harmonic transforms (±m)
+│   │   ├── advection_diffusion.jl   # Self-consistent basic-state solver
+│   │   └── basic_state_operators.jl # Basic-state coupling operators
 │   │
 │   ├── Stability/
 │   │   ├── Stability.jl              # Entry point
 │   │   ├── linear.jl                # OnsetParams, LinearStabilityOperator
-│   │   ├── solver.jl                # KrylovKit shift-invert eigensolvers
+│   │   ├── solver.jl                # Pluggable generalized-eigenvalue backends
+│   │   ├── dof_ownership.jl         # DOF ↔ global-row mapping (distributed assembly)
 │   │   ├── velocity.jl              # Velocity reconstruction
 │   │   ├── onset.jl                 # Onset convection (no mean flow)
 │   │   ├── biglobal.jl              # Biglobal (axisymmetric mean flow)
@@ -43,14 +47,16 @@ Cross.jl/
 │   │
 │   └── MHD/
 │       ├── MHD.jl                    # Entry point
-│       ├── types.jl                  # MHDParams, BackgroundField enum
-│       ├── dipole.jl                 # Dipole field operators
-│       ├── operator_functions.jl    # Lorentz, induction, diffusion operators
-│       └── assembly.jl              # MHD matrix assembly
+│       ├── types.jl                  # MHDParams, MHDStabilityOperator, BackgroundField enum
+│       ├── dipole.jl                 # Dipole background-field helpers
+│       ├── operator_functions.jl    # Lorentz, induction, magnetic-diffusion operators
+│       ├── assembly.jl              # Tau (sparse) MHD matrix assembly
+│       └── galerkin_assembly.jl    # Tau-free Galerkin MHD assembly
 │
 ├── ext/
-│   ├── CrossRecipesBaseExt/          # Plots.jl recipes (weak dep)
-│   └── CrossMakieExt/                # Makie visualization (weak dep)
+│   ├── CrossRecipesBaseExt/          # Plots.jl recipes (weak dep: RecipesBase)
+│   ├── CrossMakieExt/                # Makie visualization (weak dep: Makie)
+│   └── CrossSlepcExt/                # SLEPc/PETSc distributed eigensolver (weak deps: PetscWrap, SlepcWrap)
 │
 ├── test/                             # Test suite
 ├── example/                          # Example scripts
@@ -67,21 +73,22 @@ The main module file orchestrates all submodules and exports the public API:
 ```julia
 module Cross
     # Dependencies
-    using LinearAlgebra, SparseArrays, JLD2, Printf
+    using LinearAlgebra, SparseArrays, JLD2, Printf, Random
     using Parameters
-    using KrylovKit
+    using LinearMaps, WignerSymbols, SpecialFunctions
 
-    # v2.0 core (order matters!)
-    include("types.jl")                # StabilityResult, problem types, estimate_size
-    include("validation.jl")           # Input validation
-    include("show.jl")                 # Pretty-printing for public types
-
-    # Submodules
-    include("Spectral/Spectral.jl")        # Chebyshev + ultraspherical discretization
-    include("Operators/Operators.jl")      # Sparse operators + boundary conditions
-    include("BasicStates/BasicStates.jl")  # Basic state types and coupling operators
+    # Submodules (included first — core v2.0 files below depend on them)
+    include("Spectral/Spectral.jl")        # Chebyshev + ultraspherical + Galerkin discretization
+    include("BasicStates/BasicStates.jl")  # Basic state types, SH transforms, coupling operators
     include("Stability/Stability.jl")      # Eigenvalue machinery and analysis modes
+    include("Operators/Operators.jl")      # Sparse operators + boundary conditions
     include("MHD/MHD.jl")                  # MHD extension
+
+    # v2.0 core
+    include("validation.jl")           # Input validation
+    include("types.jl")                # StabilityResult, problem types, estimate_size
+    include("solve.jl")                # Unified solve() API
+    include("show.jl")                 # Pretty-printing for public types
 
     export ...
 end
@@ -107,8 +114,11 @@ Defines the `StabilityResult` return type, common problem parameter types, and `
 #### `validation.jl`
 Input validation layer introduced in v2.0. Emits structured errors and warnings before problem setup to catch misconfigurations early.
 
+#### `solve.jl`
+Unified `solve()` API (v2.0). Dispatches on the problem type (`OnsetProblem`, `BiglobalProblem`, `TriglobalProblem`, `MHDProblem`) to assemble and solve the appropriate generalized eigenproblem, with memory pre-checks.
+
 #### `show.jl`
-Pretty-printing methods (`Base.show`) for all public types, introduced in v2.0.
+Pretty-printing methods (`Base.show`, `Base.summary`) for all public types, introduced in v2.0.
 
 ### Spectral Submodule (`Spectral/`)
 
@@ -134,6 +144,9 @@ end
 
 #### `Spectral/ultraspherical.jl`
 Olver-Townsend sparse spectral method using ultraspherical (Gegenbauer) polynomials for large-scale problems.
+
+#### `Spectral/galerkin.jl`
+Tau-free ultraspherical-Galerkin radial operators. Composes the banded ultraspherical primitives (derivative, conversion, multiplication) into a recombined trial basis that carries the boundary conditions, avoiding tau rows (full-rank `B`, no spurious eigenvalues).
 
 ### Operators Submodule (`Operators/`)
 
@@ -183,6 +196,9 @@ end
 - `meridional_basic_state(cd, χ, E, Ra, Pr, lmax_bs, amplitude)` - With thermal wind
 - `nonaxisymmetric_basic_state(cd, χ, E, Ra, Pr, lmax_bs, mmax_bs, amplitudes)` - 3D state
 
+#### `BasicStates/sh_transform.jl`
+Real-orthonormal spherical-harmonic transforms (cos+sin, ±m) and the vector-harmonic horizontal divergence — the foundation for correct non-axisymmetric basic-state advection. Provides in-place, separable synthesis/analysis routines.
+
 #### `BasicStates/advection_diffusion.jl`
 Self-consistent advection-diffusion solver for computing basic states.
 
@@ -214,7 +230,7 @@ Core linear stability analysis machinery shared by all modes.
 
 **Key Types:**
 ```julia
-struct OnsetParams{T<:Real}
+struct OnsetParams{T<:Real, BS}
     E::T              # Ekman number
     Pr::T             # Prandtl number
     Ra::T             # Rayleigh number
@@ -229,7 +245,7 @@ struct OnsetParams{T<:Real}
     thermal_bc::Symbol
     use_sparse_weighting::Bool
     equatorial_symmetry::Symbol
-    basic_state
+    basic_state::BS   # attached basic state, or `nothing`
 end
 
 struct LinearStabilityOperator{T}
@@ -247,11 +263,14 @@ end
 - `assemble_matrices(op)` - Build A and B matrices
 
 #### `Stability/solver.jl`
-Eigenvalue solving via KrylovKit shift-invert iteration.
+Generalized-eigenvalue solving (`A x = σ B x`) through a pluggable backend interface. The default backend runs in-process; an optional distributed SLEPc/PETSc backend (`backend=:slepc`) is provided by the `CrossSlepcExt` extension, loaded with `using PetscWrap, SlepcWrap`.
 
 **Key Functions:**
 - `solve_eigenvalue_problem(op; nev, which)` - Compute eigenvalues
 - `find_critical_rayleigh(E, Pr, χ, m, lmax, Nr; tol)` - Find critical Ra
+
+#### `Stability/dof_ownership.jl`
+DOF ↔ global-row mapping and PETSc row-ownership queries — pure integer bookkeeping over the `index_map` that underpins the distributed (MPI/SLEPc) assembly path.
 
 #### `Stability/velocity.jl`
 Reconstruct velocity components from poloidal/toroidal potentials.
@@ -345,14 +364,18 @@ Dipole magnetic field operators for the background field.
 Lorentz force, induction, and magnetic diffusion operator terms.
 
 #### `MHD/assembly.jl`
-MHD matrix assembly — adds magnetic terms to the A/B matrices produced by the Stability submodule.
+Tau (sparse) MHD matrix assembly — adds magnetic terms to the A/B matrices produced by the Stability submodule.
+
+#### `MHD/galerkin_assembly.jl`
+Tau-free ultraspherical-Galerkin assembly of the MHD eigenproblem. Boundary conditions are carried by a recombined trial basis (no tau rows → full-rank `B` → no spurious eigenvalues).
 
 ### Extension Packages (`ext/`)
 
-Visualization support is provided through Julia's extension mechanism (weak dependencies):
+Optional functionality is provided through Julia's extension mechanism (weak dependencies):
 
 - **`CrossRecipesBaseExt/`** - Plots.jl recipes, loaded automatically when `RecipesBase` is available
 - **`CrossMakieExt/`** - Interactive Makie visualization, loaded automatically when a Makie backend is available
+- **`CrossSlepcExt/`** - Distributed SLEPc/PETSc eigensolver backend, loaded with `using PetscWrap, SlepcWrap` (enables `backend=:slepc`)
 
 ## Data Flow
 
@@ -391,7 +414,7 @@ Visualization support is provided through Julia's extension mechanism (weak depe
 ┌─────────────────────────────────────────────────────────────────┐
 │                 Generalized Eigenvalue Problem                  │
 │                      A x = λ B x                                │
-│  • KrylovKit shift-invert iteration                             │
+│  • Pluggable eigensolver backend (in-process / SLEPc)           │
 └─────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -439,12 +462,18 @@ Y_{\ell_1, m_1} \times Y_{\ell_2, m_2} = \sum_{\ell'} G_{\ell_1 \ell_2 \ell'}^{m
 
 ```
 test/
-├── runtests.jl            # Test runner
-├── boundary_conditions.jl # BC application tests
-├── chebyshev.jl           # Chebyshev differentiation tests
-├── sparse_operator.jl     # Sparse method tests
-├── thermal_wind.jl        # Thermal wind balance tests
-└── triglobal.jl           # Triglobal stability tests
+├── runtests.jl                  # Test runner (includes all suites below)
+├── chebyshev.jl                 # Chebyshev differentiation tests
+├── sparse_operator.jl           # Sparse / ultraspherical operator tests
+├── galerkin_radial.jl           # Galerkin radial-operator tests
+├── sh_transform.jl              # Spherical-harmonic transform tests
+├── boundary_conditions.jl       # BC application tests
+├── thermal_wind.jl              # Thermal wind balance tests
+├── distributed_triglobal.jl     # Coupled triglobal assembly tests
+├── mhd_boundary_conditions.jl   # MHD boundary-condition tests
+├── type_stability.jl            # Inference + allocation regression tests
+├── test_show.jl                 # Pretty-printing tests
+└── ...                          # and more (see test/runtests.jl for the full list)
 ```
 
 Run tests with:
@@ -459,15 +488,18 @@ Pkg.test("Cross")
 |---------|------|---------|
 | `LinearAlgebra` | stdlib | Standard linear algebra |
 | `SparseArrays` | stdlib | Sparse matrix support |
-| `KrylovKit` | direct | Iterative eigensolvers |
+| `Printf` | stdlib | Formatted output for pretty-printing |
+| `Random` | stdlib | Random number generation |
+| `Logging` | stdlib | Solver progress / diagnostics |
 | `Parameters` | direct | `@with_kw` struct macros |
 | `JLD2` | direct | Data serialization |
 | `WignerSymbols` | direct | Gaunt coefficients for spherical harmonic coupling |
 | `SpecialFunctions` | direct | Special mathematical functions |
 | `LinearMaps` | direct | Linear operator abstractions |
-| `BenchmarkTools` | direct | Performance benchmarking |
 | `RecipesBase` | weak | Plots.jl plot recipes (`CrossRecipesBaseExt`) |
 | `Makie` | weak | Interactive visualization (`CrossMakieExt`) |
+| `PetscWrap`, `SlepcWrap` | weak | Distributed SLEPc/PETSc eigensolver (`CrossSlepcExt`) |
+| `BenchmarkTools` | test | Performance benchmarking (test extra) |
 
 ## Extension Points
 
@@ -642,17 +674,13 @@ Legend:
 ### Files
 
 ```
-src/
-├── MHDOperator.jl              # Main MHD operator structure
-├── MHDOperatorFunctions.jl     # Individual operator implementations
-├── MHDAssembly.jl              # Matrix assembly
-└── CompleteMHD.jl              # Complete module (use this)
-
-example/
-└── mhd_dynamo_example.jl       # Usage example
-
-docs/
-└── src/codebase_structure.md   # MHD implementation notes (this section)
+src/MHD/
+├── MHD.jl                  # Module entry point
+├── types.jl                # MHDParams, MHDStabilityOperator, BackgroundField enum
+├── dipole.jl               # Dipole background-field helpers
+├── operator_functions.jl   # Lorentz, induction, magnetic-diffusion operators
+├── assembly.jl             # Tau (sparse) MHD matrix assembly
+└── galerkin_assembly.jl    # Tau-free Galerkin MHD assembly
 ```
 
 ### Key Data Structures
@@ -709,8 +737,7 @@ assemble_mhd_matrices(op)  # Returns (A, B, interior_dofs, info)
 ### Basic Dynamo Stability
 
 ```julia
-include("src/CompleteMHD.jl")
-using .CompleteMHD
+using Cross
 
 # Define parameters
 params = MHDParams(
@@ -733,11 +760,7 @@ params = MHDParams(
 op = MHDStabilityOperator(params)
 A, B, interior_dofs, info = assemble_mhd_matrices(op)
 
-# Load the sparse A·x = σ·B·x solver
-include("src/OnsetEigenvalueSolver.jl")
-using .OnsetEigenvalueSolver: solve_eigenvalue_problem
-
-# Solve eigenvalue problem
+# Solve eigenvalue problem (solve_eigenvalue_problem is provided by Cross)
 A_int = A[interior_dofs, interior_dofs]
 B_int = B[interior_dofs, interior_dofs]
 eigenvalues, _, _ = solve_eigenvalue_problem(A_int, B_int)

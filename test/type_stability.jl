@@ -455,7 +455,10 @@ end
         T(0.35), one(T), T(100), one(T);
         E = T(1e-3), lmax = 4)
 
-    @test bytes < 185_000
+    # Threshold sized for the sparse-accumulation path with cross-platform/Julia
+    # headroom: macOS 1.11/1.12 land ~210 KB while Linux/Windows stay <185 KB. A
+    # dense-temporary regression would allocate far more (sibling guard uses 1 MB).
+    @test bytes < 262_144
 end
 
 @testset "Triglobal unweighted coupling avoids quadrature node allocation" begin

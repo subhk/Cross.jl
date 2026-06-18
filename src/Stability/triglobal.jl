@@ -41,7 +41,7 @@ Fields:
 Note: The size of the eigenvalue problem is ~ length(m_range) × lmax × Nr × 3
 which can become very large. Use sparse methods and Krylov subspace solvers.
 """
-@with_kw struct TriglobalParams{T<:Real}
+@with_kw_noshow struct TriglobalParams{T<:Real}
     E::T
     Pr::T
     Ra::T

@@ -71,7 +71,7 @@ params = BiglobalParams(
 
 See also: [`solve_biglobal_problem`](@ref), [`create_thermal_wind_basic_state`](@ref)
 """
-@with_kw struct BiglobalParams{T<:Real}
+@with_kw_noshow struct BiglobalParams{T<:Real}
     E::T
     Pr::T = one(T)
     Ra::T

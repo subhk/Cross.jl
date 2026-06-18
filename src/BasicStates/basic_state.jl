@@ -33,7 +33,7 @@ Fields:
 - `dtheta_dr_coeffs::Dict{Int,Vector{T}}` - Radial derivative ∂θ̄_ℓ0/∂r
 - `duphi_dr_coeffs::Dict{Int,Vector{T}}` - Radial derivative ∂ū_φ,ℓ0/∂r
 """
-@with_kw struct BasicState{T<:Real}
+@with_kw_noshow struct BasicState{T<:Real}
     lmax_bs::Int
     Nr::Int
     r::Vector{T}
@@ -76,7 +76,7 @@ Fields:
 Note: Perturbations on this basic state couple multiple azimuthal modes m simultaneously.
 The eigenvalue problem becomes block-coupled across different m values.
 """
-@with_kw struct BasicState3D{T<:Real}
+@with_kw_noshow struct BasicState3D{T<:Real}
     lmax_bs::Int
     mmax_bs::Int
     Nr::Int

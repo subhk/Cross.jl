@@ -988,6 +988,62 @@ end
 #  Convenience Functions
 # =============================================================================
 
+# --- Unified perturbation-field reconstruction API (hydrodynamic) -------------
+
+"""
+    perturbation_velocity(evec, op::LinearStabilityOperator; Nθ=nothing, grid=nothing)
+
+Reconstruct physical perturbation velocity `(u_r, u_θ, u_φ)` and the meridional
+grid from a hydrodynamic stability eigenvector. Thin wrapper over
+[`eigenvector_to_velocity`](@ref).
+"""
+function perturbation_velocity(evec::AbstractVector{<:Complex},
+                               op::LinearStabilityOperator; kwargs...)
+    ur, uθ, uφ, grid = eigenvector_to_velocity(evec, op; kwargs...)
+    return ur, uθ, uφ, op.r, grid    # uniform (components…, r_grid, grid)
+end
+
+# --- Temperature scalar synthesis (hydrodynamic) -----------------------------
+
+"""
+    perturbation_temperature(evec, op::LinearStabilityOperator; Nθ=nothing, grid=nothing)
+
+Reconstruct the physical perturbation temperature field
+`θ(r, θ) = Σ_ℓ Θ_ℓ(r) Y_ℓ^m(θ)` on a meridional grid. `Θ_ℓ(r)` are the
+temperature collocation values stored in the eigenvector's `:Θ` blocks.
+"""
+function perturbation_temperature(evec::AbstractVector{<:Complex},
+                                  op::LinearStabilityOperator;
+                                  Nθ::Union{Int,Nothing}=nothing,
+                                  grid::Union{MeridionalGrid,Nothing}=nothing)
+    m    = op.params.m
+    lmax = op.params.lmax
+    Nr   = op.params.Nr
+    g = grid === nothing ?
+        build_meridional_grid(Nθ === nothing ? 2 * lmax : Nθ, m, lmax;
+                              T=typeof(op.params.E)) : grid
+
+    θfield = zeros(ComplexF64, Nr, length(g.θ))
+    offset = (length(op.l_sets[:P]) + length(op.l_sets[:T])) * Nr
+    for (i, l) in enumerate(op.l_sets[:Θ])
+        block = offset + (i - 1) * Nr + 1 : offset + i * Nr
+        (last(block) <= length(evec)) || continue
+        Θl = @view evec[block]
+        ylm = g.Ylm[l]
+        @inbounds for j in eachindex(g.θ), k in 1:Nr
+            θfield[k, j] += Θl[k] * ylm[j]
+        end
+    end
+    return θfield, op.r, g
+end
+
+"""`perturbation_magnetic` is not defined for hydrodynamic problems (no magnetic field)."""
+function perturbation_magnetic(::AbstractVector{<:Complex},
+                               ::LinearStabilityOperator; kwargs...)
+    error("perturbation_magnetic: hydrodynamic problems have no magnetic field. " *
+          "Magnetic reconstruction is only available for MHD results (MHDStabilityOperator).")
+end
+
 """
     kinetic_energy_density(ur, uθ, uφ)
 

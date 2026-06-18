@@ -408,3 +408,34 @@ MHD dynamo problems involve coupled velocity-magnetic field instabilities where
 the critical parameter depends on multiple numbers (Ra, Pm, Le) simultaneously.
 Use solve(MHDProblem(...); nev=...) directly and inspect the growth rate.""")
 end
+
+# --- Perturbation-field reconstruction from StabilityResult ---
+# These methods require StabilityResult, which is defined in types.jl (before solve.jl).
+
+"""
+    perturbation_velocity(result::StabilityResult, mode::Int; kwargs...)
+
+Reconstruct velocity for the `mode`-th eigenvector of an Onset/Biglobal result.
+Requires `result.extra.operator` (present for `OnsetProblem`/`BiglobalProblem`).
+"""
+function perturbation_velocity(result::StabilityResult, mode::Int; kwargs...)
+    hasproperty(result.extra, :operator) || error(
+        "perturbation_velocity(result, mode): result.extra has no :operator " *
+        "(only OnsetProblem/BiglobalProblem results carry it). Pass (evec, op) instead.")
+    op = result.extra.operator
+    evec = result.eigenvectors[:, mode]
+    return perturbation_velocity(evec, op; kwargs...)
+end
+
+"""
+    perturbation_temperature(result::StabilityResult, mode::Int; kwargs...)
+
+Reconstruct temperature for the `mode`-th eigenvector of an Onset/Biglobal result.
+"""
+function perturbation_temperature(result::StabilityResult, mode::Int; kwargs...)
+    hasproperty(result.extra, :operator) || error(
+        "perturbation_temperature(result, mode): result.extra has no :operator. " *
+        "Pass (evec, op) instead.")
+    return perturbation_temperature(result.eigenvectors[:, mode],
+                                    result.extra.operator; kwargs...)
+end

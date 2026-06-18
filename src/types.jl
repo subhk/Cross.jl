@@ -406,3 +406,12 @@ function plot_meridional end
 
 """Extension hook for plotting radial profiles when plotting extras are loaded."""
 function plot_radial end
+
+"""Reconstruct physical perturbation velocity `(u_r, u_θ, u_φ)` on a meridional grid."""
+function perturbation_velocity end
+
+"""Reconstruct the physical perturbation temperature field on a meridional grid."""
+function perturbation_temperature end
+
+"""Reconstruct physical perturbation magnetic field `(B_r, B_θ, B_φ)` (MHD only)."""
+function perturbation_magnetic end

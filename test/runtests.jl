@@ -34,3 +34,6 @@ include("test_mhd_operator_coverage.jl")
 include("test_onset_solve_helpers.jl")
 include("test_bc_bsops_coverage.jl")
 include("test_basicstate_coverage.jl")
+include("test_solve_assembly_coverage.jl")
+
+include("perturbation_fields.jl")

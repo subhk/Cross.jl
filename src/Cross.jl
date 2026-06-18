@@ -164,6 +164,9 @@ module Cross
         eigenspectrum,
         plot_meridional,
         plot_radial,
+        perturbation_velocity,
+        perturbation_temperature,
+        perturbation_magnetic,
 
         # Validation
         validate_onset_params,

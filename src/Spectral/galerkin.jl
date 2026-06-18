@@ -126,7 +126,10 @@ Project a banded C^(q) operator into Galerkin form: keep the leading `M_test`
 rows (P_M restriction), right-multiply by the trial recombination `R_trial`.
 """
 function galerkin_block(L_band::AbstractMatrix, R_trial::AbstractMatrix, M_test::Int)
-    return Matrix((L_band * R_trial)[1:M_test, :])
+    # Restrict to the leading `M_test` rows BEFORE multiplying: the product's
+    # trailing rows are discarded anyway, so computing them is pure waste. This
+    # multiplies an `M_test × N` block by `R_trial` instead of the full `(N+1) × N`.
+    return Matrix(L_band[1:M_test, :] * R_trial)
 end
 
 """

@@ -386,7 +386,7 @@ function _assemble_onset_radial_coo(op::LinearStabilityOperator{T};
         P_idx = op.index_map[(ℓ, :P)]
         Θ_idx = get(op.index_map, (ℓ, :Θ), nothing)
 
-        _emit_block!(B_rows, B_cols, B_vals, P_idx, P_idx, Complex.(-Complex.(L * (L * R2D0 - 2 * R3D1 - R4D2))); owned=owned_julia_rows)
+        _emit_block!(B_rows, B_cols, B_vals, P_idx, P_idx, -Complex.(L * (L * R2D0 - 2 * R3D1 - R4D2)); owned=owned_julia_rows)
 
         # Poloidal diagonal
         coriolis_p = 2im * m * (-L * R2D0 + 2 * R3D1 + R4D2)
@@ -419,7 +419,7 @@ function _assemble_onset_radial_coo(op::LinearStabilityOperator{T};
                 diffusion = -L * R0 + 2 * R1D1 + R2D2
             end
 
-            _emit_block!(B_rows, B_cols, B_vals, Θ_idx, Θ_idx, Complex.(Complex.(B_theta)); owned=owned_julia_rows)
+            _emit_block!(B_rows, B_cols, B_vals, Θ_idx, Θ_idx, Complex.(B_theta); owned=owned_julia_rows)
 
             # Temperature gradient coupling: only add if NO basic state
             # (basic state will provide explicit gradient through basic_state_operators)
@@ -445,7 +445,7 @@ function _assemble_onset_radial_coo(op::LinearStabilityOperator{T};
         L = TT(ℓ * (ℓ + 1))
         T_idx = op.index_map[(ℓ, :T)]
 
-        _emit_block!(B_rows, B_cols, B_vals, T_idx, T_idx, Complex.(-Complex.(L * R2D0)); owned=owned_julia_rows)
+        _emit_block!(B_rows, B_cols, B_vals, T_idx, T_idx, -Complex.(L * R2D0); owned=owned_julia_rows)
 
         # Toroidal diagonal
         # BUG FIX 2025-10-27: Removed incorrect L factor from Coriolis term

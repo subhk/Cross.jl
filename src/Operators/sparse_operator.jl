@@ -367,13 +367,13 @@ function operator_coriolis_offdiag(op::SparseStabilityOperator{T},
                                   l::Int, m::Int, offset::Int) where {T}
     if offset == -1
         # Coupling to l-1 mode (acts on toroidal coefficients)
-        C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
+        C = (l^2 - 1) * sqrt(T(l^2 - m^2)) / (2l - 1)
         mtx = 2 * C * ((l - 1) * op.r3_D0_v - op.r4_D1_v)
         return mtx, -1
 
     elseif offset == 1
         # Coupling to l+1 mode (acts on toroidal coefficients)
-        C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
+        C = l * (l + 2) * sqrt(T((l + m + 1) * (l - m + 1))) / (2l + 3)
         mtx = 2 * C * (-(l + 2) * op.r3_D0_v - op.r4_D1_v)
         return mtx, 1
 
@@ -458,12 +458,12 @@ function operator_coriolis_v_to_u(op::SparseStabilityOperator{T},
                                  l::Int, m::Int, offset::Int) where {T}
     if offset == -1
         # Coupling from v at mode l to u at mode l-1
-        C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
+        C = (l^2 - 1) * sqrt(T(l^2 - m^2)) / (2l - 1)
         return 2 * C * ((l - 1) * op.r3_D0_u - op.r4_D1_u)
 
     elseif offset == 1
         # Coupling from v at mode l to u at mode l+1
-        C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
+        C = l * (l + 2) * sqrt(T((l + m + 1) * (l - m + 1))) / (2l + 3)
         return 2 * C * (-(l + 2) * op.r3_D0_u - op.r4_D1_u)
 
     else

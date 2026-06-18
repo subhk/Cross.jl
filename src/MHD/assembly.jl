@@ -51,7 +51,7 @@ end
 function operator_coriolis_offdiag(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
     dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     if offset == -1
-        C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
+        C = (l^2 - 1) * sqrt(T(l^2 - m^2)) / (2l - 1)
         if dipole
             mtx = 2 * C * ((l - 1) * op.r5_D0_u - op.r6_D1_u)
         else
@@ -59,7 +59,7 @@ function operator_coriolis_offdiag(op::MHDStabilityOperator{T}, l::Int, m::Int, 
         end
         return mtx, -1
     elseif offset == 1
-        C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
+        C = l * (l + 2) * sqrt(T((l + m + 1) * (l - m + 1))) / (2l + 3)
         if dipole
             mtx = 2 * C * (-(l + 2) * op.r5_D0_u - op.r6_D1_u)
         else
@@ -110,14 +110,14 @@ end
 function operator_coriolis_v_to_u(op::MHDStabilityOperator{T}, l::Int, m::Int, offset::Int) where {T}
     dipole = is_dipole_case(op.params.B0_type, op.params.ricb)
     if offset == -1
-        C = (l^2 - 1) * sqrt(l^2 - m^2) / (2l - 1)
+        C = (l^2 - 1) * sqrt(T(l^2 - m^2)) / (2l - 1)
         if dipole
             return 2 * C * ((l - 1) * op.r4_D0_v - op.r5_D1_v)
         else
             return 2 * C * ((l - 1) * op.r1_D0_v - op.r2_D1_v)
         end
     elseif offset == 1
-        C = l * (l + 2) * sqrt((l + m + 1) * (l - m + 1)) / (2l + 3)
+        C = l * (l + 2) * sqrt(T((l + m + 1) * (l - m + 1))) / (2l + 3)
         if dipole
             return 2 * C * (-(l + 2) * op.r4_D0_v - op.r5_D1_v)
         else

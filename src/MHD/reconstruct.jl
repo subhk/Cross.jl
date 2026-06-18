@@ -3,14 +3,15 @@
 #
 #  Native to the MHD spectral (Chebyshev-coefficient) basis: scatter an interior
 #  eigenvector back to the full DOF layout, slice the per-(field, ℓ) coefficient
-#  blocks, evaluate each Chebyshev series on a radial grid (Clenshaw), then
+#  blocks, evaluate each Chebyshev series on a radial grid via direct
+#  T_n(x) = cos(n·acos(x)) (accurate for the small N used here), then
 #  synthesize physical fields on a meridional (r, θ) grid.  The poloidal-toroidal
 #  curl mirrors `potentials_to_velocity` exactly (velocity and magnetic field
 #  share the same B = ∇×∇×(P r̂) + ∇×(T r̂) form).
 # =============================================================================
 
 """Total (pre-BC) MHD degrees of freedom: all five sections × `(N+1)` radial coeffs."""
-function _mhd_total_dof(op::MHDStabilityOperator)
+function _mhd_reconstruction_dof(op::MHDStabilityOperator)
     n_modes = length(op.ll_u) + length(op.ll_v) + length(op.ll_f) +
               length(op.ll_g) + length(op.ll_h)
     return n_modes * (op.params.N + 1)
@@ -19,14 +20,14 @@ end
 """
     _mhd_full_vector(evec, op, interior_dofs)
 
-Return a full-length DOF vector. If `evec` already has `_mhd_total_dof(op)`
+Return a full-length DOF vector. If `evec` already has `_mhd_reconstruction_dof(op)`
 entries it is returned unchanged. If `evec` matches `length(interior_dofs)`,
 its entries are scattered into a zero full vector at `interior_dofs`.
 """
 function _mhd_full_vector(evec::AbstractVector{<:Complex},
                           op::MHDStabilityOperator,
                           interior_dofs)
-    ndof = _mhd_total_dof(op)
+    ndof = _mhd_reconstruction_dof(op)
     if length(evec) == ndof
         return Vector{ComplexF64}(evec)
     elseif interior_dofs !== nothing && length(evec) == length(interior_dofs)
@@ -35,7 +36,7 @@ function _mhd_full_vector(evec::AbstractVector{<:Complex},
         return full
     else
         error("_mhd_full_vector: eigenvector length $(length(evec)) matches neither " *
-              "the full DOF count $ndof nor length(interior_dofs)=" *
+              "the reconstruction DOF count $ndof nor length(interior_dofs)=" *
               "$(interior_dofs === nothing ? "nothing" : length(interior_dofs)). " *
               "Pass interior_dofs from assemble_mhd_matrices.")
     end
@@ -101,7 +102,8 @@ function perturbation_temperature(evec::AbstractVector{<:Complex},
     full     = _mhd_full_vector(evec, op, interior_dofs)
     idx_map  = _mhd_index_map(op)
     g = grid === nothing ?
-        build_meridional_grid(Nθ === nothing ? 2 * lmax : Nθ, m, lmax) : grid
+        build_meridional_grid(Nθ === nothing ? 2 * lmax : Nθ, m, lmax;
+                              T=typeof(op.params.E)) : grid
     r_grid = _mhd_radial_grid(op; Nr = Nr === nothing ? op.params.N + 1 : Nr)
 
     θfield = zeros(ComplexF64, length(r_grid), length(g.θ))
@@ -184,7 +186,8 @@ function perturbation_velocity(evec::AbstractVector{<:Complex},
     idx_map  = _mhd_index_map(op)
     g = grid === nothing ?
         build_meridional_grid(Nθ === nothing ? 2 * op.params.lmax : Nθ,
-                              op.params.m, op.params.lmax) : grid
+                              op.params.m, op.params.lmax;
+                              T=typeof(op.params.E)) : grid
     r_grid = _mhd_radial_grid(op; Nr = Nr === nothing ? op.params.N + 1 : Nr)
     Fr, Fθ, Fφ = _mhd_poltor_to_physical(full, idx_map, op,
                                           op.ll_u, :u, op.ll_v, :v, r_grid, g)
@@ -210,7 +213,8 @@ function perturbation_magnetic(evec::AbstractVector{<:Complex},
     idx_map  = _mhd_index_map(op)
     g = grid === nothing ?
         build_meridional_grid(Nθ === nothing ? 2 * op.params.lmax : Nθ,
-                              op.params.m, op.params.lmax) : grid
+                              op.params.m, op.params.lmax;
+                              T=typeof(op.params.E)) : grid
     r_grid = _mhd_radial_grid(op; Nr = Nr === nothing ? op.params.N + 1 : Nr)
     Fr, Fθ, Fφ = _mhd_poltor_to_physical(full, idx_map, op,
                                           op.ll_f, :f, op.ll_g, :g, r_grid, g)

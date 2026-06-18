@@ -53,7 +53,7 @@ using Cross
                            ricb=0.35, m=2, lmax=6, N=16,
                            B0_type=Cross.axial, B0_amplitude=1.0)
         op = Cross.MHDStabilityOperator(params)
-        ndof = Cross._mhd_total_dof(op)
+        ndof = Cross._mhd_reconstruction_dof(op)
         @test ndof == (length(op.ll_u)+length(op.ll_v)+length(op.ll_f)+
                        length(op.ll_g)+length(op.ll_h)) * (params.N + 1)
 
@@ -89,7 +89,7 @@ using Cross
                            B0_type=Cross.axial, B0_amplitude=1.0)
         op = Cross.MHDStabilityOperator(params)
         idx_map = Cross._mhd_index_map(op)
-        ndof = Cross._mhd_total_dof(op)
+        ndof = Cross._mhd_reconstruction_dof(op)
 
         # Plant constant Chebyshev mode (coeff[1]=1 ⇒ T_0 ≡ 1) in the first h degree.
         full = zeros(ComplexF64, ndof)
@@ -112,7 +112,7 @@ using Cross
                            B0_type=Cross.axial, B0_amplitude=1.0)
         op = Cross.MHDStabilityOperator(params)
         idx_map = Cross._mhd_index_map(op)
-        ndof = Cross._mhd_total_dof(op)
+        ndof = Cross._mhd_reconstruction_dof(op)
 
         # Pure toroidal magnetic (only :g populated) -> B_r must vanish.
         full = zeros(ComplexF64, ndof)
@@ -149,7 +149,7 @@ using Cross
                            ricb=0.35, m=2, lmax=6, N=16,
                            B0_type=Cross.axial, B0_amplitude=1.0)
         op = Cross.MHDStabilityOperator(params)
-        ndof = Cross._mhd_total_dof(op)
+        ndof = Cross._mhd_reconstruction_dof(op)
         evec = randn(ComplexF64, ndof)
 
         ur, uθ, uφ, rg, g = perturbation_velocity(evec, op)
@@ -160,5 +160,31 @@ using Cross
             @test eltype(A) == ComplexF64
             @test all(isfinite, abs.(A))
         end
+    end
+
+    @testset "(result, mode) delegation API" begin
+        # Test that perturbation_velocity(result, mode) and
+        # perturbation_temperature(result, mode) correctly delegate to the
+        # (evec, op) methods. Build a synthetic StabilityResult to avoid
+        # requiring SLEPc.
+        params = OnsetParams(E=1e-3, Pr=1.0, Ra=100.0, χ=0.35, m=2, lmax=6, Nr=16)
+        op = Cross.LinearStabilityOperator(params)
+        nev = 2
+        evecs = randn(ComplexF64, op.total_dof, nev)
+        evals = ComplexF64[complex(-0.1, 0.5), complex(-0.2, 0.3)]
+        problem = OnsetProblem(params)
+        result = StabilityResult(evals, evecs, problem; extra=(operator=op,))
+
+        # perturbation_velocity: delegation check on ur component
+        ur1, _, _, _ = perturbation_velocity(result.eigenvectors[:, 1],
+                                              result.extra.operator)
+        ur2, _, _, _ = perturbation_velocity(result, 1)
+        @test ur2 == ur1
+
+        # perturbation_temperature: delegation check on θfield component
+        θ1, _, _ = perturbation_temperature(result.eigenvectors[:, 1],
+                                             result.extra.operator)
+        θ2, _, _ = perturbation_temperature(result, 1)
+        @test θ2 == θ1
     end
 end

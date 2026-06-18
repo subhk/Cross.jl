@@ -7,12 +7,12 @@
 
 ## Features
 
-- **Ultra-sparse spectral discretization** — banded ultraspherical operators.
-- **Three analysis modes** — onset convection, biglobal (axisymmetric mean flow), and triglobal (non-axisymmetric, mode-coupled) stability.
-- **Spurious-free eigenvalues** — a banded Galerkin (BC-recombined) discretization for the onset, hydro, and insulating-axial-MHD pencils eliminates the spurious-mode swarm produced by the tau method; results match the collocation onset benchmark to ~1e-12.
+- **Ultra-sparse spectral discretization** — banded ultraspherical operators
+- **Three analysis modes** — onset convection, biglobal (axisymmetric mean flow), and triglobal (non-axisymmetric, mode-coupled) stability
+- **Spurious-free eigenvalues** — a banded Galerkin (BC-recombined) discretization for the onset, hydro, and insulating-axial-MHD pencils eliminates the spurious-mode swarm produced by the tau method
 - **Unified solver API** — one `solve(problem)` entry point across all problem types, returning a `StabilityResult`.
-- **Critical-parameter search** — automated bracketing for critical Rayleigh numbers.
-- **Flexible basic states** — conductive, meridional, non-axisymmetric, and self-consistent (advection-balanced) states.
+- **Critical-parameter search** — automated bracketing for critical Rayleigh numbers
+- **Flexible basic states** — conductive, meridional, non-axisymmetric, and self-consistent (advection-balanced) states
 
 ## Installation
 

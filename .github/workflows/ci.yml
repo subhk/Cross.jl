@@ -42,11 +42,25 @@ jobs:
         env:
           JULIA_NUM_THREADS: 2
           JULIA_PKG_PRECOMPILE_AUTO: "0"
+          # Instrument coverage on a single job only; the other 8 stay fast.
+          COVERAGE: ${{ matrix.os == 'ubuntu-latest' && matrix['julia-version'] == '1.12' }}
         run: |
           julia --color=yes -e '
             using Pkg;
             Pkg.activate(pwd());
             Pkg.instantiate(; allow_autoprecomp=false);
             using Cross;
-            Pkg.test();
+            Pkg.test(; coverage = get(ENV, "COVERAGE", "false") == "true");
           '
+
+      - name: Process coverage
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix['julia-version'] == '1.12' }}
+        uses: julia-actions/julia-processcoverage@v1
+
+      - name: Upload coverage to Codecov
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix['julia-version'] == '1.12' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

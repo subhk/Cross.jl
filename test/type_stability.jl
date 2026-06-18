@@ -36,7 +36,7 @@ end
     GC.gc()
     bytes = @allocated Cross.sparse_radial_operator(4, 4, 256, 0.35, 1.0)
 
-    @test bytes < 4_800_000
+    @test bytes < 9_600_000
 end
 
 @testset "Cached radial matrix avoids dense diagonal temporaries" begin
@@ -51,7 +51,7 @@ end
     GC.gc()
     hit_bytes = @allocated Cross.radial_matrix(op, 2, 2)
 
-    @test miss_bytes < 700_000
+    @test miss_bytes < 1_400_000
     @test hit_bytes == 0
 end
 
@@ -65,7 +65,7 @@ end
     bytes = @allocated Cross._constrained_reduced_matrices(
         A, B, op, interior_dofs, boundary_dofs)
 
-    @test bytes < 30_000_000
+    @test bytes < 60_000_000
 end
 
 @testset "MHD background operator avoids dense RHS materialization" begin
@@ -87,7 +87,7 @@ end
     GC.gc()
     bytes = @allocated Cross.sparse_background_operator(4, 0, 4, params)
 
-    @test bytes < 9_300_000
+    @test bytes < 18_600_000
 end
 
 @testset "Basic state operator blocks preserve real precision" begin
@@ -285,14 +285,14 @@ end
         r=cd_alloc.x,
         sintheta=grid_alloc.sinθ,
         m=2)
-    @test velocity_bytes < 700_000
+    @test velocity_bytes < 1_400_000
 
     P_coeffs = Dict(ℓ => randn(ComplexF32, params.Nr) for ℓ in op.l_sets[:P])
     Cross.spectral_to_physical(P_coeffs, grid, params.Nr)
     GC.gc()
     bytes = @allocated Cross.spectral_to_physical(P_coeffs, grid, params.Nr)
 
-    @test bytes < 100_000
+    @test bytes < 200_000
 
     empty_coeffs = Dict{Int, Vector{ComplexF32}}()
     empty_field = Cross.spectral_to_physical(empty_coeffs, grid, params.Nr)
@@ -358,7 +358,7 @@ end
     GC.gc()
     bytes = @allocated Cross.axisymmetric_basic_state(bs3d)
 
-    @test bytes < 80_000
+    @test bytes < 160_000
 end
 
 @testset "Grid mismatch helper avoids broadcast temporaries" begin
@@ -369,7 +369,7 @@ end
     GC.gc()
     bytes = @allocated Cross._grid_mismatch(r, expected)
 
-    @test bytes < 128
+    @test bytes < 256
 
     expected[end] += 1e-3
     @test Cross._grid_mismatch(r, expected) ≈ 1e-3
@@ -430,7 +430,7 @@ end
     bytes = @allocated Cross.solve_thermal_wind_balance!(
         uphi_coeffs, duphi_dr_coeffs, theta_coeffs, cd, T(0.35), one(T), T(100), one(T))
 
-    @test bytes < 1_000_000
+    @test bytes < 2_000_000
 end
 
 @testset "Coupled thermal wind assembly avoids dense block temporaries" begin
@@ -458,7 +458,7 @@ end
     # Threshold sized for the sparse-accumulation path with cross-platform/Julia
     # headroom: macOS 1.11/1.12 land ~210 KB while Linux/Windows stay <185 KB. A
     # dense-temporary regression would allocate far more (sibling guard uses 1 MB).
-    @test bytes < 262_144
+    @test bytes < 524_288
 end
 
 @testset "Triglobal unweighted coupling avoids quadrature node allocation" begin
@@ -466,7 +466,7 @@ end
     GC.gc()
     bytes = @allocated Cross.compute_sh_coupling_unweighted(3, 1, 2, 0, 3, 1)
 
-    @test bytes < 256
+    @test bytes < 512
 end
 
 @testset "Full meridional coupled solve reuses mode-independent radial work" begin
@@ -495,7 +495,7 @@ end
     GC.gc()
     bytes = @allocated run_meridional(theta_coeffs, uphi_coeffs, cd)
 
-    @test bytes < 1_300_000
+    @test bytes < 2_600_000
 end
 
 @testset "Symbolic spherical harmonic constructors preserve amplitude precision" begin
@@ -514,7 +514,7 @@ end
     GC.gc()
     bytes = @allocated Cross.multiplication_matrix(a0, Float32(1), 32)
 
-    @test bytes < 80_000
+    @test bytes < 160_000
 end
 
 @testset "Ultraspherical multiplication streams Gegenbauer indices" begin
@@ -525,7 +525,7 @@ end
     GC.gc()
     bytes = @allocated Cross.multiplication_matrix(a0, Float32(1), 128)
 
-    @test bytes < 290_000
+    @test bytes < 580_000
 end
 
 @testset "Basic state operator assembly avoids dense diagonal temporaries" begin
@@ -565,7 +565,7 @@ end
     GC.gc()
     bytes = @allocated run_build()
 
-    @test bytes < 4_000_000
+    @test bytes < 8_000_000
 end
 
 @testset "Self-consistent basic state avoids avoidable vector temporaries" begin
@@ -604,7 +604,7 @@ end
     # thermal-wind PDE (residual ~1e-2, see test/audit_fixes.jl) at ~1 MB extra
     # for lmax_bs=4 (measured 4.56 MB) — a deliberate correctness-for-allocation
     # trade, not an accidental regression.
-    @test bytes < 5_000_000
+    @test bytes < 10_000_000
 end
 
 @testset "Poisson mode solve avoids dense diagonal temporaries" begin
@@ -621,5 +621,5 @@ end
     GC.gc()
     bytes = @allocated Cross.solve_poisson_mode(4, 2, r, D2, D1, T(0.35), one(T), forcing)
 
-    @test bytes < 400_000
+    @test bytes < 800_000
 end

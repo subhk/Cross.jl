@@ -49,6 +49,7 @@ conduction_basic_state
 meridional_basic_state
 nonaxisymmetric_basic_state
 basic_state_selfconsistent
+create_thermal_wind_basic_state
 BasicState
 BasicState3D
 SphericalHarmonicBC
@@ -60,4 +61,11 @@ SphericalHarmonicBC
 ChebyshevDiffn
 LinearStabilityOperator
 assemble_matrices
+```
+
+## MHD operators
+
+```@docs
+MHDStabilityOperator
+assemble_mhd_matrices
 ```

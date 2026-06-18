@@ -1,6 +1,6 @@
 # Triglobal Stability Analysis with Non-Axisymmetric Mean Flow
 
-Triglobal stability analysis handles the most general case: fully three-dimensional basic states with non-axisymmetric ($m \neq 0$) components. This introduces **mode coupling** between perturbations at different azimuthal wavenumbers, requiring simultaneous solution of coupled modes.
+Triglobal stability analysis handles the most general case: fully three-dimensional basic states with non-axisymmetric (``m \neq 0``) components. This introduces **mode coupling** between perturbations at different azimuthal wavenumbers, requiring simultaneous solution of coupled modes.
 
 !!! warning "Validation status (read first)"
     The non-axisymmetric basic-state machinery has been **reimplemented on a unified
@@ -67,37 +67,37 @@ Triglobal analysis is necessary when the background state breaks axisymmetry:
 
 ### The Coupling Mechanism
 
-When the basic state contains $m_{bs} \neq 0$ components, the advection terms couple different perturbation modes:
+When the basic state contains ``m_{bs} \neq 0`` components, the advection terms couple different perturbation modes:
 
-$$
+```math
 \bar{u}_{m_{bs}} \cdot \nabla u'_m \rightarrow u'_{m + m_{bs}} + u'_{m - m_{bs}}
-$$
+```
 
-**Example**: If $\bar{\Theta}$ contains $Y_2^2$ (so $m_{bs} = 2$):
-- Perturbation at $m = 4$ couples to $m = 6$ and $m = 2$
-- Perturbation at $m = 0$ couples to $m = 2$ and $m = -2$
-- A cascade of couplings connects all modes differing by multiples of $m_{bs}$
+**Example**: If ``\bar{\Theta}`` contains ``Y_2^2`` (so ``m_{bs} = 2``):
+- Perturbation at ``m = 4`` couples to ``m = 6`` and ``m = 2``
+- Perturbation at ``m = 0`` couples to ``m = 2`` and ``m = -2``
+- A cascade of couplings connects all modes differing by multiples of ``m_{bs}``
 
 ### Gaunt Coefficients
 
 The coupling strength is determined by **Gaunt coefficients**:
 
-$$
+```math
 G_{\ell_1 \ell_2 \ell_3}^{m_1 m_2 m_3} = \int Y_{\ell_1}^{m_1} Y_{\ell_2}^{m_2} Y_{\ell_3}^{m_3*} \, d\Omega
-$$
+```
 
 These are computed from **Wigner 3j symbols**:
 
-$$
+```math
 G_{\ell_1 \ell_2 \ell_3}^{m_1 m_2 m_3} = \sqrt{\frac{(2\ell_1+1)(2\ell_2+1)(2\ell_3+1)}{4\pi}}
 \begin{pmatrix} \ell_1 & \ell_2 & \ell_3 \\ 0 & 0 & 0 \end{pmatrix}
 \begin{pmatrix} \ell_1 & \ell_2 & \ell_3 \\ m_1 & m_2 & m_3 \end{pmatrix}
-$$
+```
 
 Selection rules:
-- $m_1 + m_2 = m_3$
-- $|\ell_1 - \ell_2| \leq \ell_3 \leq \ell_1 + \ell_2$ (triangle inequality)
-- $\ell_1 + \ell_2 + \ell_3$ must be even
+- ``m_1 + m_2 = m_3``
+- ``|\ell_1 - \ell_2| \leq \ell_3 \leq \ell_1 + \ell_2`` (triangle inequality)
+- ``\ell_1 + \ell_2 + \ell_3`` must be even
 
 ### Block Matrix Structure
 
@@ -119,8 +119,8 @@ m=2 │  0      0      0     C₂,₁    A₂  │
 ```
 
 Where:
-- $A_m$ = diagonal blocks (single-mode physics: diffusion, Coriolis, buoyancy)
-- $C_{m,m'}$ = coupling blocks from basic state advection
+- ``A_m`` = diagonal blocks (single-mode physics: diffusion, Coriolis, buoyancy)
+- ``C_{m,m'}`` = coupling blocks from basic state advection
 
 ## Mathematical Formulation
 
@@ -129,28 +129,28 @@ Where:
 The basic state contains all spherical harmonic components:
 
 **Temperature:**
-$$
+```math
 \bar{T}(r, \theta, \phi) = \sum_{\ell=0}^{L_{bs}} \sum_{m=-\ell}^{\ell} \bar{\Theta}_{\ell m}(r) Y_\ell^m(\theta, \phi)
-$$
+```
 
 **Velocity:**
-$$
+```math
 \bar{\mathbf{u}}(r, \theta, \phi) = \sum_{\ell, m} \left[ \bar{u}_{r,\ell m}(r) Y_\ell^m \hat{\mathbf{r}} + \bar{u}_{\theta,\ell m}(r) \nabla_H Y_\ell^m + \bar{u}_{\phi,\ell m}(r) \hat{\mathbf{r}} \times \nabla_H Y_\ell^m \right]
-$$
+```
 
 ### Coupled Perturbation Equations
 
-For perturbations spanning $m \in [m_{min}, m_{max}]$:
+For perturbations spanning ``m \in [m_{min}, m_{max}]``:
 
-$$
+```math
 \frac{\partial \mathbf{u}'_m}{\partial t} + 2\hat{\mathbf{z}} \times \mathbf{u}'_m + \sum_{m'} \left[ (\mathbf{u}'_m \cdot \nabla)\bar{\mathbf{u}}_{m-m'} + (\bar{\mathbf{u}}_{m'} \cdot \nabla)\mathbf{u}'_{m-m'} \right] = \ldots
-$$
+```
 
-The sum couples modes $m$ and $m - m'$ through basic state component $m'$.
+The sum couples modes ``m`` and ``m - m'`` through basic state component ``m'``.
 
 ### Generalized Eigenvalue Problem
 
-$$
+```math
 \begin{pmatrix}
 \mathbf{A}_{-2} & \mathbf{C}_{-2,-1} & & & \\
 \mathbf{C}_{-1,-2} & \mathbf{A}_{-1} & \mathbf{C}_{-1,0} & & \\
@@ -172,7 +172,7 @@ $$
 \begin{pmatrix}
 \mathbf{x}_{-2} \\ \mathbf{x}_{-1} \\ \mathbf{x}_0 \\ \mathbf{x}_1 \\ \mathbf{x}_2
 \end{pmatrix}
-$$
+```
 
 ## The `BasicState3D` Structure
 
@@ -203,9 +203,9 @@ end
 
 For physical (real-valued) fields, coefficients must satisfy:
 
-$$
+```math
 \bar{f}_{\ell,-m} = (-1)^m \bar{f}_{\ell,m}^*
-$$
+```
 
 This is automatically enforced when constructing `BasicState3D` from physical data.
 
@@ -244,12 +244,12 @@ result = solve(TriglobalProblem(params, bs3d, -5:5); nev=6)
 
 For non-axisymmetric basic states, Cross.jl computes the **complete velocity field** including:
 
-1. **Zonal flow** $\bar{u}_\phi$ from thermal wind balance (∂T/∂θ forcing)
-2. **Meridional circulation** $\bar{u}_\theta$, $\bar{u}_r$ from the φ-component of thermal wind (∂T/∂φ forcing)
+1. **Zonal flow** ``\bar{u}_\phi`` from thermal wind balance (∂T/∂θ forcing)
+2. **Meridional circulation** ``\bar{u}_\theta``, ``\bar{u}_r`` from the φ-component of thermal wind (∂T/∂φ forcing)
 
 The key insight is that for **m ≠ 0** modes:
-- $\partial \bar{T}/\partial \phi \propto im \bar{T} \neq 0$ drives meridional flow
-- The operator $(\hat{z}\cdot\nabla)$ couples modes $\ell$ to $\ell\pm1$
+- ``\partial \bar{T}/\partial \phi \propto im \bar{T} \neq 0`` drives meridional flow
+- The operator ``(\hat{z}\cdot\nabla)`` couples modes ``\ell`` to ``\ell\pm1``
 - A block-tridiagonal solve is required for full accuracy
 
 See [Basic States: Full Geostrophic Balance](../basic_states.md#full-geostrophic-balance-with-meridional-circulation) for detailed theory.
@@ -425,7 +425,7 @@ params_triglobal = TriglobalParams(
 ```
 
 !!! warning "Mode Range Selection"
-    Choose `m_range` to be symmetric and wide enough to capture the coupling cascade. If the basic state has $m_{bs} = 2$, modes separated by 2 will couple.
+    Choose `m_range` to be symmetric and wide enough to capture the coupling cascade. If the basic state has ``m_{bs} = 2``, modes separated by 2 will couple.
 
 ### Step 3: Estimate Problem Size
 
@@ -509,7 +509,7 @@ println("  Status: ", result.growth_rate > 0 ? "UNSTABLE" : "STABLE")
 
 ### Extract Mode Components
 
-Each eigenvector spans all coupled $m$ values:
+Each eigenvector spans all coupled ``m`` values:
 
 ```julia
 function extract_mode_component(problem, eigenvector, target_m)
@@ -788,7 +788,7 @@ println("\nResults saved to outputs/triglobal_analysis.jld2")
 Before running triglobal analysis:
 
 - [ ] `m_range` is symmetric (e.g., -2:2, not 0:4)
-- [ ] `m_range` covers coupling from basic state $m_{bs}$
+- [ ] `m_range` covers coupling from basic state ``m_{bs}``
 - [ ] Problem size fits in available memory
 - [ ] Basic state satisfies reality conditions
 - [ ] Basic state `mmax_bs` matches expected coupling
@@ -799,11 +799,11 @@ Before running triglobal analysis:
 
 | Feature | Onset (No Flow) | Biglobal (Axisymm.) | Triglobal (3D) |
 |---------|-----------------|---------------------|----------------|
-| Basic state $m$ | 0 only | 0 only | All $m$ |
+| Basic state ``m`` | 0 only | 0 only | All ``m`` |
 | Mode coupling | None | None | Yes |
 | Matrix structure | Block diagonal | Block diagonal | Coupled blocks |
-| DOFs per $m$ | $N_r \times N_\ell$ | $N_r \times N_\ell$ | $N_r \times N_\ell$ |
-| Total DOFs | Single $m$ | Single $m$ | $\sum_m N_r \times N_\ell$ |
+| DOFs per ``m`` | ``N_r \times N_\ell`` | ``N_r \times N_\ell`` | ``N_r \times N_\ell`` |
+| Total DOFs | Single ``m`` | Single ``m`` | ``\sum_m N_r \times N_\ell`` |
 | Memory | Low | Low | High |
 | Applications | Classical onset | Thermal wind | CMB heterogeneity |
 

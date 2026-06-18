@@ -432,4 +432,4 @@ end
 ---
 
 !!! info "Additional Documentation"
-    See `docs/MHD_USER_GUIDE.md` and `docs/MHD_IMPLEMENTATION.md` for comprehensive technical details.
+    See the [MHD User Guide](mhd_user_guide.md) for comprehensive usage documentation, and the [Codebase Structure](codebase_structure.md) page for implementation details.

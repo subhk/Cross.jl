@@ -22,7 +22,7 @@
 
 ### Optional but Recommended
 
-- **Python 3.10+** - For building the MkDocs documentation locally
+- **Documenter.jl** - For building the documentation locally (`julia --project=docs docs/make.jl`)
 - **VS Code with Julia extension** - For a richer REPL and plot experience
 - **C/Fortran toolchain** - For building dependencies such as MKL or FFTW if Julia requests them
 
@@ -154,29 +154,24 @@ Cross.jl recognizes several environment variables:
 
 ## Building Documentation Locally
 
-The documentation uses MkDocs Material. To preview locally:
+The documentation uses [Documenter.jl](https://documenter.juliadocs.org/). To preview locally:
 
-### Step 1: Create Python Virtual Environment
-
-```bash
-cd Cross.jl
-python -m venv .venv-docs
-source .venv-docs/bin/activate  # On Windows: .venv-docs\Scripts\activate
-```
-
-### Step 2: Install Dependencies
+### Step 1: Instantiate the docs environment
 
 ```bash
-pip install -r docs/requirements.txt
+julia --project=docs -e '
+    using Pkg
+    Pkg.develop(PackageSpec(path=pwd()))
+    Pkg.instantiate()'
 ```
 
-### Step 3: Serve Documentation
+### Step 2: Build the site
 
 ```bash
-mkdocs serve
+julia --project=docs docs/make.jl
 ```
 
-Open `http://127.0.0.1:8000` in your browser to see the rendered site with live reload.
+Open `docs/build/index.html` in your browser to see the rendered site.
 
 ## Your First Calculation
 

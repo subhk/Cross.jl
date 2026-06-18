@@ -29,6 +29,7 @@ makedocs(
             "Basic States" => "basic_states.md",
             "Tri-Global Analysis" => "triglobal.md",
             "MHD Extension" => "mhd_extension.md",
+            "MHD User Guide" => "mhd_user_guide.md",
         ],
         "Theory" => [
             "Mathematical Foundations" => "theory/mathematical_foundations.md",
@@ -43,7 +44,7 @@ makedocs(
     ],
     # First migration: keep the build green while content/docstrings are converted.
     # These are tightened (removed) in Task 7 once conversion is complete.
-    warnonly = [:missing_docs, :cross_references, :docs_block],
+    warnonly = [:missing_docs],
 )
 
 deploydocs(

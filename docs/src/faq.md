@@ -325,25 +325,24 @@ params = MHDParams(
 
 ## Documentation
 
-### Q: MkDocs build fails with `ModuleNotFoundError`
+### Q: Documenter build fails or `make.jl` errors
 
 **Solution:**
 
-1. Create and activate Python virtual environment:
+1. Instantiate the docs environment (once):
    ```bash
-   python -m venv .venv-docs
-   source .venv-docs/bin/activate  # Linux/macOS
+   julia --project=docs -e '
+       using Pkg
+       Pkg.develop(PackageSpec(path=pwd()))
+       Pkg.instantiate()'
    ```
 
-2. Install requirements:
+2. Build the site:
    ```bash
-   pip install -r docs/requirements.txt
+   julia --project=docs docs/make.jl
    ```
 
-3. Run mkdocs:
-   ```bash
-   mkdocs serve
-   ```
+3. Open `docs/build/index.html` in your browser to preview.
 
 ---
 
@@ -353,26 +352,7 @@ params = MHDParams(
 
 1. Enable GitHub Pages in repository settings
 2. Choose "GitHub Actions" as source
-3. Create `.github/workflows/docs.yml`:
-
-```yaml
-name: Documentation
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r docs/requirements.txt
-      - run: mkdocs gh-deploy --force
-```
+3. The `.github/workflows/docs.yml` in this repo uses Documenter's `deploydocs` — push to `main` triggers automatic deployment.
 
 ---
 

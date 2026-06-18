@@ -73,7 +73,7 @@ m    Re(λ₁)          Im(λ₁)          iterations
 **Purpose:** Find critical Rayleigh numbers across azimuthal modes.
 
 **What it does:**
-- Scans $m$ values to find $Ra_c(m)$
+- Scans ``m`` values to find ``Ra_c(m)``
 - Uses bisection to find where growth rate = 0
 - Identifies the globally most unstable mode
 

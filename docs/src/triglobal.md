@@ -28,13 +28,13 @@ Use tri-global analysis when:
 
 When a basic state has ``m_{bs} \neq 0`` components, perturbations at mode ``m`` couple to ``m \pm m_{bs}``:
 
-$$
+```math
 \bar{u}_{m_{bs}} \cdot \nabla u'_m \rightarrow u'_{m + m_{bs}} + u'_{m - m_{bs}}
-$$
+```
 
 For example, if ``\bar{\Theta}`` contains ``Y_{2,2}`` (so ``m_{bs} = 2``):
-- Perturbation mode $m=4$ couples to $m=2$ and $m=6$
-- Mode $m=0$ couples to $m=2$ and $m=-2$
+- Perturbation mode ``m=4`` couples to ``m=2`` and ``m=6``
+- Mode ``m=0`` couples to ``m=2`` and ``m=-2``
 
 ### Gaunt Coefficients
 
@@ -120,7 +120,7 @@ structure is:
 
 ### Understand the Block Structure
 
-The matrices have block structure where each block couples different $(m, \ell)$ pairs:
+The matrices have block structure where each block couples different ``(m, \ell)`` pairs:
 
 ```
         m=-2   m=-1   m=0    m=1    m=2

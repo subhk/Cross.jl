@@ -1,6 +1,6 @@
 # Biglobal Stability Analysis with Axisymmetric Mean Flow
 
-Biglobal stability analysis extends the classical onset problem by including an axisymmetric ($m=0$) background flow. This captures scenarios where differential rotation, thermal wind, or imposed zonal jets modify the stability characteristics of the system.
+Biglobal stability analysis extends the classical onset problem by including an axisymmetric (``m=0``) background flow. This captures scenarios where differential rotation, thermal wind, or imposed zonal jets modify the stability characteristics of the system.
 
 ## Physical Motivation
 
@@ -30,57 +30,57 @@ The axisymmetric base state consists of:
 
 **Temperature field:**
 
-$$
+```math
 \overline{T}(r, \theta) = \overline{T}_0(r) + \sum_{\ell=2,4,...} \overline{\Theta}_{\ell 0}(r) Y_\ell^0(\theta)
-$$
+```
 
 **Zonal flow:**
 
-$$
+```math
 \overline{u}_\phi(r, \theta) = \sum_{\ell=1,3,...} \overline{u}_{\phi,\ell 0}(r) Y_\ell^0(\theta)
-$$
+```
 
-The zonal flow has different parity than temperature: odd-$\ell$ for $\overline{u}_\phi$ and even-$\ell$ for temperature perturbations (for equatorially symmetric basic states).
+The zonal flow has different parity than temperature: odd-``\ell`` for ``\overline{u}_\phi`` and even-``\ell`` for temperature perturbations (for equatorially symmetric basic states).
 
 ### Thermal Wind Balance
 
 When temperature varies with latitude, geostrophic balance requires a zonal flow. The thermal wind equation:
 
-$$
+```math
 2\Omega \cos\theta \frac{\partial \overline{u}_\phi}{\partial z} = -\frac{g \alpha}{r} \frac{\partial \overline{T}}{\partial \theta}
-$$
+```
 
 In spherical coordinates with our non-dimensionalization:
 
-$$
+```math
 2 \cos\theta \frac{\partial \overline{u}_\phi}{\partial r} = -\frac{Ra \cdot E^2}{Pr \cdot r} \frac{\partial \overline{\Theta}}{\partial \theta}
-$$
+```
 
 This relates the vertical shear of zonal flow to the horizontal temperature gradient.
 
 ### Modified Linearized Equations
 
-With an axisymmetric basic state $(\overline{\mathbf{u}}, \overline{T})$, the linearized perturbation equations become:
+With an axisymmetric basic state ``(\overline{\mathbf{u}}, \overline{T})``, the linearized perturbation equations become:
 
 **Momentum:**
-$$
+```math
 \frac{\partial \mathbf{u}'}{\partial t} + 2\hat{\mathbf{z}} \times \mathbf{u}' + \underbrace{(\mathbf{u}' \cdot \nabla)\overline{\mathbf{u}} + (\overline{\mathbf{u}} \cdot \nabla)\mathbf{u}'}_{\text{advection by/of mean flow}} = -\nabla p' + E \nabla^2 \mathbf{u}' + \frac{Ra \cdot E^2}{Pr} \Theta' \hat{\mathbf{r}}
-$$
+```
 
 **Energy:**
-$$
+```math
 \frac{\partial \Theta'}{\partial t} + u_r' \frac{\partial \overline{T}}{\partial r} + \underbrace{\mathbf{u}' \cdot \nabla \overline{\Theta} + \overline{\mathbf{u}} \cdot \nabla \Theta'}_{\text{advection terms}} = \frac{E}{Pr} \nabla^2 \Theta'
-$$
+```
 
 ### Azimuthal Mode Decoupling
 
-Because the basic state is axisymmetric ($m_{bs} = 0$), perturbation modes with different azimuthal wavenumbers $m$ remain decoupled:
+Because the basic state is axisymmetric (``m_{bs} = 0``), perturbation modes with different azimuthal wavenumbers ``m`` remain decoupled:
 
-$$
+```math
 Y_\ell^0 \times Y_{\ell'}^m \propto Y_{\ell''}^m
-$$
+```
 
-This means we can still analyze each $m$ independently, but the growth rates and eigenmodes are modified by the mean flow.
+This means we can still analyze each ``m`` independently, but the growth rates and eigenmodes are modified by the mean flow.
 
 ## The `BasicState` Structure
 
@@ -100,12 +100,12 @@ end
 
 ### Key Properties
 
-| Field | Content | Typical $\ell$ values |
+| Field | Content | Typical ``\ell`` values |
 |-------|---------|----------------------|
-| `theta_coeffs` | Temperature $\bar{\Theta}_{\ell 0}(r)$ | 0, 2, 4, 6, ... |
-| `uphi_coeffs` | Zonal flow $\bar{u}_{\phi,\ell 0}(r)$ | 1, 3, 5, ... |
-| `dtheta_dr_coeffs` | Radial derivative $d\bar{\Theta}_{\ell 0}/dr$ | 0, 2, 4, 6, ... |
-| `duphi_dr_coeffs` | Radial derivative $d\bar{u}_{\phi,\ell 0}/dr$ | 1, 3, 5, ... |
+| `theta_coeffs` | Temperature ``\bar{\Theta}_{\ell 0}(r)`` | 0, 2, 4, 6, ... |
+| `uphi_coeffs` | Zonal flow ``\bar{u}_{\phi,\ell 0}(r)`` | 1, 3, 5, ... |
+| `dtheta_dr_coeffs` | Radial derivative ``d\bar{\Theta}_{\ell 0}/dr`` | 0, 2, 4, 6, ... |
+| `duphi_dr_coeffs` | Radial derivative ``d\bar{u}_{\phi,\ell 0}/dr`` | 1, 3, 5, ... |
 
 ## Creating Basic States
 
@@ -147,8 +147,8 @@ bs = conduction_basic_state(cd, χ; lmax_bs = 6)
 ```
 
 This creates a basic state with:
-- $\bar{T}_0(r)$ = conductive profile
-- $\bar{u}_\phi = 0$ everywhere
+- ``\bar{T}_0(r)`` = conductive profile
+- ``\bar{u}_\phi = 0`` everywhere
 
 ### Method 2: Meridional Temperature + Thermal Wind
 
@@ -175,8 +175,8 @@ bs = meridional_basic_state(
 
 This generates:
 
-1. **Temperature**: $\bar{\Theta}_{20}(r) \cdot Y_2^0(\theta)$ perturbation
-2. **Zonal flow**: $\bar{u}_\phi$ from thermal wind integration
+1. **Temperature**: ``\bar{\Theta}_{20}(r) \cdot Y_2^0(\theta)`` perturbation
+2. **Zonal flow**: ``\bar{u}_\phi`` from thermal wind integration
 
 ### Method 3: Manual Construction
 
@@ -315,23 +315,23 @@ Mean flows can either stabilize or destabilize convection:
 
 | Effect | Mechanism | Typical Result |
 |--------|-----------|----------------|
-| **Advective stabilization** | Mean flow shears convective columns | Increased $Ra_c$ |
-| **Destabilization** | Shear instabilities, resonances | Decreased $Ra_c$ |
-| **Drift modification** | Doppler shift by zonal flow | Changed $\omega_c$ |
+| **Advective stabilization** | Mean flow shears convective columns | Increased ``Ra_c`` |
+| **Destabilization** | Shear instabilities, resonances | Decreased ``Ra_c`` |
+| **Drift modification** | Doppler shift by zonal flow | Changed ``\omega_c`` |
 
 ### Thermal Wind Amplitude
 
 The strength of thermal wind scales with the temperature variation amplitude:
 
-$$
+```math
 \bar{u}_\phi \sim \frac{Ra \cdot E^2}{Pr} \cdot \Delta \bar{\Theta}
-$$
+```
 
-For weak thermal wind ($\bar{u}_\phi \ll E^{1/3}$), effects are perturbative. For strong thermal wind, significant modifications to onset occur.
+For weak thermal wind (``\bar{u}_\phi \ll E^{1/3}``), effects are perturbative. For strong thermal wind, significant modifications to onset occur.
 
 ### Critical Layer Interactions
 
-When $\bar{u}_\phi(r_c) = \omega/m$ (matching pattern speed), critical layers form where perturbation energy can be exchanged with the mean flow.
+When ``\bar{u}_\phi(r_c) = \omega/m`` (matching pattern speed), critical layers form where perturbation energy can be exchanged with the mean flow.
 
 ## Boundary-Driven Flows
 
@@ -486,7 +486,7 @@ println("\nResults saved.")
 Before running biglobal analysis:
 
 - [ ] Chebyshev grid matches between basic state and analysis parameters
-- [ ] Basic state temperature coefficients include $\ell = 0$ (mean profile)
+- [ ] Basic state temperature coefficients include ``\ell = 0`` (mean profile)
 - [ ] Thermal wind computed consistently with temperature perturbation
 - [ ] `lmax_bs` in basic state is sufficient for convergence
 - [ ] Radial derivatives computed with same Chebyshev operators

@@ -664,8 +664,8 @@ function _project_coupling_block(C_full::Matrix{Complex{T}},
     for block in source.reduction.blocks
         # View the source/target sub-block instead of materializing a copy of the
         # integer-indexed slice before the matmul.
-        C[:, block.reduced_indices] .=
-            (@view C_full[target.interior_dofs, block.full_indices]) * block.basis
+        mul!(view(C, :, block.reduced_indices),
+             @view(C_full[target.interior_dofs, block.full_indices]), block.basis)
     end
 
     return C

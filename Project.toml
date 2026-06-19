@@ -1,6 +1,6 @@
 name = "Cross"
 uuid = "b261f30d-6c96-4f96-8f67-071dc8a02665"
-version = "2.0.0"
+version = "1.0.0"
 authors = ["Subhajit Kar <subhajitkar19@gmail.com>"]
 
 [deps]

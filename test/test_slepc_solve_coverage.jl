@@ -33,7 +33,9 @@ else
             for B0 in (axial, dipole)
                 mp = MHDParams(E=1e-3, Pr=1.0, Pm=1.0, Ra=100.0, Le=1.0, ricb=0.35,
                                m=1, lmax=3, N=12, B0_type=B0, B0_amplitude=1.0)
-                r = Cross.solve(MHDProblem(mp); nev=2, sigma=0.0)
+                # Complex shift off the real axis: sigma=0 makes (A - sigma*B)=A
+                # singular for the dipole pencil (zero pivot in the LU factorization).
+                r = Cross.solve(MHDProblem(mp); nev=2, sigma=0.5 + 0.5im)
                 @test finite_vals(r)
             end
         end

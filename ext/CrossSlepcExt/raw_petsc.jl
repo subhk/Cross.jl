@@ -17,7 +17,7 @@ function _mat_mat_mult(A::PetscWrap.PetscMat, B::PetscWrap.PetscMat)
     C = PetscWrap.PetscMat(A.comm)
     PR = PetscWrap.PetscReal
     @assert iszero(ccall((:MatMatMult, PetscWrap.libpetsc), PetscWrap.PetscErrorCode,
-        (PetscWrap.CMat, PetscWrap.CMat, Cint, PR, Ptr{PetscWrap.CMat}),
+        (PetscWrap.CMat, PetscWrap.CMat, Cint, PetscWrap.PetscReal, Ptr{PetscWrap.CMat}),
         A, B, MAT_INITIAL_MATRIX, PR(-2.0), C.ptr))
     return C
 end
@@ -79,7 +79,7 @@ function _mat_zero_rows(mat, grows0::Vector{Int})   # 0-based global rows
     PI = PetscWrap.PetscInt
     idx = PI.(grows0)
     @assert iszero(ccall((:MatZeroRows, PetscWrap.libpetsc), PetscWrap.PetscErrorCode,
-        (PetscWrap.CMat, PI, Ptr{PI}, PetscWrap.PetscScalar, PetscWrap.CVec, PetscWrap.CVec),
+        (PetscWrap.CMat, PetscWrap.PetscInt, Ptr{PetscWrap.PetscInt}, PetscWrap.PetscScalar, PetscWrap.CVec, PetscWrap.CVec),
         mat, PI(length(idx)), idx, PetscWrap.PetscScalar(0), C_NULL, C_NULL))
     return nothing
 end

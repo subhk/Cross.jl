@@ -79,8 +79,11 @@ jobs:
         run: |
           julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.add(["MPIPreferences","MPI","PetscWrap","SlepcWrap"])'
           julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
-          julia --project=. -e 'using Pkg; Pkg.build("PetscWrap"); Pkg.precompile()'
-          julia --project=. --code-coverage=user test/test_slepc_solve_coverage.jl
+          julia --project=. -e 'using Pkg; Pkg.build("PetscWrap")'
+          # Load CrossSlepcExt interpreted: it fails to *precompile* ("access to
+          # invalid slot number" serializing its raw ccall defs) but runs fine
+          # interpreted. --compiled-modules=no skips module serialization.
+          julia --project=. --compiled-modules=no --code-coverage=user test/test_slepc_solve_coverage.jl
 
       - uses: julia-actions/julia-processcoverage@v1
 

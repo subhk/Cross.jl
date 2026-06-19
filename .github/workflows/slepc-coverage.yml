@@ -63,6 +63,17 @@ jobs:
           ./configure
           make SLEPC_DIR="$SLEPC_DIR" PETSC_DIR="$PETSC_DIR" PETSC_ARCH="$PETSC_ARCH"
 
+      - name: Save PETSc/SLEPc cache
+        # Persist the build even when a later step fails (actions/cache only saves
+        # its post-step on job success), so iterations don't rebuild PETSc each time.
+        if: always() && steps.petsc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ github.workspace }}/petsc
+            ${{ github.workspace }}/slepc
+          key: petsc-slepc-complex-${{ env.PETSC_REF }}-${{ env.SLEPC_REF }}-mpich-v1
+
       - name: Sanity-check the built libraries
         run: |
           ls -la "$PETSC_DIR/$PETSC_ARCH/lib/libpetsc.so"

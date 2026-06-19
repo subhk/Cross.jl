@@ -66,7 +66,7 @@ function _to_petsc_dist(M::SparseMatrixCSC, nrows::Int, ncols::Int)
     MatSetSizes(mat, PETSC_DECIDE, PETSC_DECIDE, nrows, ncols)
     MatSetFromOptions(mat)
     MatSetUp(mat)                                       # default preallocation (any type)
-    MatSetOption(mat, PetscWrap.MAT_NEW_NONZERO_ALLOCATION_ERR, false)
+    PetscWrap.MatSetOption(mat, PetscWrap.MAT_NEW_NONZERO_ALLOCATION_ERR, false)
     rstart, rend = MatGetOwnershipRange(mat)            # 0-based, half-open (rows)
     rows = rowvals(M); vals = nonzeros(M)
     @inbounds for col in 1:size(M, 2)
@@ -142,7 +142,10 @@ function _eps_solve_and_gather(Amat, Bmat, n::Int;
     vr, vi = MatCreateVecs(Amat)
     for j in 0:(nout - 1)
         vpr, vpi, vecr, veci = EPSGetEigenpair(eps, j, vr, vi)
-        vals[j + 1] = ComplexF64(vpr, vpi)            # collective: identical all ranks
+        # Complex PETSc: EPSGetEigenpair returns the full eigenvalue in vpr (a
+        # complex PetscScalar); vpi is the unused 0 imaginary slot. The 2-arg
+        # ComplexF64(re, im) would coerce the complex vpr through Float64 -> InexactError.
+        vals[j + 1] = ComplexF64(vpr)                 # collective: identical all ranks
         full = _vec_scatter_to_zero(vecr)             # length n on rank 0, else 0
         rank == 0 && (vecs[:, j + 1] .= full)
     end

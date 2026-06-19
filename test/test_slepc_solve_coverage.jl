@@ -15,8 +15,11 @@ else
     @eval using PetscWrap, SlepcWrap            # loads CrossSlepcExt, registers _SLEPC_INIT
 
     # Serial built-in LU shift-invert (no MUMPS needed for single-process solves).
+    # -st_pc_factor_shift_type nonzero: the tau/Galerkin pencils carry structurally
+    # zero rows, so (A - sigma*B) has zero pivots; shift them rather than erroring.
     const SLEPC_OPTS = "-eps_gen_non_hermitian -st_type sinvert -st_pc_type lu " *
-                       "-st_pc_factor_mat_solver_type petsc -eps_target_magnitude"
+                       "-st_pc_factor_mat_solver_type petsc -st_pc_factor_shift_type nonzero " *
+                       "-eps_target_magnitude"
     Cross.slepc_init!(SLEPC_OPTS)
 
     finite_vals(r) = !isempty(r.eigenvalues) && all(isfinite, abs.(r.eigenvalues))

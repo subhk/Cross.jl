@@ -25,7 +25,7 @@ else
         op = OnsetParams(E=1e-3, Pr=1.0, Ra=1.0e3, χ=0.35, m=2, lmax=6, Nr=16)
 
         @testset "OnsetProblem solve" begin
-            r = solve(OnsetProblem(op); nev=4, sigma=0.0)
+            r = Cross.solve(OnsetProblem(op); nev=4, sigma=0.0)
             @test finite_vals(r)
         end
 
@@ -33,14 +33,14 @@ else
             for B0 in (axial, dipole)
                 mp = MHDParams(E=1e-3, Pr=1.0, Pm=1.0, Ra=100.0, Le=1.0, ricb=0.35,
                                m=1, lmax=3, N=12, B0_type=B0, B0_amplitude=1.0)
-                r = solve(MHDProblem(mp); nev=2, sigma=0.0)
+                r = Cross.solve(MHDProblem(mp); nev=2, sigma=0.0)
                 @test finite_vals(r)
             end
         end
 
         @testset "BiglobalProblem solve (axisymmetric mean flow)" begin
             bs = Cross.basic_state(op; mode=:conduction)
-            r = solve(BiglobalProblem(op, bs); nev=2, sigma=0.0)
+            r = Cross.solve(BiglobalProblem(op, bs); nev=2, sigma=0.0)
             @test finite_vals(r)
         end
 
@@ -54,7 +54,7 @@ else
                 theta_coeffs = coeffs, dtheta_dr_coeffs = Dict(coeffs),
                 ur_coeffs = emptyd, utheta_coeffs = emptyd, uphi_coeffs = Dict(coeffs),
                 dur_dr_coeffs = emptyd, dutheta_dr_coeffs = emptyd, duphi_dr_coeffs = Dict(coeffs))
-            r = solve(TriglobalProblem(op, bs3d, 0:1); nev=2, sigma=0.0)
+            r = Cross.solve(TriglobalProblem(op, bs3d, 0:1); nev=2, sigma=0.0)
             @test finite_vals(r)
         end
     end

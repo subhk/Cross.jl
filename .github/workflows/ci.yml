@@ -63,4 +63,5 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: unit
           fail_ci_if_error: false

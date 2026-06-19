@@ -1,0 +1,22 @@
+# Coverage comes from two independent jobs that each cover only part of the tree:
+#   - `unit`  : the main test matrix (ci.yml, ubuntu + Julia 1.12) — PETSc-free paths
+#   - `slepc` : the SLEPc Coverage job (slepc-coverage.yml) — real eigensolves
+# carryforward keeps each flag's last-known coverage when a commit runs only the
+# other job, so the combined total reflects both even though they upload separately.
+flags:
+  unit:
+    carryforward: true
+  slepc:
+    carryforward: true
+
+coverage:
+  status:
+    project:
+      default:
+        informational: true   # report, never fail the build on a coverage delta
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: "reach, flags, files"

@@ -671,6 +671,106 @@ function _project_coupling_block(C_full::Matrix{Complex{T}},
     return C
 end
 
+"""
+    _accumulate_mode_couplings!(C, op_from, op_to, ...)
+
+Function barrier for the per-(m_from, m_to) coupling accumulation. `op_from`/
+`op_to` are stored in `SingleModeOperator.op`, whose declared field type
+`LinearStabilityOperator{T}` is abstract (the struct is
+`LinearStabilityOperator{T,BS}`, so the `BS` parameter is unbound). Passing them
+through this barrier lets Julia specialize on the concrete runtime operator
+type, so the 22 `add_*_coupling!` calls below dispatch statically instead of at
+runtime. Pure code motion — behavior is identical to the inlined loop.
+"""
+function _accumulate_mode_couplings!(C::Matrix{Complex{T}},
+        op_from::LinearStabilityOperator, op_to::LinearStabilityOperator,
+        idx_map_from, idx_map_to, m_from::Int, m_to::Int, bs_modes,
+        r::AbstractVector, D1,
+        theta_interp, dtheta_dr_interp, uphi_interp, duphi_dr_interp,
+        ur_interp, dur_dr_interp, utheta_interp, dutheta_dr_interp,
+        params) where {T}
+    # Compute coupling through each relevant basic state mode
+    for (ℓ_bs, m_bs) in bs_modes
+        # The spherical harmonic selection rule requires m_from + m_bs_eff = m_to
+        # where m_bs_eff = ±m_bs depending on the coupling direction
+        if m_to == m_from + m_bs
+            # Forward coupling: m_from + m_bs = m_to
+            m_bs_eff = m_bs
+            add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                   m_from, m_to, ℓ_bs, m_bs_eff,
+                                   r, uphi_interp, params)
+            add_metric_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                 m_from, m_to, ℓ_bs, m_bs_eff,
+                                 r, uphi_interp, params)
+            add_radial_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                           m_from, m_to, ℓ_bs, m_bs_eff,
+                                           r, ur_interp, D1, params)
+            add_meridional_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                m_from, m_to, ℓ_bs, m_bs_eff,
+                                                r, utheta_interp, params)
+            add_temperature_gradient_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                               m_from, m_to, ℓ_bs, m_bs_eff,
+                                               r, dtheta_dr_interp, params)
+            add_shear_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                               m_from, m_to, ℓ_bs, m_bs_eff,
+                               r, duphi_dr_interp, params)
+            add_radial_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                       m_from, m_to, ℓ_bs, m_bs_eff,
+                                       r, dur_dr_interp, params)
+            add_meridional_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                           m_from, m_to, ℓ_bs, m_bs_eff,
+                                           r, dutheta_dr_interp, params)
+            add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                      m_from, m_to, ℓ_bs, m_bs_eff,
+                                                      r, theta_interp, D1, params)
+            add_temperature_gradient_phi_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                    m_from, m_to, ℓ_bs, m_bs_eff,
+                                                    r, theta_interp, params)
+            add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                      m_from, m_to, ℓ_bs, m_bs_eff,
+                                      r, uphi_interp, D1, params)
+        elseif m_to == m_from - m_bs
+            # Backward coupling: m_from - m_bs = m_to → m_from + (-m_bs) = m_to
+            # Need to use -m_bs in the Gaunt coefficient (complex conjugate of Y_{ℓ,m})
+            m_bs_eff = -m_bs
+            add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                   m_from, m_to, ℓ_bs, m_bs_eff,
+                                   r, uphi_interp, params)
+            add_metric_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                 m_from, m_to, ℓ_bs, m_bs_eff,
+                                 r, uphi_interp, params)
+            add_radial_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                           m_from, m_to, ℓ_bs, m_bs_eff,
+                                           r, ur_interp, D1, params)
+            add_meridional_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                m_from, m_to, ℓ_bs, m_bs_eff,
+                                                r, utheta_interp, params)
+            add_temperature_gradient_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                               m_from, m_to, ℓ_bs, m_bs_eff,
+                                               r, dtheta_dr_interp, params)
+            add_shear_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                               m_from, m_to, ℓ_bs, m_bs_eff,
+                               r, duphi_dr_interp, params)
+            add_radial_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                       m_from, m_to, ℓ_bs, m_bs_eff,
+                                       r, dur_dr_interp, params)
+            add_meridional_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                           m_from, m_to, ℓ_bs, m_bs_eff,
+                                           r, dutheta_dr_interp, params)
+            add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                      m_from, m_to, ℓ_bs, m_bs_eff,
+                                                      r, theta_interp, D1, params)
+            add_temperature_gradient_phi_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                                    m_from, m_to, ℓ_bs, m_bs_eff,
+                                                    r, theta_interp, params)
+            add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                      m_from, m_to, ℓ_bs, m_bs_eff,
+                                      r, uphi_interp, D1, params)
+        end
+    end
+    return C
+end
+
 """Build all off-diagonal mode-coupling blocks induced by the 3D basic state."""
 function build_mode_coupling_operators(problem::CoupledModeProblem{T},
                                         single_mode_ops::Dict{Int,SingleModeOperator{T}},
@@ -804,86 +904,15 @@ function build_mode_coupling_operators(problem::CoupledModeProblem{T},
             # not sparse and the contiguous dense array is the right structure.
             C = zeros(Complex{T}, n_to, n_from)
 
-            # Compute coupling through each relevant basic state mode
-            for (ℓ_bs, m_bs) in bs_modes
-                # Check if this basic state mode couples m_from to m_to
-                # The spherical harmonic selection rule requires m_from + m_bs_eff = m_to
-                # where m_bs_eff = ±m_bs depending on the coupling direction
-                if m_to == m_from + m_bs
-                    # Forward coupling: m_from + m_bs = m_to
-                    m_bs_eff = m_bs
-                    add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                           m_from, m_to, ℓ_bs, m_bs_eff,
-                                           r, uphi_interp, params)
-                    add_metric_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                         m_from, m_to, ℓ_bs, m_bs_eff,
-                                         r, uphi_interp, params)
-                    add_radial_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                   m_from, m_to, ℓ_bs, m_bs_eff,
-                                                   r, ur_interp, cd.D1, params)
-                    add_meridional_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                        m_from, m_to, ℓ_bs, m_bs_eff,
-                                                        r, utheta_interp, params)
-                    add_temperature_gradient_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                       m_from, m_to, ℓ_bs, m_bs_eff,
-                                                       r, dtheta_dr_interp, params)
-                    add_shear_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                       m_from, m_to, ℓ_bs, m_bs_eff,
-                                       r, duphi_dr_interp, params)
-                    add_radial_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                               m_from, m_to, ℓ_bs, m_bs_eff,
-                                               r, dur_dr_interp, params)
-                    add_meridional_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                   m_from, m_to, ℓ_bs, m_bs_eff,
-                                                   r, dutheta_dr_interp, params)
-                    add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                              m_from, m_to, ℓ_bs, m_bs_eff,
-                                                              r, theta_interp, cd.D1, params)
-                    add_temperature_gradient_phi_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                            m_from, m_to, ℓ_bs, m_bs_eff,
-                                                            r, theta_interp, params)
-                    add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                              m_from, m_to, ℓ_bs, m_bs_eff,
-                                              r, uphi_interp, cd.D1, params)
-                elseif m_to == m_from - m_bs
-                    # Backward coupling: m_from - m_bs = m_to → m_from + (-m_bs) = m_to
-                    # Need to use -m_bs in the Gaunt coefficient (complex conjugate of Y_{ℓ,m})
-                    m_bs_eff = -m_bs
-                    add_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                           m_from, m_to, ℓ_bs, m_bs_eff,
-                                           r, uphi_interp, params)
-                    add_metric_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                         m_from, m_to, ℓ_bs, m_bs_eff,
-                                         r, uphi_interp, params)
-                    add_radial_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                   m_from, m_to, ℓ_bs, m_bs_eff,
-                                                   r, ur_interp, cd.D1, params)
-                    add_meridional_advection_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                        m_from, m_to, ℓ_bs, m_bs_eff,
-                                                        r, utheta_interp, params)
-                    add_temperature_gradient_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                       m_from, m_to, ℓ_bs, m_bs_eff,
-                                                       r, dtheta_dr_interp, params)
-                    add_shear_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                       m_from, m_to, ℓ_bs, m_bs_eff,
-                                       r, duphi_dr_interp, params)
-                    add_radial_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                               m_from, m_to, ℓ_bs, m_bs_eff,
-                                               r, dur_dr_interp, params)
-                    add_meridional_velocity_shear!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                   m_from, m_to, ℓ_bs, m_bs_eff,
-                                                   r, dutheta_dr_interp, params)
-                    add_temperature_gradient_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                              m_from, m_to, ℓ_bs, m_bs_eff,
-                                                              r, theta_interp, cd.D1, params)
-                    add_temperature_gradient_phi_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                                            m_from, m_to, ℓ_bs, m_bs_eff,
-                                                            r, theta_interp, params)
-                    add_shear_theta_coupling!(C, op_from, op_to, idx_map_from, idx_map_to,
-                                              m_from, m_to, ℓ_bs, m_bs_eff,
-                                              r, uphi_interp, cd.D1, params)
-                end
-            end
+            # Accumulate coupling through each relevant basic state mode. The
+            # function barrier specializes on the concrete operator type (the
+            # SingleModeOperator.op field is abstractly typed) so the inner
+            # add_*_coupling! calls dispatch statically.
+            _accumulate_mode_couplings!(C, op_from, op_to, idx_map_from, idx_map_to,
+                                        m_from, m_to, bs_modes, r, cd.D1,
+                                        theta_interp, dtheta_dr_interp, uphi_interp, duphi_dr_interp,
+                                        ur_interp, dur_dr_interp, utheta_interp, dutheta_dr_interp,
+                                        params)
 
             C = _project_coupling_block(C, single_mode_ops[m_to], single_mode_ops[m_from])
 
